@@ -87,8 +87,9 @@ def normalise_type(property_type):
     return mapping.get(property_type.lower(), ["semi_detached_house", "semi-detached_house"])
 
 
-def sqft_to_sqm(sqft):
-    return sqft * 0.0929
+def sqft_to_sqm(price_per_sqft):
+    """Convert price per sqft to price per sqm."""
+    return price_per_sqft * 10.764
 
 
 def calculate_local_avg_psqm(raw_data, property_type):
