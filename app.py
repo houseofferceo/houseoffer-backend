@@ -46,19 +46,16 @@ def format_postcode(raw):
 
 def get_property_data(postcode):
     """
-    Call PropertyData API and return the data we need for the free report.
+    Call PropertyData API and return raw responses.
     Endpoints used:
-      - /prices-per-sqf  → local £/sqft averages by property type
-      - /sold-prices     → recent sales on the street
-      - /prices          → days on market / listing signals
+      - /prices-per-sqf  → current listings with sqft data, we filter by type
+      - /sold-prices     → recent Land Registry sales
     """
     formatted = format_postcode(postcode)
     base = "https://api.propertydata.co.uk"
-    headers = {}  # API key goes in query params for PropertyData
-
     results = {}
 
-    # 1. Price per sq ft by property type in this postcode
+    # 1. Current listings with price per sqft (we filter by property type)
     r1 = requests.get(
         f"{base}/prices-per-sqf",
         params={"key": PROPERTYDATA_API_KEY, "postcode": formatted},
@@ -67,7 +64,7 @@ def get_property_data(postcode):
     if r1.status_code == 200:
         results["prices_per_sqf"] = r1.json()
 
-    # 2. Recent sold prices
+    # 2. Sold prices from Land Registry
     r2 = requests.get(
         f"{base}/sold-prices",
         params={"key": PROPERTYDATA_API_KEY, "postcode": formatted},
@@ -76,21 +73,61 @@ def get_property_data(postcode):
     if r2.status_code == 200:
         results["sold_prices"] = r2.json()
 
-    # 3. Current listing data (days on market signals)
-    r3 = requests.get(
-        f"{base}/prices",
-        params={"key": PROPERTYDATA_API_KEY, "postcode": formatted},
-        timeout=10
-    )
-    if r3.status_code == 200:
-        results["listing_prices"] = r3.json()
-
     return results
+
+
+def normalise_type(property_type):
+    """Map user-facing property type to PropertyData type strings."""
+    mapping = {
+        "semi-detached": ["semi_detached_house", "semi-detached_house"],
+        "detached":      ["detached_house"],
+        "terraced":      ["terraced_house"],
+        "flat":          ["flat"],
+    }
+    return mapping.get(property_type.lower(), ["semi_detached_house", "semi-detached_house"])
+
+
+def sqft_to_sqm(sqft):
+    return sqft * 0.0929
+
+
+def calculate_local_avg_psqm(raw_data, property_type):
+    """
+    From the prices-per-sqf raw_data array, filter to matching property type
+    and return the average price per sqm.
+    """
+    try:
+        points = raw_data.get("prices_per_sqf", {}).get("data", {}).get("raw_data", [])
+        type_keys = normalise_type(property_type)
+        matching = [p for p in points if p.get("type") in type_keys and p.get("price_per_sqf")]
+        if not matching:
+            # Fall back to all types if no matching found
+            matching = [p for p in points if p.get("price_per_sqf")]
+        if not matching:
+            return None
+        avg_psqf = sum(p["price_per_sqf"] for p in matching) / len(matching)
+        return round(sqft_to_sqm(avg_psqf))
+    except Exception:
+        return None
+
+
+def calculate_dom(raw_data):
+    """
+    Extract days on market and local average from sold prices data.
+    PropertyData /sold-prices returns avg_days_on_market at top level.
+    """
+    try:
+        data = raw_data.get("sold_prices", {}).get("data", {})
+        dom = data.get("days_on_market")
+        avg_dom = data.get("avg_days_on_market")
+        return dom, avg_dom
+    except Exception:
+        return None, None
 
 
 def calculate_verdict(asking_psqm, local_avg_psqm):
     """Return verdict string and percentage difference."""
-    if local_avg_psqm == 0:
+    if not local_avg_psqm or local_avg_psqm == 0:
         return "unknown", 0
     diff_pct = ((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100
     if diff_pct > 8:
@@ -102,34 +139,16 @@ def calculate_verdict(asking_psqm, local_avg_psqm):
     return verdict, round(diff_pct, 1)
 
 
-def sqft_to_sqm(sqft):
-    return round(sqft * 0.0929, 1)
-
-
 def build_report_data(property_url, asking_price, bedrooms, property_type, postcode, floor_area_sqm=None):
     """
     Pull data and build the dict that populates the report template.
     asking_price: int (e.g. 285000)
-    floor_area_sqm: float or None — if None we can't compute £/sqm for this property
+    floor_area_sqm: float or None
     """
     raw_data = get_property_data(postcode)
 
-    # Extract local avg price per sqft → convert to sqm
-    local_psqf = None
-    try:
-        psqf_data = raw_data.get("prices_per_sqf", {})
-        # PropertyData returns data by property type: detached, semi_detached, terraced, flat
-        type_key = {
-            "semi-detached": "semi_detached",
-            "detached": "detached",
-            "terraced": "terraced",
-            "flat": "flat",
-        }.get(property_type.lower(), "semi_detached")
-        local_psqf = psqf_data.get("data", {}).get(type_key, {}).get("avg")
-    except Exception:
-        pass
-
-    local_avg_psqm = sqft_to_sqm(local_psqf) if local_psqf else None
+    # Local average £/sqm filtered by property type
+    local_avg_psqm = calculate_local_avg_psqm(raw_data, property_type)
 
     # Asking price per sqm (only if we have floor area)
     asking_psqm = None
@@ -142,19 +161,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type, postc
         verdict, diff_pct = calculate_verdict(asking_psqm, local_avg_psqm)
 
     # Days on market
-    dom = None
-    local_avg_dom = None
-    try:
-        listing_data = raw_data.get("listing_prices", {}).get("data", {})
-        dom = listing_data.get("days_on_market")
-        local_avg_dom = listing_data.get("avg_days_on_market")
-    except Exception:
-        pass
+    dom, local_avg_dom = calculate_dom(raw_data)
 
     dom_signal = None
     if dom and local_avg_dom:
         if dom > local_avg_dom * 1.5:
-            dom_signal = "high"   # strong negotiation signal
+            dom_signal = "high"
         elif dom > local_avg_dom:
             dom_signal = "medium"
         else:
@@ -167,7 +179,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type, postc
         "bedrooms": bedrooms,
         "property_type": property_type,
         "asking_psqm": asking_psqm,
-        "local_avg_psqm": round(local_avg_psqm) if local_avg_psqm else None,
+        "local_avg_psqm": local_avg_psqm,
         "verdict": verdict,
         "diff_pct": diff_pct,
         "days_on_market": dom,
