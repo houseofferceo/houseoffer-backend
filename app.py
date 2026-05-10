@@ -9,12 +9,12 @@ app = Flask(__name__)
 CORS(app)
 
 PROPERTYDATA_API_KEY = os.environ.get("PROPERTYDATA_API_KEY")
-MIN_COMPARABLES = 3  # minimum sold price matches before we broaden the search
+EPC_API_KEY = os.environ.get("EPC_API_KEY")  # from epc.opendatacommunities.org
+MIN_COMPARABLES = 3
 
-# ── UTILITIES ──────────────────────────────────────────────────────────────────
+# ── POSTCODE UTILITIES ─────────────────────────────────────────────────────────
 
 def extract_postcode_from_url(url):
-    """Try to pull a postcode from a Rightmove or Zoopla URL or page."""
     pc_pattern = r'([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})'
     match = re.search(pc_pattern, url.upper())
     if match:
@@ -31,36 +31,79 @@ def extract_postcode_from_url(url):
 
 
 def format_postcode(raw):
-    """Ensure postcode has a space: DE11DR -> DE1 1DR."""
     raw = raw.strip().upper().replace(" ", "")
     return raw[:-3] + " " + raw[-3:]
 
 
-def district_postcode(full_postcode):
-    """Extract district from full postcode: DE1 1DR -> DE1."""
-    return full_postcode.strip().upper().replace(" ", "")[:-3]
+def district_postcode(postcode):
+    return postcode.strip().upper().replace(" ", "")[:-3]
 
 
-def normalise_type(property_type):
-    """Map user-facing property type to PropertyData sold-prices type strings."""
+def normalise_type_sold(property_type):
+    """Property type strings as they appear in /sold-prices responses."""
     mapping = {
-        "semi-detached": ["semi_detached", "Semi-Detached"],
-        "detached":      ["detached", "Detached"],
-        "terraced":      ["terraced", "Terraced"],
+        "semi-detached": ["semi-detached_house", "semi_detached_house", "Semi-Detached"],
+        "detached":      ["detached_house", "Detached"],
+        "terraced":      ["terraced_house", "Terraced"],
         "flat":          ["flat", "Flat"],
     }
-    return mapping.get(property_type.lower(), ["semi_detached", "Semi-Detached"])
+    return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
+
+
+def normalise_type_listings(property_type):
+    """Property type strings as they appear in /prices-per-sqf responses."""
+    mapping = {
+        "semi-detached": ["semi-detached_house", "semi_detached_house"],
+        "detached":      ["detached_house"],
+        "terraced":      ["terraced_house"],
+        "flat":          ["flat"],
+    }
+    return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
 
 
 def price_per_sqft_to_sqm(price_per_sqft):
-    """Convert £/sqft to £/sqm."""
     return price_per_sqft * 10.764
 
 
-# ── DATA FETCHING ──────────────────────────────────────────────────────────────
+# ── EPC FLOOR AREA ─────────────────────────────────────────────────────────────
+
+def get_floor_area_from_epc(postcode, address=None):
+    """
+    Look up floor area (m²) from the EPC register.
+    Falls back gracefully if not found.
+    """
+    try:
+        formatted = format_postcode(postcode)
+        url = "https://epc.opendatacommunities.org/api/v1/domestic/search"
+        params = {"postcode": formatted, "size": 10}
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Basic {EPC_API_KEY}"
+        }
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        if r.status_code != 200:
+            return None
+        rows = r.json().get("rows", [])
+        if not rows:
+            return None
+        # If we have an address, try to match it
+        if address:
+            address_upper = address.upper()
+            for row in rows:
+                if any(part in row.get("address", "").upper() for part in address_upper.split()[:2]):
+                    area = row.get("total-floor-area")
+                    if area:
+                        return float(area)
+        # Otherwise return first result
+        area = rows[0].get("total-floor-area")
+        return float(area) if area else None
+    except Exception:
+        return None
+
+
+# ── SOLD PRICE COMPARABLES ─────────────────────────────────────────────────────
 
 def fetch_sold_prices(postcode):
-    """Fetch Land Registry sold prices from PropertyData."""
     try:
         r = requests.get(
             "https://api.propertydata.co.uk/sold-prices",
@@ -74,98 +117,154 @@ def fetch_sold_prices(postcode):
     return None
 
 
-def get_comparables(postcode, property_type):
+def fetch_listings_psqf(postcode):
+    """Fetch current listings with price per sqft — used only for £/sqm conversion."""
+    try:
+        r = requests.get(
+            "https://api.propertydata.co.uk/prices-per-sqf",
+            params={"key": PROPERTYDATA_API_KEY, "postcode": postcode},
+            timeout=10
+        )
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return None
+
+
+def get_sold_comparables(postcode, property_type):
     """
-    Get sold price comparables for the given property type.
-    Strategy:
-      1. Try full postcode (e.g. DE1 1DR) — most precise
-      2. If fewer than MIN_COMPARABLES matching sales, broaden to district (e.g. DE1)
-      3. Never mix property types — flats never compared against houses
-    Returns (comparables list, postcode used, broadened bool)
+    Get Land Registry sold price comparables for matching property type only.
+    Auto-broadens from full postcode to district if fewer than MIN_COMPARABLES found.
+    Never mixes property types.
     """
-    type_keys = normalise_type(property_type)
+    type_keys = normalise_type_sold(property_type)
     formatted = format_postcode(postcode)
 
-    # Step 1: full postcode
     data = fetch_sold_prices(formatted)
-    comparables = extract_matching_sales(data, type_keys)
+    comparables = _filter_sold(data, type_keys)
 
-    if len(comparables) >= MIN_COMPARABLES:
-        return comparables, formatted, False
+    broadened = False
+    postcode_used = formatted
+    if len(comparables) < MIN_COMPARABLES:
+        district = district_postcode(postcode)
+        data = fetch_sold_prices(district)
+        comparables = _filter_sold(data, type_keys)
+        broadened = True
+        postcode_used = district
 
-    # Step 2: broaden to district postcode
-    district = district_postcode(postcode)
-    data = fetch_sold_prices(district)
-    comparables = extract_matching_sales(data, type_keys)
-
-    return comparables, district, True
+    return comparables, postcode_used, broadened
 
 
-def extract_matching_sales(data, type_keys):
-    """
-    Pull matching sold transactions from a PropertyData /sold-prices response.
-    Only include records that have a valid price_per_sqf so we can do £/sqm maths.
-    """
+def _filter_sold(data, type_keys):
     if not data:
         return []
     try:
-        transactions = data.get("data", {}).get("transactions", [])
-        matching = [
+        transactions = data.get("data", {}).get("raw_data", [])
+        return [
             t for t in transactions
-            if t.get("property_type") in type_keys
-            and t.get("price_per_sqf") and float(t["price_per_sqf"]) > 0
+            if t.get("type") in type_keys and t.get("price")
         ]
-        return matching
     except Exception:
         return []
 
 
-def calculate_local_avg_psqm(comparables):
-    """Average £/sqm from a list of comparable sold transactions."""
+def avg_sold_price(comparables):
     if not comparables:
         return None
-    avg_psqf = sum(float(c["price_per_sqf"]) for c in comparables) / len(comparables)
-    return round(price_per_sqft_to_sqm(avg_psqf))
+    return round(sum(c["price"] for c in comparables) / len(comparables))
 
 
-def calculate_verdict(asking_psqm, local_avg_psqm):
-    """Return verdict and % difference vs local average."""
-    if not local_avg_psqm or local_avg_psqm == 0:
-        return "unknown", 0
-    diff_pct = ((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100
-    if diff_pct > 8:
-        verdict = "overpriced"
-    elif diff_pct < -5:
-        verdict = "value"
-    else:
-        verdict = "fair"
-    return verdict, round(diff_pct, 1)
+# ── £/SQM FROM LISTINGS ────────────────────────────────────────────────────────
+
+def get_local_avg_psqm(postcode, property_type):
+    """
+    Calculate local average £/sqm from current listings (prices-per-sqf endpoint).
+    Filtered strictly by property type. Auto-broadens if needed.
+    Used only as a conversion benchmark — not as the primary valuation.
+    """
+    type_keys = normalise_type_listings(property_type)
+    formatted = format_postcode(postcode)
+
+    data = fetch_listings_psqf(formatted)
+    avg = _calc_avg_psqm(data, type_keys)
+
+    if avg is None:
+        district = district_postcode(postcode)
+        data = fetch_listings_psqf(district)
+        avg = _calc_avg_psqm(data, type_keys)
+
+    return avg
+
+
+def _calc_avg_psqm(data, type_keys):
+    if not data:
+        return None
+    try:
+        points = data.get("data", {}).get("raw_data", [])
+        matching = [
+            p for p in points
+            if p.get("type") in type_keys and p.get("price_per_sqf")
+        ]
+        if not matching:
+            return None
+        avg_psqf = sum(p["price_per_sqf"] for p in matching) / len(matching)
+        return round(price_per_sqft_to_sqm(avg_psqf))
+    except Exception:
+        return None
 
 
 # ── REPORT BUILDER ─────────────────────────────────────────────────────────────
 
-def build_report_data(property_url, asking_price, bedrooms, property_type, postcode, floor_area_sqm=None):
-    """
-    Pull sold price comparables and build the report data dict.
-    Uses Land Registry sold prices only — never listing/asking prices.
-    Automatically broadens from full postcode to district if not enough comparables.
-    Never mixes property types.
-    """
-    comparables, postcode_used, broadened = get_comparables(postcode, property_type)
-    local_avg_psqm = calculate_local_avg_psqm(comparables)
+def build_report_data(property_url, asking_price, bedrooms, property_type,
+                      postcode, floor_area_sqm=None, address=None):
 
-    # Asking price per sqm (requires floor area)
+    formatted = format_postcode(postcode)
+
+    # 1. Land Registry sold price comparables (same property type only)
+    comparables, postcode_used, broadened = get_sold_comparables(postcode, property_type)
+    local_avg_sold = avg_sold_price(comparables)
+
+    # Sold price comparison
+    sold_diff_pct = None
+    sold_verdict = None
+    if local_avg_sold:
+        sold_diff_pct = round(((asking_price - local_avg_sold) / local_avg_sold) * 100, 1)
+        if sold_diff_pct > 8:
+            sold_verdict = "overpriced"
+        elif sold_diff_pct < -5:
+            sold_verdict = "value"
+        else:
+            sold_verdict = "fair"
+
+    # 2. Floor area — use provided value or look up from EPC
+    if not floor_area_sqm and EPC_API_KEY:
+        floor_area_sqm = get_floor_area_from_epc(postcode, address)
+
+    # 3. £/sqm comparison
     asking_psqm = None
+    local_avg_psqm = None
+    psqm_diff_pct = None
+    psqm_verdict = None
+
     if floor_area_sqm and floor_area_sqm > 0:
         asking_psqm = round(asking_price / floor_area_sqm)
+        local_avg_psqm = get_local_avg_psqm(postcode, property_type)
+        if local_avg_psqm:
+            psqm_diff_pct = round(((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100, 1)
+            if psqm_diff_pct > 8:
+                psqm_verdict = "overpriced"
+            elif psqm_diff_pct < -5:
+                psqm_verdict = "value"
+            else:
+                psqm_verdict = "fair"
 
-    verdict = "unknown"
-    diff_pct = 0
-    if asking_psqm and local_avg_psqm:
-        verdict, diff_pct = calculate_verdict(asking_psqm, local_avg_psqm)
+    # Overall verdict — sold price comparison takes priority as it's Land Registry
+    verdict = sold_verdict or psqm_verdict or "unknown"
+    diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
 
     return {
-        "postcode": format_postcode(postcode),
+        "postcode": formatted,
         "postcode_used": postcode_used,
         "comparables_count": len(comparables),
         "search_broadened": broadened,
@@ -173,11 +272,21 @@ def build_report_data(property_url, asking_price, bedrooms, property_type, postc
         "asking_price_formatted": f"£{asking_price:,}",
         "bedrooms": bedrooms,
         "property_type": property_type,
+        "floor_area_sqm": floor_area_sqm,
+        # Sold price comparison
+        "local_avg_sold": local_avg_sold,
+        "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
+        "sold_diff_pct": sold_diff_pct,
+        "sold_verdict": sold_verdict,
+        # £/sqm comparison
         "asking_psqm": asking_psqm,
         "local_avg_psqm": local_avg_psqm,
+        "psqm_diff_pct": psqm_diff_pct,
+        "psqm_verdict": psqm_verdict,
+        # Overall
         "verdict": verdict,
         "diff_pct": diff_pct,
-        "days_on_market": None,   # future: wire up listing data
+        "days_on_market": None,
         "local_avg_dom": None,
         "dom_signal": None,
         "generated": datetime.now().strftime("%-d %B %Y"),
@@ -194,13 +303,13 @@ def health():
 
 @app.route("/report", methods=["POST"])
 def generate_report():
-    """Returns rendered HTML report."""
     data = request.get_json(silent=True) or request.form
     property_url   = data.get("property_url", "")
     asking_price   = int(str(data.get("asking_price", 0)).replace(",", "").replace("£", ""))
     bedrooms       = data.get("bedrooms", "3")
     property_type  = data.get("property_type", "semi-detached")
     postcode       = data.get("postcode", "")
+    address        = data.get("address", "")
     floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None
 
     if not postcode and property_url:
@@ -215,19 +324,20 @@ def generate_report():
         property_type=property_type,
         postcode=postcode,
         floor_area_sqm=floor_area_sqm,
+        address=address,
     )
     return render_template("report_free.html", **report)
 
 
 @app.route("/api/report-data", methods=["POST"])
 def report_data_json():
-    """Returns raw JSON — for testing."""
     data = request.get_json(silent=True) or request.form
     property_url   = data.get("property_url", "")
     asking_price   = int(str(data.get("asking_price", 0)).replace(",", "").replace("£", ""))
     bedrooms       = data.get("bedrooms", "3")
     property_type  = data.get("property_type", "semi-detached")
     postcode       = data.get("postcode", "")
+    address        = data.get("address", "")
     floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None
 
     if not postcode and property_url:
@@ -242,6 +352,7 @@ def report_data_json():
         property_type=property_type,
         postcode=postcode,
         floor_area_sqm=floor_area_sqm,
+        address=address,
     )
     return jsonify(report)
 
