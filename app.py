@@ -161,18 +161,29 @@ def _filter_sold(data, type_keys):
         return []
     try:
         transactions = data.get("data", {}).get("raw_data", [])
-        return [
+        matching = [
             t for t in transactions
-            if t.get("type") in type_keys and t.get("price")
+            if t.get("type") in type_keys
+            and t.get("price")
+            and t.get("price") < 2_000_000
         ]
+        return matching
     except Exception:
         return []
 
 
 def avg_sold_price(comparables):
+    """Use interquartile mean to reduce skew from outliers."""
     if not comparables:
         return None
-    return round(sum(c["price"] for c in comparables) / len(comparables))
+    prices = sorted(c["price"] for c in comparables)
+    n = len(prices)
+    if n >= 5:
+        q1 = n // 4
+        q3 = n - q1
+        trimmed = prices[q1:q3]
+        return round(sum(trimmed) / len(trimmed)) if trimmed else round(sum(prices) / n)
+    return round(sum(prices) / n)
 
 
 # ── £/SQM FROM LISTINGS ────────────────────────────────────────────────────────
