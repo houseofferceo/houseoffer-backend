@@ -78,7 +78,7 @@ def get_floor_area_from_epc(postcode, address=None):
         params = {"postcode": formatted, "size": 10}
         headers = {
             "Accept": "application/json",
-            "Authorization": f"Basic {EPC_API_KEY}"
+            "Authorization": f"Bearer {EPC_API_KEY}"
         }
         r = requests.get(url, params=params, headers=headers, timeout=10)
         if r.status_code != 200:
@@ -310,6 +310,28 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@app.route("/test-epc")
+def test_epc():
+    """Test endpoint to check EPC API is working."""
+    postcode = request.args.get("postcode", "DE1 1DR")
+    try:
+        formatted = format_postcode(postcode)
+        url = "https://epc.opendatacommunities.org/api/v1/domestic/search"
+        params = {"postcode": formatted, "size": 3}
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {EPC_API_KEY}"
+        }
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        return jsonify({
+            "status_code": r.status_code,
+            "epc_key_set": bool(EPC_API_KEY),
+            "response": r.json() if r.status_code == 200 else r.text
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
 @app.route("/report", methods=["POST"])
