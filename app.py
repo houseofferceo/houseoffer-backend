@@ -9,7 +9,7 @@ from flask_cors import CORS
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
 
 PROPERTYDATA_API_KEY = os.environ.get("PROPERTYDATA_API_KEY")
 EPC_API_KEY = os.environ.get("EPC_API_KEY")
