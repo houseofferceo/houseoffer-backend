@@ -1,6 +1,9 @@
 import os
 import re
 import requests
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from datetime import datetime
@@ -9,7 +12,9 @@ app = Flask(__name__)
 CORS(app)
 
 PROPERTYDATA_API_KEY = os.environ.get("PROPERTYDATA_API_KEY")
-EPC_API_KEY = os.environ.get("EPC_API_KEY")  # from epc.opendatacommunities.org
+EPC_API_KEY = os.environ.get("EPC_API_KEY")
+EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 MIN_COMPARABLES = 3
 
 # ── POSTCODE UTILITIES ─────────────────────────────────────────────────────────
@@ -305,6 +310,43 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     }
 
 
+
+# ── EMAIL ──────────────────────────────────────────────────────────────────────
+
+def send_report_email(to_email, report_html, postcode, verdict):
+    """Send the free report as an HTML email."""
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"Your free HouseOffer report — {postcode}"
+        msg["From"] = f"HouseOffer <{EMAIL_ADDRESS}>"
+        msg["To"] = to_email
+
+        # Plain text fallback
+        plain = f"""Hi,
+
+Here is your free HouseOffer property report for {postcode}.
+
+Our verdict: {verdict.upper()}
+
+View the full report below, or reply to this email if you have any questions.
+
+To unlock your recommended offer price, walk-away price, and negotiation script, visit:
+https://houseoffer.netlify.app/#pricing
+
+The HouseOffer team
+"""
+        msg.attach(MIMEText(plain, "plain"))
+        msg.attach(MIMEText(report_html, "html"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"Email error: {e}")
+        return False
+
+
 # ── ROUTES ─────────────────────────────────────────────────────────────────────
 
 @app.route("/health")
@@ -388,6 +430,103 @@ def report_data_json():
         address=address,
     )
     return jsonify(report)
+
+
+
+
+@app.route("/submit", methods=["POST"])
+def submit():
+    """
+    Main endpoint called when someone submits the Netlify form.
+    Receives email + property URL, generates report, emails it back.
+    """
+    data = request.get_json(silent=True) or request.form
+
+    to_email       = data.get("email", "")
+    property_url   = data.get("property-url", "") or data.get("property_url", "")
+    asking_price   = int(str(data.get("asking_price", 0) or 0).replace(",", "").replace("£", "")) or 0
+    bedrooms       = data.get("bedrooms", "3")
+    property_type  = data.get("property_type", "semi-detached")
+    postcode       = data.get("postcode", "")
+    address        = data.get("address", "")
+    floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None
+
+    if not to_email:
+        return jsonify({"error": "Email address required"}), 400
+
+    if not postcode and property_url:
+        postcode = extract_postcode_from_url(property_url)
+
+    if not postcode:
+        # No postcode — send a holding email and flag for manual follow-up
+        send_holding_email(to_email, property_url)
+        return jsonify({"status": "holding email sent"}), 200
+
+    report = build_report_data(
+        property_url=property_url,
+        asking_price=asking_price,
+        bedrooms=bedrooms,
+        property_type=property_type,
+        postcode=postcode,
+        floor_area_sqm=floor_area_sqm,
+        address=address,
+    )
+
+    report_html = render_template("report_free.html", **report)
+    sent = send_report_email(to_email, report_html, report["postcode"], report["verdict"])
+
+    # Also notify houseoffer inbox
+    notify_owner(to_email, property_url, report["postcode"], report["verdict"])
+
+    return jsonify({"status": "sent" if sent else "email_failed", "postcode": report["postcode"]})
+
+
+def send_holding_email(to_email, property_url):
+    """Send when we can't extract a postcode — asks user to reply with details."""
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Your HouseOffer report — we need one more detail"
+        msg["From"] = f"HouseOffer <{EMAIL_ADDRESS}>"
+        msg["To"] = to_email
+        plain = f"""Hi,
+
+Thanks for submitting your property for analysis.
+
+We weren't able to automatically extract the postcode from the link you provided:
+{property_url}
+
+Could you reply to this email with:
+1. The property postcode
+2. The asking price
+3. Number of bedrooms
+4. Property type (detached / semi-detached / terraced / flat)
+
+We'll have your free report back to you within a few hours.
+
+The HouseOffer team
+"""
+        msg.attach(MIMEText(plain, "plain"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
+    except Exception as e:
+        print(f"Holding email error: {e}")
+
+
+def notify_owner(to_email, property_url, postcode, verdict):
+    """Notify the houseoffer inbox of each new submission."""
+    try:
+        msg = MIMEMultipart()
+        msg["Subject"] = f"New submission: {postcode} — {verdict}"
+        msg["From"] = EMAIL_ADDRESS
+        msg["To"] = EMAIL_ADDRESS
+        body = f"New report request\n\nUser: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}"
+        msg.attach(MIMEText(body, "plain"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            server.sendmail(EMAIL_ADDRESS, EMAIL_ADDRESS, msg.as_string())
+    except Exception as e:
+        print(f"Owner notify error: {e}")
 
 
 if __name__ == "__main__":
