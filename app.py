@@ -2,6 +2,7 @@ import os
 import re
 import requests
 import smtplib
+import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from flask import Flask, request, jsonify, render_template
@@ -437,8 +438,7 @@ def report_data_json():
 @app.route("/submit", methods=["POST"])
 def submit():
     """
-    Main endpoint called when someone submits the Netlify form.
-    Receives email + property URL, generates report, emails it back.
+    Main endpoint — responds immediately, processes report in background thread.
     """
     data = request.get_json(silent=True) or request.form
 
@@ -454,31 +454,39 @@ def submit():
     if not to_email:
         return jsonify({"error": "Email address required"}), 400
 
-    if not postcode and property_url:
-        postcode = extract_postcode_from_url(property_url)
+    # Respond immediately — process in background
+    def process():
+        pc = postcode
+        if not pc and property_url:
+            pc = extract_postcode_from_url(property_url)
 
-    if not postcode:
-        # No postcode — send a holding email and flag for manual follow-up
-        send_holding_email(to_email, property_url)
-        return jsonify({"status": "holding email sent"}), 200
+        if not pc:
+            send_holding_email(to_email, property_url)
+            return
 
-    report = build_report_data(
-        property_url=property_url,
-        asking_price=asking_price,
-        bedrooms=bedrooms,
-        property_type=property_type,
-        postcode=postcode,
-        floor_area_sqm=floor_area_sqm,
-        address=address,
-    )
+        try:
+            report = build_report_data(
+                property_url=property_url,
+                asking_price=asking_price,
+                bedrooms=bedrooms,
+                property_type=property_type,
+                postcode=pc,
+                floor_area_sqm=floor_area_sqm,
+                address=address,
+            )
+            with app.app_context():
+                report_html = render_template("report_free.html", **report)
+            send_report_email(to_email, report_html, report["postcode"], report["verdict"])
+            notify_owner(to_email, property_url, report["postcode"], report["verdict"])
+        except Exception as e:
+            print(f"Background processing error: {e}")
+            send_holding_email(to_email, property_url)
 
-    report_html = render_template("report_free.html", **report)
-    sent = send_report_email(to_email, report_html, report["postcode"], report["verdict"])
+    thread = threading.Thread(target=process)
+    thread.daemon = True
+    thread.start()
 
-    # Also notify houseoffer inbox
-    notify_owner(to_email, property_url, report["postcode"], report["verdict"])
-
-    return jsonify({"status": "sent" if sent else "email_failed", "postcode": report["postcode"]})
+    return jsonify({"status": "sent"})
 
 
 def send_holding_email(to_email, property_url):
