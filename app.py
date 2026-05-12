@@ -439,7 +439,7 @@ def report_data_json():
 @app.route("/submit", methods=["POST"])
 def submit():
     """
-    Main endpoint — responds immediately, processes report in background thread.
+    Main endpoint — generates report and emails it.
     """
     data = request.get_json(silent=True) or request.form
 
@@ -455,39 +455,31 @@ def submit():
     if not to_email:
         return jsonify({"error": "Email address required"}), 400
 
-    # Respond immediately — process in background
-    def process():
-        pc = postcode
-        if not pc and property_url:
-            pc = extract_postcode_from_url(property_url)
+    if not postcode and property_url:
+        postcode = extract_postcode_from_url(property_url)
 
-        if not pc:
-            send_holding_email(to_email, property_url)
-            return
+    if not postcode:
+        send_holding_email(to_email, property_url)
+        return jsonify({"status": "sent"})
 
-        try:
-            report = build_report_data(
-                property_url=property_url,
-                asking_price=asking_price,
-                bedrooms=bedrooms,
-                property_type=property_type,
-                postcode=pc,
-                floor_area_sqm=floor_area_sqm,
-                address=address,
-            )
-            with app.app_context():
-                report_html = render_template("report_free.html", **report)
-            send_report_email(to_email, report_html, report["postcode"], report["verdict"])
-            notify_owner(to_email, property_url, report["postcode"], report["verdict"])
-        except Exception as e:
-            print(f"Background processing error: {e}")
-            send_holding_email(to_email, property_url)
-
-    thread = threading.Thread(target=process)
-    thread.daemon = True
-    thread.start()
-
-    return jsonify({"status": "sent"})
+    try:
+        report = build_report_data(
+            property_url=property_url,
+            asking_price=asking_price,
+            bedrooms=bedrooms,
+            property_type=property_type,
+            postcode=postcode,
+            floor_area_sqm=floor_area_sqm,
+            address=address,
+        )
+        report_html = render_template("report_free.html", **report)
+        send_report_email(to_email, report_html, report["postcode"], report["verdict"])
+        notify_owner(to_email, property_url, report["postcode"], report["verdict"])
+        return jsonify({"status": "sent", "postcode": report["postcode"]})
+    except Exception as e:
+        print(f"Submit error: {e}")
+        send_holding_email(to_email, property_url)
+        return jsonify({"status": "sent"})
 
 
 def send_holding_email(to_email, property_url):
