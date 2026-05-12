@@ -15,7 +15,7 @@ CORS(app, origins=["https://houseoffer.netlify.app", "https://offerright.co.uk",
 PROPERTYDATA_API_KEY = os.environ.get("PROPERTYDATA_API_KEY")
 EPC_API_KEY = os.environ.get("EPC_API_KEY")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS")
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 MIN_COMPARABLES = 3
 
 # ── POSTCODE UTILITIES ─────────────────────────────────────────────────────────
@@ -315,34 +315,35 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
 # ── EMAIL ──────────────────────────────────────────────────────────────────────
 
 def send_report_email(to_email, report_html, postcode, verdict):
-    """Send the free report as an HTML email."""
+    """Send the free report as an HTML email via Resend."""
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"Your free HouseOffer report — {postcode}"
-        msg["From"] = f"HouseOffer <{EMAIL_ADDRESS}>"
-        msg["To"] = to_email
-
-        # Plain text fallback
         plain = f"""Hi,
 
 Here is your free HouseOffer property report for {postcode}.
 
 Our verdict: {verdict.upper()}
 
-View the full report below, or reply to this email if you have any questions.
-
 To unlock your recommended offer price, walk-away price, and negotiation script, visit:
 https://houseoffer.netlify.app/#pricing
 
 The HouseOffer team
 """
-        msg.attach(MIMEText(plain, "plain"))
-        msg.attach(MIMEText(report_html, "html"))
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-            server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
-        return True
+        r = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": f"HouseOffer <{EMAIL_ADDRESS}>",
+                "to": [to_email],
+                "subject": f"Your free HouseOffer report — {postcode}",
+                "html": report_html,
+                "text": plain
+            }
+        )
+        print(f"Resend response: {r.status_code} {r.text}")
+        return r.status_code == 200
     except Exception as e:
         print(f"Email error: {e}")
         return False
@@ -492,11 +493,17 @@ def submit():
 def send_holding_email(to_email, property_url):
     """Send when we can't extract a postcode — asks user to reply with details."""
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Your HouseOffer report — we need one more detail"
-        msg["From"] = f"HouseOffer <{EMAIL_ADDRESS}>"
-        msg["To"] = to_email
-        plain = f"""Hi,
+        requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": f"HouseOffer <{EMAIL_ADDRESS}>",
+                "to": [to_email],
+                "subject": "Your HouseOffer report — we need one more detail",
+                "text": f"""Hi,
 
 Thanks for submitting your property for analysis.
 
@@ -511,28 +518,29 @@ Could you reply to this email with:
 
 We'll have your free report back to you within a few hours.
 
-The HouseOffer team
-"""
-        msg.attach(MIMEText(plain, "plain"))
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-            server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
+The HouseOffer team"""
+            }
+        )
     except Exception as e:
         print(f"Holding email error: {e}")
 
 
 def notify_owner(to_email, property_url, postcode, verdict):
-    """Notify the houseoffer inbox of each new submission."""
+    """Notify the houseoffer inbox of each new submission via Resend."""
     try:
-        msg = MIMEMultipart()
-        msg["Subject"] = f"New submission: {postcode} — {verdict}"
-        msg["From"] = EMAIL_ADDRESS
-        msg["To"] = EMAIL_ADDRESS
-        body = f"New report request\n\nUser: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}"
-        msg.attach(MIMEText(body, "plain"))
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-            server.sendmail(EMAIL_ADDRESS, EMAIL_ADDRESS, msg.as_string())
+        requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": f"HouseOffer <{EMAIL_ADDRESS}>",
+                "to": [EMAIL_ADDRESS],
+                "subject": f"New submission: {postcode} — {verdict}",
+                "text": f"New report request\n\nUser: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}"
+            }
+        )
     except Exception as e:
         print(f"Owner notify error: {e}")
 
