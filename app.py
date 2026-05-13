@@ -455,6 +455,22 @@ def debug_sold():
         "sample_matching": district_matching[:3]
     })
 
+
+@app.route("/debug-report")
+def debug_report():
+    """Debug — runs full build_report_data and shows raw output."""
+    postcode = request.args.get("postcode", "WD4 9EW")
+    asking_price = int(request.args.get("price", "675000"))
+    property_type = request.args.get("type", "semi-detached")
+    report = build_report_data(
+        property_url="",
+        asking_price=asking_price,
+        bedrooms="3",
+        property_type=property_type,
+        postcode=postcode,
+    )
+    return jsonify(report)
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
