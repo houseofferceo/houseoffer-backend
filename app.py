@@ -16,7 +16,7 @@ PROPERTYDATA_API_KEY = os.environ.get("PROPERTYDATA_API_KEY")
 EPC_API_KEY = os.environ.get("EPC_API_KEY")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-MIN_COMPARABLES = 3
+MIN_COMPARABLES = 10
 
 # ── POSTCODE UTILITIES ─────────────────────────────────────────────────────────
 
