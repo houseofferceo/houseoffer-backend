@@ -419,6 +419,42 @@ The HouseOffer team
 
 # ── ROUTES ─────────────────────────────────────────────────────────────────────
 
+
+@app.route("/debug-sold")
+def debug_sold():
+    """Debug endpoint — shows raw sold price data for a postcode."""
+    postcode = request.args.get("postcode", "WD4 9EW")
+    property_type = request.args.get("type", "semi-detached")
+    
+    formatted = format_postcode(postcode)
+    district = district_postcode(postcode)
+    type_keys = normalise_type_sold(property_type)
+    
+    full_data = fetch_sold_prices(formatted)
+    district_data = fetch_sold_prices(district)
+    
+    full_raw = full_data.get("data", {}).get("raw_data", []) if full_data else []
+    district_raw = district_data.get("data", {}).get("raw_data", []) if district_data else []
+    
+    full_matching = [t for t in full_raw if t.get("type") in type_keys]
+    district_matching = [t for t in district_raw if t.get("type") in type_keys]
+    
+    all_types_full = list(set(t.get("type") for t in full_raw))
+    all_types_district = list(set(t.get("type") for t in district_raw))
+    
+    return jsonify({
+        "postcode": formatted,
+        "district": district,
+        "type_keys_looking_for": type_keys,
+        "full_postcode_total_records": len(full_raw),
+        "full_postcode_matching": len(full_matching),
+        "full_postcode_types_available": all_types_full,
+        "district_total_records": len(district_raw),
+        "district_matching": len(district_matching),
+        "district_types_available": all_types_district,
+        "sample_matching": district_matching[:3]
+    })
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
