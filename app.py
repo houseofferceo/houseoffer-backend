@@ -20,14 +20,82 @@ MIN_COMPARABLES = 3
 
 # ── POSTCODE UTILITIES ─────────────────────────────────────────────────────────
 
+def scrape_rightmove(url):
+    """
+    Scrape a Rightmove or Zoopla listing page and extract:
+    postcode, asking_price, bedrooms, property_type
+    Rightmove embeds a JSON blob in the page — we extract from that.
+    """
+    result = {"postcode": None, "asking_price": 0, "bedrooms": 3, "property_type": "semi-detached"}
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.5",
+        }
+        resp = requests.get(url, headers=headers, timeout=15)
+        html = resp.text
+
+        # Try to extract JSON data blob from Rightmove
+        import json
+        json_match = re.search(r'window\.PAGE_MODEL\s*=\s*(\{.*?\});', html, re.DOTALL)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(1))
+                prop = data.get("propertyData", {})
+                # Price
+                price = prop.get("prices", {}).get("primaryPrice", "")
+                if price:
+                    result["asking_price"] = int(re.sub(r"[^0-9]", "", str(price)))
+                # Bedrooms
+                beds = prop.get("bedrooms")
+                if beds:
+                    result["bedrooms"] = int(beds)
+                # Property type
+                ptype = prop.get("propertySubType", "") or prop.get("propertyType", "")
+                ptype = ptype.lower()
+                if "semi" in ptype:
+                    result["property_type"] = "semi-detached"
+                elif "detached" in ptype:
+                    result["property_type"] = "detached"
+                elif "terraced" in ptype or "terrace" in ptype:
+                    result["property_type"] = "terraced"
+                elif "flat" in ptype or "apartment" in ptype:
+                    result["property_type"] = "flat"
+                # Address/postcode
+                addr = prop.get("address", {})
+                pc = addr.get("outcode", "") + addr.get("incode", "")
+                if not pc:
+                    pc = addr.get("displayAddress", "")
+            except Exception as e:
+                print(f"JSON parse error: {e}")
+
+        # Fallback: regex for postcode anywhere in the page
+        pc_pattern = r'([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})'
+        pc_match = re.search(pc_pattern, html.upper())
+        if pc_match and not result["postcode"]:
+            result["postcode"] = pc_match.group(1).replace(" ", "").upper()
+
+        # Fallback: price from meta tags
+        if not result["asking_price"]:
+            price_match = re.search(r'"price"[:\s]+["\£]?(\d[\d,]+)', html)
+            if price_match:
+                result["asking_price"] = int(price_match.group(1).replace(",", ""))
+
+    except Exception as e:
+        print(f"Scrape error: {e}")
+
+    return result
+
+
 def extract_postcode_from_url(url):
     pc_pattern = r'([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})'
     match = re.search(pc_pattern, url.upper())
     if match:
         return match.group(1).replace(" ", "").upper()
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; HouseOffer/1.0)"}
-        resp = requests.get(url, headers=headers, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"}
+        resp = requests.get(url, headers=headers, timeout=15)
         match = re.search(pc_pattern, resp.text.upper())
         if match:
             return match.group(1).replace(" ", "").upper()
@@ -455,8 +523,17 @@ def submit():
     if not to_email:
         return jsonify({"error": "Email address required"}), 400
 
-    if not postcode and property_url:
-        postcode = extract_postcode_from_url(property_url)
+    # If no postcode/price supplied, scrape from the listing URL
+    if property_url and (not postcode or not asking_price):
+        scraped = scrape_rightmove(property_url)
+        if not postcode:
+            postcode = scraped.get("postcode") or ""
+        if not asking_price:
+            asking_price = scraped.get("asking_price") or 0
+        if bedrooms == "3" and scraped.get("bedrooms"):
+            bedrooms = scraped.get("bedrooms")
+        if property_type == "semi-detached" and scraped.get("property_type"):
+            property_type = scraped.get("property_type")
 
     if not postcode:
         send_holding_email(to_email, property_url)
