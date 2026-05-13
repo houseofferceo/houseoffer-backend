@@ -519,6 +519,7 @@ def submit():
     postcode       = data.get("postcode", "")
     address        = data.get("address", "")
     floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None
+    buyer_estimate = data.get("buyer_estimate", "")
 
     if not to_email:
         return jsonify({"error": "Email address required"}), 400
