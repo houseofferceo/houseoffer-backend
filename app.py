@@ -344,15 +344,6 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             else:
                 psqm_verdict = "fair"
 
-    # 4. HPI-adjusted last sale price of the subject property
-    region = postcode_to_region(postcode)
-    last_sale = find_subject_property_last_sale(comparables, postcode, address)
-    hpi_adjustment = None
-    if last_sale:
-        hpi_adjustment = apply_hpi_adjustment(
-            last_sale["price"], last_sale["date"], region, property_type
-        )
-
     # Overall verdict — sold price comparison takes priority as it's Land Registry
     verdict = sold_verdict or psqm_verdict or "unknown"
     diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
@@ -372,8 +363,6 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
         "sold_verdict": sold_verdict,
-        # HPI-adjusted last sale
-        "hpi_adjustment": hpi_adjustment,
         # £/sqm comparison
         "asking_psqm": asking_psqm,
         "local_avg_psqm": local_avg_psqm,
