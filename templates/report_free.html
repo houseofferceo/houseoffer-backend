@@ -219,6 +219,31 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
+  <!-- DATA POINT 3: HPI-ADJUSTED LAST SALE -->
+  {% if hpi_adjustment %}
+  <div class="section-title">📈 Last sold price — HPI adjusted to today</div>
+  <div class="data-row">
+    <div class="data-card">
+      <div class="data-card-label">Last sold ({{ hpi_adjustment.sale_date[:7] }})</div>
+      <div class="data-card-value">{{ hpi_adjustment.sale_price_formatted }}</div>
+      <div class="data-card-sub">what this property last sold for</div>
+    </div>
+    <div class="data-card">
+      <div class="data-card-label">Estimated today's value</div>
+      <div class="data-card-value">{{ hpi_adjustment.adjusted_price_formatted }}</div>
+      <div class="data-card-sub">
+        adjusted for <strong>{{ hpi_adjustment.growth_pct }}% HPI growth</strong> since sale
+        {% set hpi_vs_asking = ((asking_price - hpi_adjustment.adjusted_price) / hpi_adjustment.adjusted_price * 100)|round(1) %}
+        <br>
+        <span style="color: {% if hpi_vs_asking > 5 %}var(--red){% elif hpi_vs_asking < -5 %}var(--teal){% else %}var(--amber){% endif %}; font-weight:600;">
+          Asking price is {{ hpi_vs_asking }}% {% if hpi_vs_asking > 0 %}above{% else %}below{% endif %} this estimate
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="source-note">📊 HPI adjustment uses ONS/Land Registry House Price Index for this region and property type</div>
+  {% endif %}
+
   <!-- DAYS ON MARKET -->
   {% if days_on_market and local_avg_dom %}
   <div class="dom-card">
