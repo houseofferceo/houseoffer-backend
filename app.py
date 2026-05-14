@@ -1,27 +1,16 @@
 import os
 import re
 import json
-import requests
+import csv
+import io
 import threading
+import requests
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from datetime import datetime
 
 app = Flask(__name__)
 CORS(app, origins=["https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
-
-import threading
-def _prewarm_hpi():
-    """Pre-load HPI CSV in background on startup."""
-    try:
-        import time
-        time.sleep(5)  # Wait for server to start
-        load_hpi_csv(blocking=True)
-        print("HPI CSV pre-warmed successfully")
-    except Exception as e:
-        print(f"HPI pre-warm failed: {e}")
-
-threading.Thread(target=_prewarm_hpi, daemon=True).start()
 
 PROPERTYDATA_API_KEY = os.environ.get("PROPERTYDATA_API_KEY")
 EPC_API_KEY = os.environ.get("EPC_API_KEY")
@@ -31,13 +20,40 @@ MIN_COMPARABLES = 10
 
 # ── POSTCODE UTILITIES ─────────────────────────────────────────────────────────
 
+def format_postcode(raw):
+    raw = raw.strip().upper().replace(" ", "")
+    return raw[:-3] + " " + raw[-3:]
+
+def district_postcode(postcode):
+    return postcode.strip().upper().replace(" ", "")[:-3]
+
+def normalise_type_sold(property_type):
+    mapping = {
+        "semi-detached": ["semi-detached_house", "semi_detached_house", "Semi-Detached"],
+        "detached":      ["detached_house", "Detached"],
+        "terraced":      ["terraced_house", "Terraced"],
+        "flat":          ["flat", "Flat"],
+    }
+    return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
+
+def normalise_type_listings(property_type):
+    mapping = {
+        "semi-detached": ["semi-detached_house", "semi_detached_house"],
+        "detached":      ["detached_house"],
+        "terraced":      ["terraced_house"],
+        "flat":          ["flat"],
+    }
+    return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
+
+def price_per_sqft_to_sqm(price_per_sqft):
+    return price_per_sqft * 10.764
+
 def scrape_rightmove(url):
     result = {"postcode": None, "asking_price": 0, "bedrooms": 3, "property_type": "semi-detached"}
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-GB,en;q=0.5",
         }
         resp = requests.get(url, headers=headers, timeout=15)
         html = resp.text
@@ -52,8 +68,7 @@ def scrape_rightmove(url):
                 beds = prop.get("bedrooms")
                 if beds:
                     result["bedrooms"] = int(beds)
-                ptype = prop.get("propertySubType", "") or prop.get("propertyType", "")
-                ptype = ptype.lower()
+                ptype = (prop.get("propertySubType", "") or prop.get("propertyType", "")).lower()
                 if "semi" in ptype:
                     result["property_type"] = "semi-detached"
                 elif "detached" in ptype:
@@ -72,82 +87,36 @@ def scrape_rightmove(url):
         pc_match = re.search(pc_pattern, html.upper())
         if pc_match and not result["postcode"]:
             result["postcode"] = pc_match.group(1).replace(" ", "").upper()
-        if not result["asking_price"]:
-            price_match = re.search(r'"price"[:\s]+["\£]?(\d[\d,]+)', html)
-            if price_match:
-                result["asking_price"] = int(price_match.group(1).replace(",", ""))
     except Exception as e:
         print(f"Scrape error: {e}")
     return result
-
 
 def extract_postcode_from_url(url):
     pc_pattern = r'([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})'
     match = re.search(pc_pattern, url.upper())
     if match:
         return match.group(1).replace(" ", "").upper()
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"}
-        resp = requests.get(url, headers=headers, timeout=15)
-        match = re.search(pc_pattern, resp.text.upper())
-        if match:
-            return match.group(1).replace(" ", "").upper()
-    except Exception:
-        pass
     return None
 
-
-def format_postcode(raw):
-    raw = raw.strip().upper().replace(" ", "")
-    return raw[:-3] + " " + raw[-3:]
-
-
-def district_postcode(postcode):
-    return postcode.strip().upper().replace(" ", "")[:-3]
-
-
-def normalise_type_sold(property_type):
-    mapping = {
-        "semi-detached": ["semi-detached_house", "semi_detached_house", "Semi-Detached"],
-        "detached":      ["detached_house", "Detached"],
-        "terraced":      ["terraced_house", "Terraced"],
-        "flat":          ["flat", "Flat"],
-    }
-    return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
-
-
-def normalise_type_listings(property_type):
-    mapping = {
-        "semi-detached": ["semi-detached_house", "semi_detached_house"],
-        "detached":      ["detached_house"],
-        "terraced":      ["terraced_house"],
-        "flat":          ["flat"],
-    }
-    return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
-
-
-def price_per_sqft_to_sqm(price_per_sqft):
-    return price_per_sqft * 10.764
-
-
-# ── EPC FLOOR AREA ─────────────────────────────────────────────────────────────
+# ── EPC ────────────────────────────────────────────────────────────────────────
 
 def get_floor_area_from_epc(postcode, address=None):
     try:
         formatted = format_postcode(postcode)
-        url = "https://epc.opendatacommunities.org/api/v1/domestic/search"
-        params = {"postcode": formatted, "size": 10}
-        headers = {"Accept": "application/json", "Authorization": f"Bearer {EPC_API_KEY}"}
-        r = requests.get(url, params=params, headers=headers, timeout=10)
+        r = requests.get(
+            "https://epc.opendatacommunities.org/api/v1/domestic/search",
+            params={"postcode": formatted, "size": 10},
+            headers={"Accept": "application/json", "Authorization": f"Bearer {EPC_API_KEY}"},
+            timeout=10
+        )
         if r.status_code != 200:
             return None
         rows = r.json().get("rows", [])
         if not rows:
             return None
         if address:
-            address_upper = address.upper()
             for row in rows:
-                if any(part in row.get("address", "").upper() for part in address_upper.split()[:2]):
+                if any(part in row.get("address", "").upper() for part in address.upper().split()[:2]):
                     area = row.get("total-floor-area")
                     if area:
                         return float(area)
@@ -155,7 +124,6 @@ def get_floor_area_from_epc(postcode, address=None):
         return float(area) if area else None
     except Exception:
         return None
-
 
 # ── SOLD PRICE COMPARABLES ─────────────────────────────────────────────────────
 
@@ -172,7 +140,6 @@ def fetch_sold_prices(postcode):
         pass
     return None
 
-
 def fetch_listings_psqf(postcode):
     try:
         r = requests.get(
@@ -185,7 +152,6 @@ def fetch_listings_psqf(postcode):
     except Exception:
         pass
     return None
-
 
 def get_sold_comparables(postcode, property_type):
     type_keys = normalise_type_sold(property_type)
@@ -202,22 +168,19 @@ def get_sold_comparables(postcode, property_type):
         postcode_used = district
     return comparables, postcode_used, broadened
 
-
 def _filter_sold(data, type_keys):
     if not data:
         return []
     try:
         transactions = data.get("data", {}).get("raw_data", [])
-        matching = [
+        return [
             t for t in transactions
             if t.get("type") in type_keys
             and t.get("price")
             and t.get("price") < 2_000_000
         ]
-        return matching
     except Exception:
         return []
-
 
 def avg_sold_price(comparables):
     if not comparables:
@@ -231,20 +194,15 @@ def avg_sold_price(comparables):
         return round(sum(trimmed) / len(trimmed)) if trimmed else round(sum(prices) / n)
     return round(sum(prices) / n)
 
-
-# ── £/SQM FROM LISTINGS ────────────────────────────────────────────────────────
-
 def get_local_avg_psqm(postcode, property_type):
     type_keys = normalise_type_listings(property_type)
     formatted = format_postcode(postcode)
     data = fetch_listings_psqf(formatted)
     avg = _calc_avg_psqm(data, type_keys)
     if avg is None:
-        district = district_postcode(postcode)
-        data = fetch_listings_psqf(district)
+        data = fetch_listings_psqf(district_postcode(postcode))
         avg = _calc_avg_psqm(data, type_keys)
     return avg
-
 
 def _calc_avg_psqm(data, type_keys):
     if not data:
@@ -259,7 +217,6 @@ def _calc_avg_psqm(data, type_keys):
     except Exception:
         return None
 
-
 # ── HPI ADJUSTMENT ─────────────────────────────────────────────────────────────
 
 POSTCODE_TO_REGION = {
@@ -270,8 +227,9 @@ POSTCODE_TO_REGION = {
     "IP": "east-of-england", "LU": "east-of-england", "MK": "east-of-england",
     "NR": "east-of-england", "PE": "east-of-england", "SG": "east-of-england",
     "SS": "east-of-england", "WD": "east-of-england",
-    "B": "west-midlands", "CV": "west-midlands", "DY": "west-midlands",
-    "ST": "west-midlands", "TF": "west-midlands", "WS": "west-midlands", "WV": "west-midlands",
+    "B": "west-midlands-region", "CV": "west-midlands-region", "DY": "west-midlands-region",
+    "ST": "west-midlands-region", "TF": "west-midlands-region",
+    "WS": "west-midlands-region", "WV": "west-midlands-region",
     "DE": "east-midlands", "LE": "east-midlands", "LN": "east-midlands",
     "NG": "east-midlands", "NN": "east-midlands",
     "BR": "south-east", "BN": "south-east", "CT": "south-east", "DA": "south-east",
@@ -301,13 +259,51 @@ POSTCODE_TO_REGION = {
     "PA": "scotland", "PH": "scotland", "TD": "scotland",
 }
 
-PROPERTY_TYPE_TO_HPI = {
-    "semi-detached": "semiDetachedIndex",
-    "detached": "detachedIndex",
-    "terraced": "terracedIndex",
-    "flat": "flatIndex",
+PROPERTY_TYPE_CSV_COL = {
+    "semi-detached": "SemiDetachedIndex",
+    "detached": "DetachedIndex",
+    "terraced": "TerracedIndex",
+    "flat": "FlatIndex",
 }
 
+_hpi_cache = {}
+_hpi_loaded = False
+
+def _load_hpi_csv_background():
+    """Download HPI CSV in background thread on startup."""
+    global _hpi_cache, _hpi_loaded
+    import time
+    time.sleep(3)
+    try:
+        url = "https://publicdata.landregistry.gov.uk/market-trend-data/house-price-index-data/UK-HPI-full-file-2026-01.csv"
+        r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            print(f"HPI CSV failed: {r.status_code}")
+            return
+        reader = csv.DictReader(io.StringIO(r.text))
+        cache = {}
+        for row in reader:
+            region = row.get("RegionName", "").strip().lower().replace(" ", "-")
+            date_raw = row.get("Date", "").strip()
+            if "/" in date_raw:
+                parts = date_raw.split("/")
+                if len(parts) == 3:
+                    month = f"{parts[2]}-{parts[1].zfill(2)}"
+                else:
+                    continue
+            elif len(date_raw) == 10:
+                month = date_raw[:7]
+            else:
+                continue
+            cache[f"{region}|{month}"] = row
+        _hpi_cache = cache
+        _hpi_loaded = True
+        print(f"HPI CSV loaded: {len(_hpi_cache)} records")
+    except Exception as e:
+        print(f"HPI CSV load error: {e}")
+
+# Start background download
+threading.Thread(target=_load_hpi_csv_background, daemon=True).start()
 
 def postcode_to_region(postcode):
     clean = postcode.strip().upper().replace(" ", "")
@@ -317,127 +313,50 @@ def postcode_to_region(postcode):
             return POSTCODE_TO_REGION[prefix]
     return "england"
 
-
-# Cache HPI data to avoid repeated downloads
-_hpi_cache = {}
-
-def load_hpi_csv(blocking=False):
-    """Download and parse the UK HPI full CSV file. Cached in memory.
-    Non-blocking by default — returns empty dict if not yet loaded.
-    """
-    global _hpi_cache
-    if _hpi_cache:
-        return _hpi_cache
-    if not blocking:
-        return {}  # Not loaded yet — caller should handle gracefully
+def get_hpi_index(region, year_month, property_type):
+    if not _hpi_loaded:
+        return None
+    key = f"{region}|{year_month}"
+    row = _hpi_cache.get(key)
+    if not row:
+        return None
+    col = PROPERTY_TYPE_CSV_COL.get(property_type, "Index")
+    val = row.get(col) or row.get("Index")
     try:
-        import csv, io
-        url = "https://publicdata.landregistry.gov.uk/market-trend-data/house-price-index-data/UK-HPI-full-file-2026-01.csv"
-        r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200:
-            print(f"HPI CSV download failed: {r.status_code}")
-            return {}
-        reader = csv.DictReader(io.StringIO(r.text))
-        for row in reader:
-            region = row.get("RegionName", "").strip().lower().replace(" ", "-")
-            date_raw = row.get("Date", "").strip()
-            if "/" in date_raw:
-                parts = date_raw.split("/")
-                if len(parts) == 3:
-                    month = f"{parts[2]}-{parts[1].zfill(2)}"
-                else:
-                    month = date_raw
-            elif len(date_raw) == 10:
-                month = date_raw[:7]
-            else:
-                month = date_raw
-            key = f"{region}|{month}"
-            _hpi_cache[key] = row
-        print(f"HPI CSV loaded: {len(_hpi_cache)} records")
-        return _hpi_cache
-    except Exception as e:
-        print(f"HPI CSV load error: {e}")
-        return {}
+        return float(val) if val else None
+    except Exception:
+        return None
 
-
-REGION_NAME_MAP = {
-    "east-of-england": "east of england",
-    "london": "london",
-    "south-east": "south east",
-    "south-west": "south west",
-    "west-midlands": "west midlands",
-    "east-midlands": "east midlands",
-    "yorkshire-and-the-humber": "yorkshire and the humber",
-    "north-west": "north west",
-    "north-east": "north east",
-    "wales": "wales",
-    "scotland": "scotland",
-    "england": "england",
-}
-
-PROPERTY_TYPE_CSV = {
-    "semi-detached": "SemiDetachedIndex",
-    "detached": "DetachedIndex",
-    "terraced": "TerracedIndex",
-    "flat": "FlatIndex",
-}
-
-
-def fetch_hpi_for_month(region, year_month, property_type):
-    """Get HPI index for a region and month from CSV data."""
-    try:
-        data = load_hpi_csv()
-        region_name = REGION_NAME_MAP.get(region, region.replace("-", " "))
-        key = f"{region_name}|{year_month}"
-        row = data.get(key)
-        if row:
-            col = PROPERTY_TYPE_CSV.get(property_type, "Index")
-            val = row.get(col) or row.get("Index")
-            return float(val) if val else None
-    except Exception as e:
-        print(f"HPI lookup error ({region} {year_month}): {e}")
-    return None
-
-
-def fetch_current_hpi(region, property_type):
-    """Get the most recent HPI index for a region from CSV data."""
-    try:
-        data = load_hpi_csv()
-        region_name = REGION_NAME_MAP.get(region, region.replace("-", " "))
-        col = PROPERTY_TYPE_CSV.get(property_type, "Index")
-        # Find all rows for this region
-        region_rows = {k: v for k, v in data.items() if k.startswith(f"{region_name}|")}
-        if not region_rows:
-            return None, None
-        # Get most recent month
-        latest_key = sorted(region_rows.keys())[-1]
-        latest_row = region_rows[latest_key]
-        val = latest_row.get(col) or latest_row.get("Index")
-        month = latest_key.split("|")[1]
-        return (float(val) if val else None), month
-    except Exception as e:
-        print(f"Current HPI lookup error: {e}")
+def get_current_hpi(region, property_type):
+    if not _hpi_loaded:
+        return None, None
+    col = PROPERTY_TYPE_CSV_COL.get(property_type, "Index")
+    region_keys = sorted([k for k in _hpi_cache if k.startswith(f"{region}|")], reverse=True)
+    for key in region_keys:
+        row = _hpi_cache[key]
+        val = row.get(col) or row.get("Index")
+        try:
+            if val:
+                month = key.split("|")[1]
+                return float(val), month
+        except Exception:
+            continue
     return None, None
 
-
 def find_last_sale(comparables, postcode):
-    """Find the most recent sale in comparables that matches this postcode."""
     if not comparables:
         return None
     formatted = format_postcode(postcode).upper()
-    # Filter to sales in same postcode only
     postcode_sales = [c for c in comparables if formatted in c.get("address", "").upper()]
     if postcode_sales:
         return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
     return None
 
-
 def apply_hpi_adjustment(last_sale_price, sale_date_str, region, property_type):
-    """Adjust a historical price to today's value using regional HPI."""
     try:
         sale_month = sale_date_str[:7]
-        sale_hpi = fetch_hpi_for_month(region, sale_month, property_type)
-        current_hpi, current_month = fetch_current_hpi(region, property_type)
+        sale_hpi = get_hpi_index(region, sale_month, property_type)
+        current_hpi, current_month = get_current_hpi(region, property_type)
         if sale_hpi and current_hpi and sale_hpi > 0:
             adjusted = round(last_sale_price * (current_hpi / sale_hpi))
             growth_pct = round(((current_hpi - sale_hpi) / sale_hpi) * 100, 1)
@@ -447,23 +366,17 @@ def apply_hpi_adjustment(last_sale_price, sale_date_str, region, property_type):
                 "sale_price": last_sale_price,
                 "sale_price_formatted": f"£{last_sale_price:,}",
                 "sale_date": sale_date_str,
-                "sale_month": sale_month,
                 "growth_pct": growth_pct,
-                "current_month": current_month,
             }
     except Exception as e:
         print(f"HPI adjustment error: {e}")
     return None
 
-
 # ── REPORT BUILDER ─────────────────────────────────────────────────────────────
 
 def build_report_data(property_url, asking_price, bedrooms, property_type,
                       postcode, floor_area_sqm=None, address=None):
-
     formatted = format_postcode(postcode)
-
-    # 1. Land Registry sold price comparables
     comparables, postcode_used, broadened = get_sold_comparables(postcode, property_type)
     local_avg_sold = avg_sold_price(comparables)
 
@@ -471,35 +384,19 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     sold_verdict = None
     if local_avg_sold:
         sold_diff_pct = round(((asking_price - local_avg_sold) / local_avg_sold) * 100, 1)
-        if sold_diff_pct > 8:
-            sold_verdict = "overpriced"
-        elif sold_diff_pct < -5:
-            sold_verdict = "value"
-        else:
-            sold_verdict = "fair"
+        sold_verdict = "overpriced" if sold_diff_pct > 8 else ("value" if sold_diff_pct < -5 else "fair")
 
-    # 2. Floor area
     if not floor_area_sqm and EPC_API_KEY:
         floor_area_sqm = get_floor_area_from_epc(postcode, address)
 
-    # 3. £/sqm comparison
-    asking_psqm = None
-    local_avg_psqm = None
-    psqm_diff_pct = None
-    psqm_verdict = None
+    asking_psqm = local_avg_psqm = psqm_diff_pct = psqm_verdict = None
     if floor_area_sqm and floor_area_sqm > 0:
         asking_psqm = round(asking_price / floor_area_sqm)
         local_avg_psqm = get_local_avg_psqm(postcode, property_type)
         if local_avg_psqm:
             psqm_diff_pct = round(((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100, 1)
-            if psqm_diff_pct > 8:
-                psqm_verdict = "overpriced"
-            elif psqm_diff_pct < -5:
-                psqm_verdict = "value"
-            else:
-                psqm_verdict = "fair"
+            psqm_verdict = "overpriced" if psqm_diff_pct > 8 else ("value" if psqm_diff_pct < -5 else "fair")
 
-    # 4. HPI-adjusted last sale
     hpi_adjustment = None
     try:
         region = postcode_to_region(postcode)
@@ -542,12 +439,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "property_url": property_url,
     }
 
-
 # ── EMAIL ──────────────────────────────────────────────────────────────────────
 
 def send_report_email(to_email, report_html, postcode, verdict):
     try:
-        plain = f"Hi,\n\nHere is your free HouseOffer report for {postcode}.\n\nVerdict: {verdict.upper()}\n\nThe HouseOffer team"
         r = requests.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
@@ -556,15 +451,14 @@ def send_report_email(to_email, report_html, postcode, verdict):
                 "to": [to_email],
                 "subject": f"Your free HouseOffer report — {postcode}",
                 "html": report_html,
-                "text": plain
+                "text": f"Your free HouseOffer report for {postcode}. Verdict: {verdict.upper()}."
             }
         )
-        print(f"Resend response: {r.status_code} {r.text}")
+        print(f"Resend: {r.status_code} {r.text}")
         return r.status_code == 200
     except Exception as e:
         print(f"Email error: {e}")
         return False
-
 
 def send_holding_email(to_email, property_url):
     try:
@@ -575,12 +469,11 @@ def send_holding_email(to_email, property_url):
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
                 "to": [to_email],
                 "subject": "Your HouseOffer report — we need one more detail",
-                "text": f"Hi,\n\nThanks for submitting your property.\n\nWe weren't able to process your request automatically. Could you reply with:\n1. The property postcode\n2. The asking price\n3. Number of bedrooms\n4. Property type\n\nThe HouseOffer team"
+                "text": f"Hi,\n\nThanks for your submission. We need a couple more details to complete your report.\n\nCould you reply with:\n1. The property postcode\n2. The asking price\n3. Number of bedrooms\n4. Property type\n\nThe HouseOffer team"
             }
         )
     except Exception as e:
         print(f"Holding email error: {e}")
-
 
 def notify_owner(to_email, property_url, postcode, verdict):
     try:
@@ -591,58 +484,17 @@ def notify_owner(to_email, property_url, postcode, verdict):
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
                 "to": [EMAIL_ADDRESS],
                 "subject": f"New submission: {postcode} — {verdict}",
-                "text": f"New report request\n\nUser: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}"
+                "text": f"User: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}"
             }
         )
     except Exception as e:
         print(f"Owner notify error: {e}")
 
-
 # ── ROUTES ─────────────────────────────────────────────────────────────────────
-
-
-@app.route("/debug-hpi")
-def debug_hpi():
-    """Test HPI CSV loading from Render."""
-    region = request.args.get("region", "east-of-england")
-    month = request.args.get("month", "2021-03")
-    property_type = request.args.get("type", "semi-detached")
-    
-    data = load_hpi_csv(blocking=True)
-    current_hpi, current_month = fetch_current_hpi(region, property_type)
-    sale_hpi = fetch_hpi_for_month(region, month, property_type)
-    
-    return jsonify({
-        "csv_records_loaded": len(data),
-        "region": region,
-        "current_hpi": current_hpi,
-        "current_month": current_month,
-        "sale_month": month,
-        "sale_hpi": sale_hpi,
-        "adjustment_possible": bool(current_hpi and sale_hpi)
-    })
-
-
-@app.route("/debug-csv")
-def debug_csv():
-    """Show what region names are in the HPI CSV."""
-    data = load_hpi_csv(blocking=True)
-    regions = set(k.split("|")[0] for k in data.keys())
-    months = sorted(set(k.split("|")[1] for k in data.keys()))
-    sample_keys = list(data.keys())[:5]
-    sample_row = data.get(sample_keys[0], {}) if sample_keys else {}
-    return jsonify({
-        "total_records": len(data),
-        "unique_regions": sorted(regions),
-        "month_range": [months[0], months[-1]] if months else [],
-        "sample_key": sample_keys[0] if sample_keys else None,
-        "sample_columns": list(sample_row.keys())[:10] if sample_row else []
-    })
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
-
+    return jsonify({"status": "ok", "hpi_loaded": _hpi_loaded, "hpi_records": len(_hpi_cache)})
 
 @app.route("/debug-sold")
 def debug_sold():
@@ -655,88 +507,91 @@ def debug_sold():
     district_data = fetch_sold_prices(district)
     full_raw = full_data.get("data", {}).get("raw_data", []) if full_data else []
     district_raw = district_data.get("data", {}).get("raw_data", []) if district_data else []
-    full_matching = [t for t in full_raw if t.get("type") in type_keys]
-    district_matching = [t for t in district_raw if t.get("type") in type_keys]
     return jsonify({
         "postcode": formatted,
         "district": district,
-        "type_keys_looking_for": type_keys,
-        "full_postcode_total_records": len(full_raw),
-        "full_postcode_matching": len(full_matching),
-        "district_total_records": len(district_raw),
-        "district_matching": len(district_matching),
-        "sample_matching": district_matching[:3]
+        "type_keys": type_keys,
+        "full_matching": len([t for t in full_raw if t.get("type") in type_keys]),
+        "district_matching": len([t for t in district_raw if t.get("type") in type_keys]),
     })
-
 
 @app.route("/debug-report")
 def debug_report():
     postcode = request.args.get("postcode", "WD4 9EW")
     asking_price = int(request.args.get("price", "675000"))
     property_type = request.args.get("type", "semi-detached")
-    report = build_report_data(
-        property_url="", asking_price=asking_price, bedrooms="3",
-        property_type=property_type, postcode=postcode,
-    )
+    report = build_report_data("", asking_price, "3", property_type, postcode)
     return jsonify(report)
 
+@app.route("/debug-hpi")
+def debug_hpi():
+    region = request.args.get("region", "east-of-england")
+    month = request.args.get("month", "2021-03")
+    property_type = request.args.get("type", "semi-detached")
+    current_hpi, current_month = get_current_hpi(region, property_type)
+    sale_hpi = get_hpi_index(region, month, property_type)
+    return jsonify({
+        "hpi_loaded": _hpi_loaded,
+        "hpi_records": len(_hpi_cache),
+        "region": region,
+        "current_hpi": current_hpi,
+        "current_month": current_month,
+        "sale_month": month,
+        "sale_hpi": sale_hpi,
+        "adjustment_possible": bool(current_hpi and sale_hpi)
+    })
 
 @app.route("/report", methods=["POST"])
 def generate_report():
     data = request.get_json(silent=True) or request.form
-    property_url   = data.get("property_url", "")
-    asking_price   = int(str(data.get("asking_price", 0)).replace(",", "").replace("£", ""))
-    bedrooms       = data.get("bedrooms", "3")
-    property_type  = data.get("property_type", "semi-detached")
-    postcode       = data.get("postcode", "")
-    address        = data.get("address", "")
-    floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None
+    postcode = data.get("postcode", "")
+    property_url = data.get("property_url", "")
     if not postcode and property_url:
         postcode = extract_postcode_from_url(property_url)
     if not postcode:
         return jsonify({"error": "Could not determine postcode."}), 400
     report = build_report_data(
-        property_url=property_url, asking_price=asking_price, bedrooms=bedrooms,
-        property_type=property_type, postcode=postcode,
-        floor_area_sqm=floor_area_sqm, address=address,
+        property_url=property_url,
+        asking_price=int(str(data.get("asking_price", 0)).replace(",", "").replace("£", "")),
+        bedrooms=data.get("bedrooms", "3"),
+        property_type=data.get("property_type", "semi-detached"),
+        postcode=postcode,
+        floor_area_sqm=float(data.get("floor_area_sqm", 0) or 0) or None,
+        address=data.get("address", ""),
     )
     return render_template("report_free.html", **report)
-
 
 @app.route("/api/report-data", methods=["POST"])
 def report_data_json():
     data = request.get_json(silent=True) or request.form
-    property_url   = data.get("property_url", "")
-    asking_price   = int(str(data.get("asking_price", 0)).replace(",", "").replace("£", ""))
-    bedrooms       = data.get("bedrooms", "3")
-    property_type  = data.get("property_type", "semi-detached")
-    postcode       = data.get("postcode", "")
-    address        = data.get("address", "")
-    floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None
+    postcode = data.get("postcode", "")
+    property_url = data.get("property_url", "")
     if not postcode and property_url:
         postcode = extract_postcode_from_url(property_url)
     if not postcode:
         return jsonify({"error": "Could not determine postcode"}), 400
     report = build_report_data(
-        property_url=property_url, asking_price=asking_price, bedrooms=bedrooms,
-        property_type=property_type, postcode=postcode,
-        floor_area_sqm=floor_area_sqm, address=address,
+        property_url=property_url,
+        asking_price=int(str(data.get("asking_price", 0)).replace(",", "").replace("£", "")),
+        bedrooms=data.get("bedrooms", "3"),
+        property_type=data.get("property_type", "semi-detached"),
+        postcode=postcode,
+        floor_area_sqm=float(data.get("floor_area_sqm", 0) or 0) or None,
+        address=data.get("address", ""),
     )
     return jsonify(report)
-
 
 @app.route("/submit", methods=["POST"])
 def submit():
     data = request.get_json(silent=True) or request.form
-    to_email       = data.get("email", "")
-    property_url   = data.get("property-url", "") or data.get("property_url", "")
-    asking_price   = int(str(data.get("asking_price", 0) or 0).replace(",", "").replace("£", "")) or 0
-    bedrooms       = data.get("bedrooms", "3")
-    property_type  = data.get("property_type", "semi-detached")
-    postcode       = data.get("postcode", "")
-    address        = data.get("address", "")
+    to_email      = data.get("email", "")
+    property_url  = data.get("property-url", "") or data.get("property_url", "")
+    asking_price  = int(str(data.get("asking_price", 0) or 0).replace(",", "").replace("£", "")) or 0
+    bedrooms      = data.get("bedrooms", "3")
+    property_type = data.get("property_type", "semi-detached")
+    postcode      = data.get("postcode", "")
+    address       = data.get("address", "")
     floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None
-    buyer_estimate = data.get("buyer_estimate", "")
 
     if not to_email:
         return jsonify({"error": "Email address required"}), 400
@@ -747,10 +602,6 @@ def submit():
             postcode = scraped.get("postcode") or ""
         if not asking_price:
             asking_price = scraped.get("asking_price") or 0
-        if bedrooms == "3" and scraped.get("bedrooms"):
-            bedrooms = scraped.get("bedrooms")
-        if property_type == "semi-detached" and scraped.get("property_type"):
-            property_type = scraped.get("property_type")
 
     if not postcode:
         send_holding_email(to_email, property_url)
@@ -758,9 +609,13 @@ def submit():
 
     try:
         report = build_report_data(
-            property_url=property_url, asking_price=asking_price, bedrooms=bedrooms,
-            property_type=property_type, postcode=postcode,
-            floor_area_sqm=floor_area_sqm, address=address,
+            property_url=property_url,
+            asking_price=asking_price,
+            bedrooms=bedrooms,
+            property_type=property_type,
+            postcode=postcode,
+            floor_area_sqm=floor_area_sqm,
+            address=address,
         )
         report_html = render_template("report_free.html", **report)
         send_report_email(to_email, report_html, report["postcode"], report["verdict"])
@@ -770,7 +625,6 @@ def submit():
         print(f"Submit error: {e}")
         send_holding_email(to_email, property_url)
         return jsonify({"status": "sent"})
-
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
