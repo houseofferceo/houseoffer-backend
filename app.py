@@ -10,6 +10,19 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app, origins=["https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
 
+import threading
+def _prewarm_hpi():
+    """Pre-load HPI CSV in background on startup."""
+    try:
+        import time
+        time.sleep(5)  # Wait for server to start
+        load_hpi_csv(blocking=True)
+        print("HPI CSV pre-warmed successfully")
+    except Exception as e:
+        print(f"HPI pre-warm failed: {e}")
+
+threading.Thread(target=_prewarm_hpi, daemon=True).start()
+
 PROPERTYDATA_API_KEY = os.environ.get("PROPERTYDATA_API_KEY")
 EPC_API_KEY = os.environ.get("EPC_API_KEY")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS")
@@ -308,15 +321,19 @@ def postcode_to_region(postcode):
 # Cache HPI data to avoid repeated downloads
 _hpi_cache = {}
 
-def load_hpi_csv():
-    """Download and parse the UK HPI full CSV file. Cached in memory."""
+def load_hpi_csv(blocking=False):
+    """Download and parse the UK HPI full CSV file. Cached in memory.
+    Non-blocking by default — returns empty dict if not yet loaded.
+    """
     global _hpi_cache
     if _hpi_cache:
         return _hpi_cache
+    if not blocking:
+        return {}  # Not loaded yet — caller should handle gracefully
     try:
         import csv, io
         url = "https://publicdata.landregistry.gov.uk/market-trend-data/house-price-index-data/UK-HPI-full-file-2026-01.csv"
-        r = requests.get(url, timeout=20)
+        r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
             print(f"HPI CSV download failed: {r.status_code}")
             return {}
@@ -324,16 +341,13 @@ def load_hpi_csv():
         for row in reader:
             region = row.get("RegionName", "").strip().lower().replace(" ", "-")
             date_raw = row.get("Date", "").strip()
-            # Date is DD/MM/YYYY e.g. "01/01/2021"
             if "/" in date_raw:
                 parts = date_raw.split("/")
                 if len(parts) == 3:
-                    # DD/MM/YYYY -> YYYY-MM
                     month = f"{parts[2]}-{parts[1].zfill(2)}"
                 else:
                     month = date_raw
             elif len(date_raw) == 10:
-                # YYYY-MM-DD -> YYYY-MM
                 month = date_raw[:7]
             else:
                 month = date_raw
@@ -594,7 +608,7 @@ def debug_hpi():
     month = request.args.get("month", "2021-03")
     property_type = request.args.get("type", "semi-detached")
     
-    data = load_hpi_csv()
+    data = load_hpi_csv(blocking=True)
     current_hpi, current_month = fetch_current_hpi(region, property_type)
     sale_hpi = fetch_hpi_for_month(region, month, property_type)
     
@@ -612,7 +626,7 @@ def debug_hpi():
 @app.route("/debug-csv")
 def debug_csv():
     """Show what region names are in the HPI CSV."""
-    data = load_hpi_csv()
+    data = load_hpi_csv(blocking=True)
     regions = set(k.split("|")[0] for k in data.keys())
     months = sorted(set(k.split("|")[1] for k in data.keys()))
     sample_keys = list(data.keys())[:5]
