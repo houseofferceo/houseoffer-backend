@@ -517,6 +517,29 @@ def notify_owner(to_email, property_url, postcode, verdict):
 
 # ── ROUTES ─────────────────────────────────────────────────────────────────────
 
+
+@app.route("/debug-hpi")
+def debug_hpi():
+    """Test HPI API connectivity from Render."""
+    region = request.args.get("region", "east-of-england")
+    month = request.args.get("month", "2021-03")
+    property_type = request.args.get("type", "semi-detached")
+    
+    # Test current HPI
+    current_hpi, current_month = fetch_current_hpi(region, property_type)
+    
+    # Test historical HPI
+    sale_hpi = fetch_hpi_for_month(region, month, property_type)
+    
+    return jsonify({
+        "region": region,
+        "current_hpi": current_hpi,
+        "current_month": current_month,
+        "sale_month": month,
+        "sale_hpi": sale_hpi,
+        "adjustment_possible": bool(current_hpi and sale_hpi)
+    })
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
