@@ -601,6 +601,23 @@ def debug_hpi():
         "adjustment_possible": bool(current_hpi and sale_hpi)
     })
 
+
+@app.route("/debug-csv")
+def debug_csv():
+    """Show what region names are in the HPI CSV."""
+    data = load_hpi_csv()
+    regions = set(k.split("|")[0] for k in data.keys())
+    months = sorted(set(k.split("|")[1] for k in data.keys()))
+    sample_keys = list(data.keys())[:5]
+    sample_row = data.get(sample_keys[0], {}) if sample_keys else {}
+    return jsonify({
+        "total_records": len(data),
+        "unique_regions": sorted(regions),
+        "month_range": [months[0], months[-1]] if months else [],
+        "sample_key": sample_keys[0] if sample_keys else None,
+        "sample_columns": list(sample_row.keys())[:10] if sample_row else []
+    })
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
