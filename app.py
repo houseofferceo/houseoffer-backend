@@ -305,35 +305,97 @@ def postcode_to_region(postcode):
     return "england"
 
 
-def fetch_hpi_for_month(region, year_month, property_type):
-    """Fetch HPI index for a specific region and month (YYYY-MM)."""
+# Cache HPI data to avoid repeated downloads
+_hpi_cache = {}
+
+def load_hpi_csv():
+    """Download and parse the UK HPI full CSV file. Cached in memory."""
+    global _hpi_cache
+    if _hpi_cache:
+        return _hpi_cache
     try:
-        url = f"http://landregistry.data.gov.uk/data/ukhpi/region/{region}.json"
-        params = {"min-refMonth": year_month, "max-refMonth": year_month, "_pageSize": 1}
-        r = requests.get(url, params=params, timeout=10)
-        if r.status_code == 200:
-            items = r.json().get("result", {}).get("items", [])
-            if items:
-                hpi_key = PROPERTY_TYPE_TO_HPI.get(property_type, "index")
-                return items[0].get(hpi_key) or items[0].get("index")
+        import csv, io
+        url = "https://publicdata.landregistry.gov.uk/market-trend-data/house-price-index-data/UK-HPI-full-file-2026-01.csv"
+        r = requests.get(url, timeout=20)
+        if r.status_code != 200:
+            print(f"HPI CSV download failed: {r.status_code}")
+            return {}
+        reader = csv.DictReader(io.StringIO(r.text))
+        for row in reader:
+            region = row.get("RegionName", "").strip().lower().replace(" ", "-")
+            month = row.get("Date", "").strip()  # format: YYYY-MM-DD or MM/YYYY
+            # Normalise month to YYYY-MM
+            if "/" in month:
+                parts = month.split("/")
+                month = f"{parts[1]}-{parts[0].zfill(2)}"
+            elif len(month) == 10:
+                month = month[:7]
+            key = f"{region}|{month}"
+            _hpi_cache[key] = row
+        print(f"HPI CSV loaded: {len(_hpi_cache)} records")
+        return _hpi_cache
     except Exception as e:
-        print(f"HPI fetch error ({region} {year_month}): {e}")
+        print(f"HPI CSV load error: {e}")
+        return {}
+
+
+REGION_NAME_MAP = {
+    "east-of-england": "east of england",
+    "london": "london",
+    "south-east": "south east",
+    "south-west": "south west",
+    "west-midlands": "west midlands",
+    "east-midlands": "east midlands",
+    "yorkshire-and-the-humber": "yorkshire and the humber",
+    "north-west": "north west",
+    "north-east": "north east",
+    "wales": "wales",
+    "scotland": "scotland",
+    "england": "england",
+}
+
+PROPERTY_TYPE_CSV = {
+    "semi-detached": "SemiDetachedIndex",
+    "detached": "DetachedIndex",
+    "terraced": "TerracedIndex",
+    "flat": "FlatIndex",
+}
+
+
+def fetch_hpi_for_month(region, year_month, property_type):
+    """Get HPI index for a region and month from CSV data."""
+    try:
+        data = load_hpi_csv()
+        region_name = REGION_NAME_MAP.get(region, region.replace("-", " "))
+        key = f"{region_name}|{year_month}"
+        row = data.get(key)
+        if row:
+            col = PROPERTY_TYPE_CSV.get(property_type, "Index")
+            val = row.get(col) or row.get("Index")
+            return float(val) if val else None
+    except Exception as e:
+        print(f"HPI lookup error ({region} {year_month}): {e}")
     return None
 
 
 def fetch_current_hpi(region, property_type):
-    """Fetch the most recent HPI index for a region."""
+    """Get the most recent HPI index for a region from CSV data."""
     try:
-        url = f"http://landregistry.data.gov.uk/data/ukhpi/region/{region}.json"
-        params = {"_pageSize": 1, "_sort": "-refMonth"}
-        r = requests.get(url, params=params, timeout=10)
-        if r.status_code == 200:
-            items = r.json().get("result", {}).get("items", [])
-            if items:
-                hpi_key = PROPERTY_TYPE_TO_HPI.get(property_type, "index")
-                return items[0].get(hpi_key) or items[0].get("index"), items[0].get("refMonth", "")
+        data = load_hpi_csv()
+        region_name = REGION_NAME_MAP.get(region, region.replace("-", " "))
+        col = PROPERTY_TYPE_CSV.get(property_type, "Index")
+        # Find all rows for this region
+        region_rows = {k: v for k, v in data.items() if k.startswith(f"{region_name}|")}
+        if not region_rows:
+            return None, None
+        # Get most recent month
+        latest_key = sorted(region_rows.keys())[-1]
+        latest_row = region_rows[latest_key]
+        val = latest_row.get(col) or latest_row.get("Index")
+        month = latest_key.split("|")[1]
+        return (float(val) if val else None), month
     except Exception as e:
-        print(f"Current HPI fetch error: {e}")
+        print(f"Current HPI lookup error: {e}")
     return None, None
 
 
@@ -520,18 +582,17 @@ def notify_owner(to_email, property_url, postcode, verdict):
 
 @app.route("/debug-hpi")
 def debug_hpi():
-    """Test HPI API connectivity from Render."""
+    """Test HPI CSV loading from Render."""
     region = request.args.get("region", "east-of-england")
     month = request.args.get("month", "2021-03")
     property_type = request.args.get("type", "semi-detached")
     
-    # Test current HPI
+    data = load_hpi_csv()
     current_hpi, current_month = fetch_current_hpi(region, property_type)
-    
-    # Test historical HPI
     sale_hpi = fetch_hpi_for_month(region, month, property_type)
     
     return jsonify({
+        "csv_records_loaded": len(data),
         "region": region,
         "current_hpi": current_hpi,
         "current_month": current_month,
