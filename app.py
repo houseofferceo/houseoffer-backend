@@ -323,13 +323,20 @@ def load_hpi_csv():
         reader = csv.DictReader(io.StringIO(r.text))
         for row in reader:
             region = row.get("RegionName", "").strip().lower().replace(" ", "-")
-            month = row.get("Date", "").strip()  # format: YYYY-MM-DD or MM/YYYY
-            # Normalise month to YYYY-MM
-            if "/" in month:
-                parts = month.split("/")
-                month = f"{parts[1]}-{parts[0].zfill(2)}"
-            elif len(month) == 10:
-                month = month[:7]
+            date_raw = row.get("Date", "").strip()
+            # Date is DD/MM/YYYY e.g. "01/01/2021"
+            if "/" in date_raw:
+                parts = date_raw.split("/")
+                if len(parts) == 3:
+                    # DD/MM/YYYY -> YYYY-MM
+                    month = f"{parts[2]}-{parts[1].zfill(2)}"
+                else:
+                    month = date_raw
+            elif len(date_raw) == 10:
+                # YYYY-MM-DD -> YYYY-MM
+                month = date_raw[:7]
+            else:
+                month = date_raw
             key = f"{region}|{month}"
             _hpi_cache[key] = row
         print(f"HPI CSV loaded: {len(_hpi_cache)} records")
