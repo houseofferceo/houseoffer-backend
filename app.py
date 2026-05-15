@@ -379,7 +379,7 @@ def send_holding_email(to_email, property_url):
     except Exception as e:
         print(f"Holding email error: {e}")
 
-def notify_owner(to_email, property_url, postcode, verdict):
+def notify_owner(to_email, property_url, postcode, verdict, buyer_estimate="", anchor_bias=None):
     try:
         requests.post(
             "https://api.resend.com/emails",
@@ -388,11 +388,40 @@ def notify_owner(to_email, property_url, postcode, verdict):
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
                 "to": [EMAIL_ADDRESS],
                 "subject": f"New submission: {postcode} — {verdict}",
-                "text": f"User: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}"
+                "text": f"User: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}\nBuyer estimate: {buyer_estimate}\nAnchor bias: {anchor_bias}% above market"
             }
         )
     except Exception as e:
         print(f"Owner notify error: {e}")
+
+
+@app.route("/track")
+def track():
+    """Track upgrade button clicks and redirect to pricing page."""
+    tier = request.args.get("tier", "unknown")
+    postcode = request.args.get("postcode", "unknown")
+    verdict = request.args.get("verdict", "unknown")
+    anchor = request.args.get("anchor", "unknown")
+    
+    print(f"UPGRADE CLICK: tier=£{tier} postcode={postcode} verdict={verdict} anchor_bias={anchor}")
+    
+    # Notify owner
+    try:
+        requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "from": f"HouseOffer <{EMAIL_ADDRESS}>",
+                "to": [EMAIL_ADDRESS],
+                "subject": f"🔥 Upgrade click: £{tier} — {postcode} ({verdict})",
+                "text": f"Someone clicked upgrade!\n\nTier: £{tier}\nPostcode: {postcode}\nVerdict: {verdict}\nAnchor bias: {anchor}\n\nThis is a hot lead."
+            }
+        )
+    except Exception as e:
+        print(f"Track notify error: {e}")
+    
+    from flask import redirect
+    return redirect("https://houseoffer.netlify.app/#pricing")
 
 @app.route("/health")
 def health():
@@ -502,7 +531,16 @@ def submit():
         )
         report_html = render_template("report_free.html", **report)
         send_report_email(to_email, report_html, report["postcode"], report["verdict"])
-        notify_owner(to_email, property_url, report["postcode"], report["verdict"])
+        # Calculate anchor bias
+        anchor_bias = None
+        if buyer_estimate and report.get("local_avg_sold"):
+            try:
+                est = int(str(buyer_estimate).replace(",","").replace("£","").replace(" ",""))
+                local = report["local_avg_sold"]
+                anchor_bias = round(((est - local) / local) * 100, 1)
+            except Exception:
+                pass
+        notify_owner(to_email, property_url, report["postcode"], report["verdict"], buyer_estimate, anchor_bias)
         return jsonify({"status": "sent", "postcode": report["postcode"]})
     except Exception as e:
         print(f"Submit error: {e}")
