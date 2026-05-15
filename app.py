@@ -5,6 +5,7 @@ import requests
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from datetime import datetime
+from hpi_data import get_hpi_index as hpi_index, get_current_hpi
 
 app = Flask(__name__)
 CORS(app, origins=["https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
@@ -200,6 +201,84 @@ def _calc_avg_psqm(data, type_keys):
     except Exception:
         return None
 
+
+# ── HPI ADJUSTMENT ─────────────────────────────────────────────────────────────
+
+POSTCODE_TO_REGION = {
+    "E": "london", "EC": "london", "N": "london", "NW": "london",
+    "SE": "london", "SW": "london", "W": "london", "WC": "london",
+    "AL": "east-of-england", "CB": "east-of-england", "CM": "east-of-england",
+    "CO": "east-of-england", "EN": "east-of-england", "HP": "east-of-england",
+    "IP": "east-of-england", "LU": "east-of-england", "MK": "east-of-england",
+    "NR": "east-of-england", "PE": "east-of-england", "SG": "east-of-england",
+    "SS": "east-of-england", "WD": "east-of-england",
+    "B": "west-midlands-region", "CV": "west-midlands-region", "DY": "west-midlands-region",
+    "ST": "west-midlands-region", "TF": "west-midlands-region",
+    "WS": "west-midlands-region", "WV": "west-midlands-region",
+    "DE": "east-midlands", "LE": "east-midlands", "LN": "east-midlands",
+    "NG": "east-midlands", "NN": "east-midlands",
+    "BR": "south-east", "BN": "south-east", "CT": "south-east", "DA": "south-east",
+    "GU": "south-east", "KT": "south-east", "ME": "south-east", "OX": "south-east",
+    "PO": "south-east", "RG": "south-east", "RH": "south-east", "SL": "south-east",
+    "SM": "south-east", "SN": "south-east", "SO": "south-east", "TN": "south-east",
+    "TW": "south-east", "UB": "south-east",
+    "BA": "south-west", "BH": "south-west", "BS": "south-west", "DT": "south-west",
+    "EX": "south-west", "GL": "south-west", "PL": "south-west", "SP": "south-west",
+    "TA": "south-west", "TQ": "south-west", "TR": "south-west",
+    "BB": "north-west", "BL": "north-west", "CA": "north-west", "CH": "north-west",
+    "CW": "north-west", "FY": "north-west", "LA": "north-west", "M": "north-west",
+    "OL": "north-west", "PR": "north-west", "SK": "north-west", "WA": "north-west",
+    "WN": "north-west",
+    "BD": "yorkshire-and-the-humber", "HD": "yorkshire-and-the-humber",
+    "HG": "yorkshire-and-the-humber", "HU": "yorkshire-and-the-humber",
+    "HX": "yorkshire-and-the-humber", "LS": "yorkshire-and-the-humber",
+    "S": "yorkshire-and-the-humber", "WF": "yorkshire-and-the-humber",
+    "YO": "yorkshire-and-the-humber",
+    "DH": "north-east", "DL": "north-east", "NE": "north-east",
+    "SR": "north-east", "TS": "north-east",
+    "CF": "wales", "LD": "wales", "LL": "wales", "NP": "wales",
+    "SA": "wales", "SY": "wales",
+}
+
+def postcode_to_region(postcode):
+    clean = postcode.strip().upper().replace(" ", "")
+    for length in [2, 1]:
+        prefix = clean[:length]
+        if prefix in POSTCODE_TO_REGION:
+            return POSTCODE_TO_REGION[prefix]
+    return "england"
+
+def find_last_sale(comparables, postcode):
+    """Find the most recent sale matching this postcode from comparables."""
+    if not comparables:
+        return None
+    formatted = format_postcode(postcode).upper()
+    postcode_sales = [c for c in comparables if formatted in c.get("address", "").upper()]
+    if postcode_sales:
+        return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
+    return None
+
+def calculate_hpi_adjustment(last_sale_price, sale_date_str, region):
+    """Adjust a historical price to today's value using regional HPI."""
+    try:
+        sale_month = sale_date_str[:7]
+        sale_hpi = hpi_index(region, sale_month)
+        current_hpi, current_month = get_current_hpi(region)
+        if sale_hpi and current_hpi and sale_hpi > 0:
+            adjusted = round(last_sale_price * (current_hpi / sale_hpi))
+            growth_pct = round(((current_hpi - sale_hpi) / sale_hpi) * 100, 1)
+            return {
+                "adjusted_price": adjusted,
+                "adjusted_price_formatted": f"£{adjusted:,}",
+                "sale_price": last_sale_price,
+                "sale_price_formatted": f"£{last_sale_price:,}",
+                "sale_date": sale_date_str,
+                "growth_pct": growth_pct,
+            }
+    except Exception as e:
+        print(f"HPI adjustment error: {e}")
+    return None
+
 def build_report_data(property_url, asking_price, bedrooms, property_type,
                       postcode, floor_area_sqm=None, address=None):
     formatted = format_postcode(postcode)
@@ -223,6 +302,18 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             psqm_diff_pct = round(((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100, 1)
             psqm_verdict = "overpriced" if psqm_diff_pct > 8 else ("value" if psqm_diff_pct < -5 else "fair")
 
+    # HPI-adjusted last sale
+    hpi_adjustment = None
+    try:
+        region = postcode_to_region(postcode)
+        last_sale = find_last_sale(comparables, postcode)
+        if last_sale:
+            hpi_adjustment = calculate_hpi_adjustment(
+                last_sale["price"], last_sale["date"], region
+            )
+    except Exception as e:
+        print(f"HPI section error: {e}")
+
     verdict = sold_verdict or psqm_verdict or "unknown"
     diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
 
@@ -240,7 +331,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
         "sold_verdict": sold_verdict,
-        "hpi_adjustment": None,
+        "hpi_adjustment": hpi_adjustment,
         "asking_psqm": asking_psqm,
         "local_avg_psqm": local_avg_psqm,
         "psqm_diff_pct": psqm_diff_pct,
