@@ -1,9 +1,6 @@
 import os
 import re
 import json
-import csv
-import io
-import threading
 import requests
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -17,8 +14,6 @@ EPC_API_KEY = os.environ.get("EPC_API_KEY")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 MIN_COMPARABLES = 10
-
-# ── POSTCODE UTILITIES ─────────────────────────────────────────────────────────
 
 def format_postcode(raw):
     raw = raw.strip().upper().replace(" ", "")
@@ -45,16 +40,13 @@ def normalise_type_listings(property_type):
     }
     return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
 
-def price_per_sqft_to_sqm(price_per_sqft):
-    return price_per_sqft * 10.764
+def price_per_sqft_to_sqm(p):
+    return p * 10.764
 
 def scrape_rightmove(url):
     result = {"postcode": None, "asking_price": 0, "bedrooms": 3, "property_type": "semi-detached"}
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         resp = requests.get(url, headers=headers, timeout=15)
         html = resp.text
         json_match = re.search(r'window\.PAGE_MODEL\s*=\s*(\{.*?\});', html, re.DOTALL)
@@ -73,7 +65,7 @@ def scrape_rightmove(url):
                     result["property_type"] = "semi-detached"
                 elif "detached" in ptype:
                     result["property_type"] = "detached"
-                elif "terraced" in ptype or "terrace" in ptype:
+                elif "terraced" in ptype:
                     result["property_type"] = "terraced"
                 elif "flat" in ptype or "apartment" in ptype:
                     result["property_type"] = "flat"
@@ -97,8 +89,6 @@ def extract_postcode_from_url(url):
     if match:
         return match.group(1).replace(" ", "").upper()
     return None
-
-# ── EPC ────────────────────────────────────────────────────────────────────────
 
 def get_floor_area_from_epc(postcode, address=None):
     try:
@@ -124,8 +114,6 @@ def get_floor_area_from_epc(postcode, address=None):
         return float(area) if area else None
     except Exception:
         return None
-
-# ── SOLD PRICE COMPARABLES ─────────────────────────────────────────────────────
 
 def fetch_sold_prices(postcode):
     try:
@@ -173,12 +161,7 @@ def _filter_sold(data, type_keys):
         return []
     try:
         transactions = data.get("data", {}).get("raw_data", [])
-        return [
-            t for t in transactions
-            if t.get("type") in type_keys
-            and t.get("price")
-            and t.get("price") < 2_000_000
-        ]
+        return [t for t in transactions if t.get("type") in type_keys and t.get("price") and t.get("price") < 2_000_000]
     except Exception:
         return []
 
@@ -217,163 +200,6 @@ def _calc_avg_psqm(data, type_keys):
     except Exception:
         return None
 
-# ── HPI ADJUSTMENT ─────────────────────────────────────────────────────────────
-
-POSTCODE_TO_REGION = {
-    "E": "london", "EC": "london", "N": "london", "NW": "london",
-    "SE": "london", "SW": "london", "W": "london", "WC": "london",
-    "AL": "east-of-england", "CB": "east-of-england", "CM": "east-of-england",
-    "CO": "east-of-england", "EN": "east-of-england", "HP": "east-of-england",
-    "IP": "east-of-england", "LU": "east-of-england", "MK": "east-of-england",
-    "NR": "east-of-england", "PE": "east-of-england", "SG": "east-of-england",
-    "SS": "east-of-england", "WD": "east-of-england",
-    "B": "west-midlands-region", "CV": "west-midlands-region", "DY": "west-midlands-region",
-    "ST": "west-midlands-region", "TF": "west-midlands-region",
-    "WS": "west-midlands-region", "WV": "west-midlands-region",
-    "DE": "east-midlands", "LE": "east-midlands", "LN": "east-midlands",
-    "NG": "east-midlands", "NN": "east-midlands",
-    "BR": "south-east", "BN": "south-east", "CT": "south-east", "DA": "south-east",
-    "GU": "south-east", "KT": "south-east", "ME": "south-east", "OX": "south-east",
-    "PO": "south-east", "RG": "south-east", "RH": "south-east", "SL": "south-east",
-    "SM": "south-east", "SN": "south-east", "SO": "south-east", "TN": "south-east",
-    "TW": "south-east", "UB": "south-east",
-    "BA": "south-west", "BH": "south-west", "BS": "south-west", "DT": "south-west",
-    "EX": "south-west", "GL": "south-west", "PL": "south-west", "SP": "south-west",
-    "TA": "south-west", "TQ": "south-west", "TR": "south-west",
-    "BB": "north-west", "BL": "north-west", "CA": "north-west", "CH": "north-west",
-    "CW": "north-west", "FY": "north-west", "LA": "north-west", "M": "north-west",
-    "OL": "north-west", "PR": "north-west", "SK": "north-west", "WA": "north-west",
-    "WN": "north-west",
-    "BD": "yorkshire-and-the-humber", "HD": "yorkshire-and-the-humber",
-    "HG": "yorkshire-and-the-humber", "HU": "yorkshire-and-the-humber",
-    "HX": "yorkshire-and-the-humber", "LS": "yorkshire-and-the-humber",
-    "S": "yorkshire-and-the-humber", "WF": "yorkshire-and-the-humber",
-    "YO": "yorkshire-and-the-humber",
-    "DH": "north-east", "DL": "north-east", "NE": "north-east",
-    "SR": "north-east", "TS": "north-east",
-    "CF": "wales", "LD": "wales", "LL": "wales", "NP": "wales",
-    "SA": "wales", "SY": "wales",
-    "AB": "scotland", "DD": "scotland", "DG": "scotland", "EH": "scotland",
-    "FK": "scotland", "G": "scotland", "IV": "scotland",
-    "KA": "scotland", "KY": "scotland", "ML": "scotland",
-    "PA": "scotland", "PH": "scotland", "TD": "scotland",
-}
-
-PROPERTY_TYPE_CSV_COL = {
-    "semi-detached": "SemiDetachedIndex",
-    "detached": "DetachedIndex",
-    "terraced": "TerracedIndex",
-    "flat": "FlatIndex",
-}
-
-_hpi_cache = {}
-_hpi_loaded = False
-
-def _load_hpi_csv_background():
-    """Download HPI CSV in background thread on startup."""
-    global _hpi_cache, _hpi_loaded
-    import time
-    time.sleep(3)
-    try:
-        url = "https://publicdata.landregistry.gov.uk/market-trend-data/house-price-index-data/UK-HPI-full-file-2026-01.csv"
-        r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200:
-            print(f"HPI CSV failed: {r.status_code}")
-            return
-        reader = csv.DictReader(io.StringIO(r.text))
-        cache = {}
-        for row in reader:
-            region = row.get("RegionName", "").strip().lower().replace(" ", "-")
-            date_raw = row.get("Date", "").strip()
-            if "/" in date_raw:
-                parts = date_raw.split("/")
-                if len(parts) == 3:
-                    month = f"{parts[2]}-{parts[1].zfill(2)}"
-                else:
-                    continue
-            elif len(date_raw) == 10:
-                month = date_raw[:7]
-            else:
-                continue
-            cache[f"{region}|{month}"] = row
-        _hpi_cache = cache
-        _hpi_loaded = True
-        print(f"HPI CSV loaded: {len(_hpi_cache)} records")
-    except Exception as e:
-        print(f"HPI CSV load error: {e}")
-
-# Start background download
-threading.Thread(target=_load_hpi_csv_background, daemon=True).start()
-
-def postcode_to_region(postcode):
-    clean = postcode.strip().upper().replace(" ", "")
-    for length in [2, 1]:
-        prefix = clean[:length]
-        if prefix in POSTCODE_TO_REGION:
-            return POSTCODE_TO_REGION[prefix]
-    return "england"
-
-def get_hpi_index(region, year_month, property_type):
-    if not _hpi_loaded:
-        return None
-    key = f"{region}|{year_month}"
-    row = _hpi_cache.get(key)
-    if not row:
-        return None
-    col = PROPERTY_TYPE_CSV_COL.get(property_type, "Index")
-    val = row.get(col) or row.get("Index")
-    try:
-        return float(val) if val else None
-    except Exception:
-        return None
-
-def get_current_hpi(region, property_type):
-    if not _hpi_loaded:
-        return None, None
-    col = PROPERTY_TYPE_CSV_COL.get(property_type, "Index")
-    region_keys = sorted([k for k in _hpi_cache if k.startswith(f"{region}|")], reverse=True)
-    for key in region_keys:
-        row = _hpi_cache[key]
-        val = row.get(col) or row.get("Index")
-        try:
-            if val:
-                month = key.split("|")[1]
-                return float(val), month
-        except Exception:
-            continue
-    return None, None
-
-def find_last_sale(comparables, postcode):
-    if not comparables:
-        return None
-    formatted = format_postcode(postcode).upper()
-    postcode_sales = [c for c in comparables if formatted in c.get("address", "").upper()]
-    if postcode_sales:
-        return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
-    return None
-
-def apply_hpi_adjustment(last_sale_price, sale_date_str, region, property_type):
-    try:
-        sale_month = sale_date_str[:7]
-        sale_hpi = get_hpi_index(region, sale_month, property_type)
-        current_hpi, current_month = get_current_hpi(region, property_type)
-        if sale_hpi and current_hpi and sale_hpi > 0:
-            adjusted = round(last_sale_price * (current_hpi / sale_hpi))
-            growth_pct = round(((current_hpi - sale_hpi) / sale_hpi) * 100, 1)
-            return {
-                "adjusted_price": adjusted,
-                "adjusted_price_formatted": f"£{adjusted:,}",
-                "sale_price": last_sale_price,
-                "sale_price_formatted": f"£{last_sale_price:,}",
-                "sale_date": sale_date_str,
-                "growth_pct": growth_pct,
-            }
-    except Exception as e:
-        print(f"HPI adjustment error: {e}")
-    return None
-
-# ── REPORT BUILDER ─────────────────────────────────────────────────────────────
-
 def build_report_data(property_url, asking_price, bedrooms, property_type,
                       postcode, floor_area_sqm=None, address=None):
     formatted = format_postcode(postcode)
@@ -397,17 +223,6 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             psqm_diff_pct = round(((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100, 1)
             psqm_verdict = "overpriced" if psqm_diff_pct > 8 else ("value" if psqm_diff_pct < -5 else "fair")
 
-    hpi_adjustment = None
-    try:
-        region = postcode_to_region(postcode)
-        last_sale = find_last_sale(comparables, postcode)
-        if last_sale:
-            hpi_adjustment = apply_hpi_adjustment(
-                last_sale["price"], last_sale["date"], region, property_type
-            )
-    except Exception as e:
-        print(f"HPI section error: {e}")
-
     verdict = sold_verdict or psqm_verdict or "unknown"
     diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
 
@@ -425,7 +240,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
         "sold_verdict": sold_verdict,
-        "hpi_adjustment": hpi_adjustment,
+        "hpi_adjustment": None,
         "asking_psqm": asking_psqm,
         "local_avg_psqm": local_avg_psqm,
         "psqm_diff_pct": psqm_diff_pct,
@@ -438,8 +253,6 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "generated": datetime.now().strftime("%-d %B %Y"),
         "property_url": property_url,
     }
-
-# ── EMAIL ──────────────────────────────────────────────────────────────────────
 
 def send_report_email(to_email, report_html, postcode, verdict):
     try:
@@ -469,7 +282,7 @@ def send_holding_email(to_email, property_url):
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
                 "to": [to_email],
                 "subject": "Your HouseOffer report — we need one more detail",
-                "text": f"Hi,\n\nThanks for your submission. We need a couple more details to complete your report.\n\nCould you reply with:\n1. The property postcode\n2. The asking price\n3. Number of bedrooms\n4. Property type\n\nThe HouseOffer team"
+                "text": "Hi,\n\nThanks for your submission. Could you reply with:\n1. The property postcode\n2. The asking price\n3. Number of bedrooms\n4. Property type\n\nThe HouseOffer team"
             }
         )
     except Exception as e:
@@ -490,11 +303,9 @@ def notify_owner(to_email, property_url, postcode, verdict):
     except Exception as e:
         print(f"Owner notify error: {e}")
 
-# ── ROUTES ─────────────────────────────────────────────────────────────────────
-
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "hpi_loaded": _hpi_loaded, "hpi_records": len(_hpi_cache)})
+    return jsonify({"status": "ok"})
 
 @app.route("/debug-sold")
 def debug_sold():
@@ -510,7 +321,6 @@ def debug_sold():
     return jsonify({
         "postcode": formatted,
         "district": district,
-        "type_keys": type_keys,
         "full_matching": len([t for t in full_raw if t.get("type") in type_keys]),
         "district_matching": len([t for t in district_raw if t.get("type") in type_keys]),
     })
@@ -522,24 +332,6 @@ def debug_report():
     property_type = request.args.get("type", "semi-detached")
     report = build_report_data("", asking_price, "3", property_type, postcode)
     return jsonify(report)
-
-@app.route("/debug-hpi")
-def debug_hpi():
-    region = request.args.get("region", "east-of-england")
-    month = request.args.get("month", "2021-03")
-    property_type = request.args.get("type", "semi-detached")
-    current_hpi, current_month = get_current_hpi(region, property_type)
-    sale_hpi = get_hpi_index(region, month, property_type)
-    return jsonify({
-        "hpi_loaded": _hpi_loaded,
-        "hpi_records": len(_hpi_cache),
-        "region": region,
-        "current_hpi": current_hpi,
-        "current_month": current_month,
-        "sale_month": month,
-        "sale_hpi": sale_hpi,
-        "adjustment_possible": bool(current_hpi and sale_hpi)
-    })
 
 @app.route("/report", methods=["POST"])
 def generate_report():
