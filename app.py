@@ -53,15 +53,17 @@ def extract_postcode_from_url(url):
     return None
 
 def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, property_type, address=""):
-    """Fill missing listing fields from Rightmove/Zoopla when user only pastes a URL."""
-    if not property_url or (postcode and asking_price):
+    """Fill listing fields from Rightmove/Zoopla when a property URL is provided."""
+    if not property_url:
         return postcode, asking_price, bedrooms, property_type, address
+
     scraped = scrape_property_url(property_url)
     if not postcode:
         postcode = scraped.get("postcode") or ""
     if not asking_price:
         asking_price = scraped.get("asking_price") or 0
-    if scraped.get("bedrooms"):
+    # Beds/type are not on the landing form — always take from scrape when available
+    if scraped.get("bedrooms") is not None:
         bedrooms = scraped.get("bedrooms", bedrooms)
     if scraped.get("property_type"):
         property_type = scraped.get("property_type", property_type)
