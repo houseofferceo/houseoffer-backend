@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from datetime import datetime
 from hpi_data import get_hpi_index as hpi_index, get_current_hpi
+from property_scraper import scrape_property_url
 
 app = Flask(__name__)
 CORS(app, origins=["https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
@@ -44,52 +45,29 @@ def normalise_type_listings(property_type):
 def price_per_sqft_to_sqm(p):
     return p * 10.764
 
-def scrape_rightmove(url):
-    result = {"postcode": None, "asking_price": 0, "bedrooms": 3, "property_type": "semi-detached"}
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        resp = requests.get(url, headers=headers, timeout=15)
-        html = resp.text
-        json_match = re.search(r'window\.PAGE_MODEL\s*=\s*(\{.*?\});', html, re.DOTALL)
-        if json_match:
-            try:
-                data = json.loads(json_match.group(1))
-                prop = data.get("propertyData", {})
-                price = prop.get("prices", {}).get("primaryPrice", "")
-                if price:
-                    result["asking_price"] = int(re.sub(r"[^0-9]", "", str(price)))
-                beds = prop.get("bedrooms")
-                if beds:
-                    result["bedrooms"] = int(beds)
-                ptype = (prop.get("propertySubType", "") or prop.get("propertyType", "")).lower()
-                if "semi" in ptype:
-                    result["property_type"] = "semi-detached"
-                elif "detached" in ptype:
-                    result["property_type"] = "detached"
-                elif "terraced" in ptype:
-                    result["property_type"] = "terraced"
-                elif "flat" in ptype or "apartment" in ptype:
-                    result["property_type"] = "flat"
-                addr = prop.get("address", {})
-                pc = addr.get("outcode", "") + addr.get("incode", "")
-                if pc:
-                    result["postcode"] = pc
-            except Exception as e:
-                print(f"JSON parse error: {e}")
-        pc_pattern = r'([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})'
-        pc_match = re.search(pc_pattern, html.upper())
-        if pc_match and not result["postcode"]:
-            result["postcode"] = pc_match.group(1).replace(" ", "").upper()
-    except Exception as e:
-        print(f"Scrape error: {e}")
-    return result
-
 def extract_postcode_from_url(url):
     pc_pattern = r'([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})'
     match = re.search(pc_pattern, url.upper())
     if match:
         return match.group(1).replace(" ", "").upper()
     return None
+
+def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, property_type, address=""):
+    """Fill missing listing fields from Rightmove/Zoopla when user only pastes a URL."""
+    if not property_url or (postcode and asking_price):
+        return postcode, asking_price, bedrooms, property_type, address
+    scraped = scrape_property_url(property_url)
+    if not postcode:
+        postcode = scraped.get("postcode") or ""
+    if not asking_price:
+        asking_price = scraped.get("asking_price") or 0
+    if scraped.get("bedrooms"):
+        bedrooms = scraped.get("bedrooms", bedrooms)
+    if scraped.get("property_type"):
+        property_type = scraped.get("property_type", property_type)
+    if scraped.get("address") and not address:
+        address = scraped.get("address")
+    return postcode, asking_price, bedrooms, property_type, address
 
 def get_floor_area_from_epc(postcode, address=None):
     try:
@@ -427,6 +405,14 @@ def track():
 def health():
     return jsonify({"status": "ok"})
 
+@app.route("/debug-scrape")
+def debug_scrape():
+    """Test scraper: /debug-scrape?url=https://www.rightmove.co.uk/properties/..."""
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"error": "Pass ?url= with a Rightmove or Zoopla listing URL"}), 400
+    return jsonify(scrape_property_url(url))
+
 @app.route("/debug-sold")
 def debug_sold():
     postcode = request.args.get("postcode", "WD4 9EW")
@@ -458,18 +444,25 @@ def generate_report():
     data = request.get_json(silent=True) or request.form
     postcode = data.get("postcode", "")
     property_url = data.get("property_url", "")
+    asking_price = int(str(data.get("asking_price", 0)).replace(",", "").replace("£", ""))
+    bedrooms = data.get("bedrooms", "3")
+    property_type = data.get("property_type", "semi-detached")
+    address = data.get("address", "")
     if not postcode and property_url:
-        postcode = extract_postcode_from_url(property_url)
+        postcode = extract_postcode_from_url(property_url) or ""
+    postcode, asking_price, bedrooms, property_type, address = merge_scraped_listing(
+        property_url, postcode, asking_price, bedrooms, property_type, address
+    )
     if not postcode:
         return jsonify({"error": "Could not determine postcode."}), 400
     report = build_report_data(
         property_url=property_url,
-        asking_price=int(str(data.get("asking_price", 0)).replace(",", "").replace("£", "")),
-        bedrooms=data.get("bedrooms", "3"),
-        property_type=data.get("property_type", "semi-detached"),
+        asking_price=asking_price,
+        bedrooms=bedrooms,
+        property_type=property_type,
         postcode=postcode,
         floor_area_sqm=float(data.get("floor_area_sqm", 0) or 0) or None,
-        address=data.get("address", ""),
+        address=address,
     )
     return render_template("report_free.html", **report)
 
@@ -478,18 +471,25 @@ def report_data_json():
     data = request.get_json(silent=True) or request.form
     postcode = data.get("postcode", "")
     property_url = data.get("property_url", "")
+    asking_price = int(str(data.get("asking_price", 0)).replace(",", "").replace("£", ""))
+    bedrooms = data.get("bedrooms", "3")
+    property_type = data.get("property_type", "semi-detached")
+    address = data.get("address", "")
     if not postcode and property_url:
-        postcode = extract_postcode_from_url(property_url)
+        postcode = extract_postcode_from_url(property_url) or ""
+    postcode, asking_price, bedrooms, property_type, address = merge_scraped_listing(
+        property_url, postcode, asking_price, bedrooms, property_type, address
+    )
     if not postcode:
         return jsonify({"error": "Could not determine postcode"}), 400
     report = build_report_data(
         property_url=property_url,
-        asking_price=int(str(data.get("asking_price", 0)).replace(",", "").replace("£", "")),
-        bedrooms=data.get("bedrooms", "3"),
-        property_type=data.get("property_type", "semi-detached"),
+        asking_price=asking_price,
+        bedrooms=bedrooms,
+        property_type=property_type,
         postcode=postcode,
         floor_area_sqm=float(data.get("floor_area_sqm", 0) or 0) or None,
-        address=data.get("address", ""),
+        address=address,
     )
     return jsonify(report)
 
@@ -508,12 +508,9 @@ def submit():
     if not to_email:
         return jsonify({"error": "Email address required"}), 400
 
-    if property_url and (not postcode or not asking_price):
-        scraped = scrape_rightmove(property_url)
-        if not postcode:
-            postcode = scraped.get("postcode") or ""
-        if not asking_price:
-            asking_price = scraped.get("asking_price") or 0
+    postcode, asking_price, bedrooms, property_type, address = merge_scraped_listing(
+        property_url, postcode, asking_price, bedrooms, property_type, address
+    )
 
     if not postcode:
         send_holding_email(to_email, property_url)
