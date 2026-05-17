@@ -17,7 +17,7 @@
   --radius: 14px;
 }
 body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; min-height: 100vh; }
-nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--sand-border); padding: 0 24px; }
+nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--sand-border); padding: 0 24px; position: sticky; top: 0; z-index: 100; }
 .nav-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 58px; }
 .logo { font-family: 'Lora', serif; font-size: 20px; font-weight: 700; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 8px; }
 .logo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal-mid); display: inline-block; }
@@ -33,6 +33,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .report-meta { display: flex; flex-wrap: wrap; gap: 8px; }
 .meta-pill { display: flex; align-items: center; gap: 5px; background: var(--sand); border: 1px solid var(--sand-border); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 500; color: var(--ink-mid); }
 
+/* VERDICT CARD */
 .verdict-card { border-radius: var(--radius); padding: 24px 28px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1.5px solid; }
 .verdict-card.overpriced { background: var(--red-light); border-color: #e8b4b4; }
 .verdict-card.fair { background: var(--amber-light); border-color: var(--amber-border); }
@@ -78,18 +79,58 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .dom-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
 .dom-body { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; }
 
-/* LOCKED SECTIONS */
+/* ─── BRIDGE SECTION (new) ─── */
+.bridge-section { border-radius: var(--radius); padding: 24px 28px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1.5px solid; }
+.bridge-section.overpriced { background: #fff8f8; border-color: #e8b4b4; }
+.bridge-section.fair      { background: var(--amber-light); border-color: var(--amber-border); }
+.bridge-section.value     { background: var(--teal-light); border-color: var(--teal-border); }
+.bridge-section.unknown   { background: var(--sand-dark); border-color: var(--sand-border); }
+.bridge-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+.bridge-section.overpriced .bridge-eyebrow { color: var(--red); }
+.bridge-section.fair      .bridge-eyebrow { color: var(--amber); }
+.bridge-section.value     .bridge-eyebrow { color: var(--teal); }
+.bridge-section.unknown   .bridge-eyebrow { color: var(--ink-light); }
+.bridge-headline { font-family: 'Lora', serif; font-size: 19px; font-weight: 700; color: var(--ink); margin-bottom: 10px; line-height: 1.3; }
+.bridge-body { font-size: 14px; color: var(--ink-mid); line-height: 1.7; }
+.bridge-body strong { color: var(--ink); }
+.bridge-body p { margin-bottom: 12px; }
+.bridge-body p:last-child { margin-bottom: 0; }
+.bridge-body em { color: var(--ink); font-style: italic; }
+.bridge-weapons { list-style: none; margin: 10px 0 14px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.bridge-weapons li { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; padding: 10px 14px; background: rgba(255,255,255,0.6); border-radius: 8px; border-left: 3px solid currentColor; }
+.bridge-section.overpriced .bridge-weapons li { border-color: #e8b4b4; }
+.bridge-section.fair      .bridge-weapons li { border-color: var(--amber-border); }
+.bridge-section.value     .bridge-weapons li { border-color: var(--teal-border); }
+.bridge-section.unknown   .bridge-weapons li { border-color: var(--sand-border); }
+
+/* ─── LOCKED SECTIONS (improved) ─── */
 .locked-section { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
-.locked-header { padding: 18px 24px 14px; border-bottom: 1px solid var(--sand-border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.locked-header-left { flex: 1; }
+.locked-header { padding: 18px 24px 14px; border-bottom: 1px solid var(--sand-border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.locked-header-left { flex: 1; min-width: 0; }
 .locked-header-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 3px; }
 .locked-header-title { font-family: 'Lora', serif; font-size: 16px; font-weight: 600; color: var(--ink); }
-.locked-price-badge { background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 20px; white-space: nowrap; }
+.locked-price-badge { background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
 .locked-price-badge.premium { background: var(--teal); }
 .locked-body { position: relative; overflow: hidden; }
 .locked-blur { padding: 20px 24px; filter: blur(4px); pointer-events: none; user-select: none; opacity: 0.7; }
 
-/* FOOTBALL FIELD */
+/* Range teaser (replaces ███ blocks) */
+.range-teaser { padding: 20px 24px 16px; }
+.range-bar-wrap { margin-bottom: 18px; }
+.range-bar-labels { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 8px; }
+.range-bar-track { height: 12px; background: var(--sand-dark); border-radius: 6px; position: relative; }
+.range-bar-fill { position: absolute; top: 0; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--teal-light), var(--teal-mid)); left: 12%; right: 18%; }
+.range-bar-pin { position: absolute; top: -7px; width: 26px; height: 26px; border-radius: 50%; background: var(--teal); border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.2); left: calc(48% - 13px); }
+.range-values { display: flex; justify-content: space-between; margin-top: 10px; }
+.range-val { text-align: center; }
+.range-val-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-light); font-weight: 600; margin-bottom: 2px; }
+.range-val-num { font-family: 'Lora', serif; font-size: 18px; font-weight: 700; color: var(--ink); }
+.range-val-num.target { color: var(--teal); font-size: 22px; }
+.range-val-num.blurred { filter: blur(6px); user-select: none; letter-spacing: 0.05em; }
+.range-hint { font-size: 12.5px; color: var(--ink-mid); line-height: 1.55; background: var(--sand); border-radius: 8px; padding: 10px 14px; margin-top: 4px; }
+.range-hint strong { color: var(--ink); }
+
+/* FOOTBALL FIELD (blurred version in lock) */
 .ff-wrapper { padding: 4px 0 16px; }
 .ff-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-light); margin-bottom: 6px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
 .ff-track { height: 12px; background: var(--sand-dark); border-radius: 6px; position: relative; margin-bottom: 8px; }
@@ -115,16 +156,20 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--teal-light); flex-shrink: 0; }
 .step-line { height: 9px; border-radius: 3px; background: var(--sand-dark); flex: 1; }
 
-.lock-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(247,243,237,0.65); backdrop-filter: blur(2px); }
-.lock-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--ink); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+/* LOCK OVERLAY */
+.lock-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(247,243,237,0.75); backdrop-filter: blur(3px); padding: 16px; }
+.lock-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--ink); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
 .lock-text { font-size: 14px; font-weight: 600; color: var(--ink); text-align: center; }
-.lock-sub { font-size: 12.5px; color: var(--ink-mid); text-align: center; max-width: 240px; line-height: 1.5; }
-.lock-btn { background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 8px 20px; border-radius: 20px; text-decoration: none; margin-top: 4px; }
+.lock-sub { font-size: 12.5px; color: var(--ink-mid); text-align: center; max-width: 260px; line-height: 1.5; }
+.lock-btn { background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 10px 24px; border-radius: 20px; text-decoration: none; margin-top: 4px; display: inline-block; }
 .lock-btn.teal { background: var(--teal); }
 
-/* UPGRADE CARDS */
-.upgrade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
-.upgrade-card { border-radius: var(--radius); padding: 24px 20px; text-align: center; }
+/* ─── UPGRADE SECTION (improved) ─── */
+.upgrade-section { margin-bottom: 20px; }
+.upgrade-intro { font-size: 14px; color: var(--ink-mid); line-height: 1.65; margin-bottom: 16px; padding: 16px 20px; background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.upgrade-intro strong { color: var(--ink); }
+.upgrade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.upgrade-card { border-radius: var(--radius); padding: 24px 20px; }
 .upgrade-card.report { background: var(--ink); }
 .upgrade-card.playbook { background: var(--teal); }
 .upgrade-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.6); margin-bottom: 6px; }
@@ -134,28 +179,61 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .upgrade-features { text-align: left; margin-bottom: 16px; }
 .upgrade-feature { font-size: 12.5px; color: rgba(255,255,255,0.85); margin-bottom: 5px; display: flex; align-items: flex-start; gap: 6px; }
 .upgrade-feature::before { content: "✓"; font-weight: 700; flex-shrink: 0; color: white; }
-.btn-upgrade { display: block; background: white; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; font-weight: 700; padding: 12px 20px; border-radius: 10px; text-decoration: none; transition: transform 0.1s; box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+.btn-upgrade { display: block; background: white; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; font-weight: 700; padding: 12px 20px; border-radius: 10px; text-decoration: none; transition: transform 0.1s; box-shadow: 0 4px 16px rgba(0,0,0,0.2); text-align: center; }
 .btn-upgrade.report { color: var(--ink); }
 .btn-upgrade.playbook { color: var(--teal); }
 .btn-upgrade:hover { transform: translateY(-1px); }
-.upgrade-note { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 8px; }
+.upgrade-note { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 8px; text-align: center; }
 
 .attribution { text-align: center; font-size: 12px; color: var(--ink-light); padding-top: 8px; }
 .attribution a { color: var(--ink-light); }
+
+/* ─── MOBILE ─── */
 @media (max-width: 560px) {
+  .wrapper { padding: 20px 16px 80px; }
   .data-row { grid-template-columns: 1fr; }
   .report-address { font-size: 18px; }
+  .report-header { padding: 20px 18px; }
+  .verdict-card { padding: 20px 18px; }
+  .verdict-headline { font-size: 22px; }
+  .bridge-section { padding: 20px 18px; }
+  .anchor-card { padding: 18px 18px; }
   .upgrade-grid { grid-template-columns: 1fr; }
+  .locked-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .locked-price-badge { align-self: flex-start; }
+  /* Sticky CTA on mobile */
+  .mobile-sticky-cta { display: flex; }
 }
+@media (min-width: 561px) {
+  .mobile-sticky-cta { display: none; }
+}
+.mobile-sticky-cta {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+  padding: 12px 16px; gap: 10px;
+  background: rgba(247,243,237,0.97); backdrop-filter: blur(12px);
+  border-top: 1px solid var(--sand-border);
+  box-shadow: 0 -4px 20px rgba(30,28,24,0.08);
+}
+.mobile-cta-btn { flex: 1; text-align: center; padding: 13px 10px; border-radius: 10px; font-size: 14px; font-weight: 700; text-decoration: none; }
+.mobile-cta-btn.report { background: var(--ink); color: white; }
+.mobile-cta-btn.playbook { background: var(--teal); color: white; }
 </style>
 </head>
 <body>
+
+<!-- MOBILE STICKY CTA -->
+<div class="mobile-sticky-cta">
+  <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="mobile-cta-btn report">Report — £29</a>
+  <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="mobile-cta-btn playbook">Playbook — £49</a>
+</div>
+
 <nav>
   <div class="nav-inner">
     <a href="https://houseoffer.netlify.app" class="logo"><span class="logo-dot"></span>HouseOffer</a>
     <span class="nav-tag">Free Report</span>
   </div>
 </nav>
+
 <div class="wrapper">
 
   <!-- HEADER -->
@@ -170,7 +248,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
   </div>
 
-  <!-- VERDICT -->
+  <!-- ─── VERDICT ─── -->
   <div class="verdict-card {{ verdict }}">
     <div class="verdict-eyebrow">
       {% if verdict == 'overpriced' %}⚠️ Our verdict
@@ -179,10 +257,10 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       {% else %}ℹ️ Our verdict{% endif %}
     </div>
     <div class="verdict-headline">
-      {% if verdict == 'overpriced' %}Asking price is above comparable sales
-      {% elif verdict == 'value' %}Priced below what comparable homes have sold for
-      {% elif verdict == 'fair' %}Fairly priced for this area
-      {% else %}Insufficient data for a verdict{% endif %}
+      {% if verdict == 'overpriced' %}This property is asking above what the market supports
+      {% elif verdict == 'value' %}This property is priced below what comparable homes have sold for
+      {% elif verdict == 'fair' %}Fairly priced — but that doesn't mean there's no room to negotiate
+      {% else %}Not enough local data for a verdict{% endif %}
     </div>
     <div class="verdict-body">
       {% if local_avg_sold %}
@@ -195,35 +273,43 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           {% else %}in line with{% endif %}
         </strong>
         than what similar homes have actually sold for.
-        {% if verdict == 'overpriced' %}That gap is meaningful — and potentially negotiable.
-        {% elif verdict == 'value' %}This could represent good value worth investigating further.
-        {% else %}The asking price looks reasonable based on local evidence.{% endif %}
+        {% if verdict == 'overpriced' %}
+          That gap is real money — and it's negotiable if you know how to use it.
+        {% elif verdict == 'value' %}
+          In a competitive market, this kind of gap disappears fast. You need to move confidently — with the right number ready.
+        {% else %}
+          "Fair" doesn't mean you pay asking. It means the market won't hand you a discount — you have to negotiate one.
+        {% endif %}
       {% else %}
-        We couldn't find enough comparable sold prices for a verdict. The full report includes a manual comparable analysis.
+        We couldn't find enough comparable sold prices for a verdict. The full report includes a manual comparable analysis with our recommendation.
       {% endif %}
     </div>
   </div>
 
-  <!-- ANCHOR BIAS CALLOUT -->
+  <!-- ─── ANCHOR BIAS CALLOUT ─── -->
   {% if local_avg_sold %}
   <div class="anchor-card">
     <div class="anchor-eyebrow">🧠 A note on anchor bias</div>
-    <div class="anchor-headline">The asking price is designed to anchor your thinking</div>
+    <div class="anchor-headline">
+      {% if verdict == 'overpriced' %}Their number is designed to be your starting point. It shouldn't be.
+      {% elif verdict == 'value' %}Move fast — but move with the right number, not theirs.
+      {% else %}The asking price feels reasonable. That's exactly when anchoring works best.{% endif %}
+    </div>
     <div class="anchor-body">
-      Estate agents know that the first number you see shapes everything that follows. It's called anchoring — a well-documented negotiation tactic.
+      Estate agents know that the first number you see shapes every decision that follows. It's called anchoring — and it's deliberate.
       {% if verdict == 'overpriced' %}
-      The data suggests this property is priced <strong>{{ sold_diff_pct }}% above</strong> what comparable homes have actually sold for.
-      Don't let their number become your starting point. The full report gives you <em>your</em> number to anchor from.
+      The data shows this property is asking <strong>{{ sold_diff_pct }}% above</strong> what comparable homes have actually sold for.
+      Don't negotiate down from their number. The full report gives you <em>your</em> number to anchor from instead.
       {% elif verdict == 'fair' %}
-      In this case, the asking price appears roughly in line with the market — but "fair" doesn't mean there's no room to negotiate. The full report shows you exactly where to start.
+      This asking price is close to the market — which makes it feel unchallengeable. It isn't. The full report shows you exactly where to start and how far you can push.
       {% else %}
-      In this case, the asking price appears below recent comparable sales — which may mean competition. The full report helps you move quickly and confidently.
+      This property looks like good value — which means others may think so too. The full report gives you a confident opening offer and a strategy to secure it before someone else does.
       {% endif %}
     </div>
   </div>
   {% endif %}
 
-  <!-- DATA POINT 1: SOLD PRICE COMPARISON (BEFORE / AFTER) -->
+  <!-- DATA POINT 1: SOLD PRICE COMPARISON -->
   {% if local_avg_sold %}
   <div class="section-title">📊 Their number vs the market</div>
   <div class="data-row">
@@ -252,7 +338,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   <div class="source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales only · interquartile mean</div>
   {% endif %}
 
-  <!-- DATA POINT 2: HPI-ADJUSTED LAST SALE (BEFORE / AFTER) -->
+  <!-- DATA POINT 2: HPI-ADJUSTED LAST SALE -->
   {% if hpi_adjustment %}
   <div class="section-title">📈 This property's history vs asking price</div>
   <div class="data-row">
@@ -316,13 +402,103 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </div>
       <div class="dom-body">
         Properties in this area typically sell within <strong>{{ local_avg_dom }} days</strong>.
-        {% if dom_signal == 'high' %}Sellers waiting this long are usually open to offers below asking.{% endif %}
+        {% if dom_signal == 'high' %}Sellers waiting this long are usually open to offers below asking.
+        {% elif dom_signal == 'medium' %}It hasn't been on long enough to signal desperation — but it's not flying off the shelf either.
+        {% else %}This is moving normally. Competition may be real.{% endif %}
       </div>
     </div>
   </div>
   {% endif %}
 
-  <!-- LOCKED: £29 FOOTBALL FIELD -->
+  <!-- ─── BRIDGE SECTION ─── -->
+  <div class="bridge-section {{ verdict }}">
+    <div class="bridge-eyebrow">
+      {% if verdict == 'overpriced' %}🎯 You have evidence. Here's how to use it.
+      {% elif verdict == 'value' %}🎯 You have an edge. Here's how to protect it.
+      {% elif verdict == 'fair' %}🎯 The data is level. Here's how to negotiate anyway.
+      {% else %}🎯 Limited data. Here's how to build your case.{% endif %}
+    </div>
+    <div class="bridge-headline">
+      {% if verdict == 'overpriced' %}A number without reasoning is just a guess. Agents are trained to ignore guesses.
+      {% elif verdict == 'value' %}Moving fast without a strategy means overpaying for something already underpriced.
+      {% elif verdict == 'fair' %}When the data is neutral, negotiation skill is the only edge left.
+      {% else %}Without comparables, your offer lives or dies on how it's constructed.{% endif %}
+    </div>
+    <div class="bridge-body">
+
+      {# ── OVERPRICED ── #}
+      {% if verdict == 'overpriced' %}
+      <p>You already have real negotiating ammunition from this report:</p>
+      <ul class="bridge-weapons">
+        {% if local_avg_sold %}
+        <li><strong>Comparable sales</strong> — {{ comparables_count }} similar homes sold at an average of {{ local_avg_sold_formatted }}. That's a {{ sold_diff_pct }}% gap you can cite by name.</li>
+        {% endif %}
+        {% if hpi_adjustment %}
+        <li><strong>This property's own history</strong> — it last sold for {{ hpi_adjustment.sale_price_formatted }}. HPI-adjusted for today's market, that's {{ hpi_adjustment.adjusted_price_formatted }}. The asking price is above even that.</li>
+        {% endif %}
+        {% if days_on_market and dom_signal == 'high' %}
+        <li><strong>Days on market</strong> — {{ days_on_market }} days versus a local average of {{ local_avg_dom }}. That's a seller under pressure, and pressure is leverage.</li>
+        {% elif days_on_market and dom_signal == 'medium' %}
+        <li><strong>Days on market</strong> — {{ days_on_market }} days listed. Not desperate yet, but the clock is running in your favour.</li>
+        {% endif %}
+      </ul>
+      <p>But walking in with individual data points isn't the same as walking in with a position. Estate agents deal with "I think it's worth less" every day. What they can't easily dismiss is: <em>"Based on {{ comparables_count }} comparable sales, the HPI-adjusted value of this property, and {{ days_on_market }} days on market, my opening offer is £X — and here's the reasoning."</em></p>
+      <p>The full report synthesises every data point into a single <strong>football field valuation</strong> — your walk-away number, your opening offer, and your target price — with the written reasoning to back each figure in the room.</p>
+
+      {# ── VALUE ── #}
+      {% elif verdict == 'value' %}
+      <p>This property looks underpriced — which is good news, but it changes your negotiation entirely. Here's what you're working with:</p>
+      <ul class="bridge-weapons">
+        {% if local_avg_sold %}
+        <li><strong>Comparable sales</strong> — similar homes are selling at {{ local_avg_sold_formatted }} on average. This property is asking {{ sold_diff_pct|abs }}% below that. You need to know if that gap is justified or just an opportunity.</li>
+        {% endif %}
+        {% if hpi_adjustment %}
+        <li><strong>This property's history</strong> — last sold {{ hpi_adjustment.sale_price_formatted }}, HPI-adjusted to {{ hpi_adjustment.adjusted_price_formatted }} today. Understanding why it's priced below that tells you whether to offer quickly or probe for problems.</li>
+        {% endif %}
+        {% if days_on_market %}
+        <li><strong>Days on market</strong> — {{ days_on_market }} days. {% if dom_signal == 'low' %}Moving at normal pace. Others will have spotted this too.{% else %}Slower than average — worth understanding why before you commit.{% endif %}</li>
+        {% endif %}
+      </ul>
+      <p>With good-value properties, the risk isn't paying too much — it's paying full asking price on something you could still have negotiated, or losing it by moving too slowly with the wrong opening offer.</p>
+      <p>The full report gives you a <strong>precise opening offer</strong> calibrated to secure the property competitively, the reasoning to justify it, and a read on why it's priced below market — so you move fast and smart, not just fast.</p>
+
+      {# ── FAIR ── #}
+      {% elif verdict == 'fair' %}
+      <p>A fair asking price is the hardest position to negotiate from — because the agent has the data to back it up. But "fair" still has room in it. Here's your position:</p>
+      <ul class="bridge-weapons">
+        {% if local_avg_sold %}
+        <li><strong>Comparable sales</strong> — {{ comparables_count }} sold properties at an average of {{ local_avg_sold_formatted }}. The gap is small ({{ sold_diff_pct }}%), but it exists — and it's the basis of a credible opening offer.</li>
+        {% endif %}
+        {% if hpi_adjustment %}
+        <li><strong>This property's own history</strong> — HPI-adjusted value of {{ hpi_adjustment.adjusted_price_formatted }}. Even a small difference between that and asking is a legitimate point to raise.</li>
+        {% endif %}
+        {% if days_on_market %}
+        <li><strong>Days on market</strong> — {{ days_on_market }} days. {% if dom_signal != 'low' %}That's above average, which softens the seller's position even when the price looks right.{% else %}Moving normally — you'll need to be sharp on your offer.{% endif %}</li>
+        {% endif %}
+      </ul>
+      <p>The agents won't budge on "I think it's worth less." But they will engage with a structured, reasoned offer: comparable evidence, an adjusted baseline, and a specific number that you can defend. That's what opens a negotiation even when the price looks fair.</p>
+      <p>The full report builds that structure — a <strong>football field valuation</strong> with your opening offer, target, and walk-away number, plus the written case for each figure so you're not just asserting a position, you're evidencing one.</p>
+
+      {# ── UNKNOWN ── #}
+      {% else %}
+      <p>Without enough local comparable sales, you're in a more exposed position than most buyers — the asking price is the only public number in the room, and that's exactly how the agent wants it.</p>
+      <p>Negotiating without comparables isn't impossible, but it requires building your case from different angles:</p>
+      <ul class="bridge-weapons">
+        {% if hpi_adjustment %}
+        <li><strong>This property's own history</strong> — it last sold for {{ hpi_adjustment.sale_price_formatted }}. HPI-adjusted to today, that's {{ hpi_adjustment.adjusted_price_formatted }}. That's your baseline, even without street-level comparables.</li>
+        {% endif %}
+        {% if days_on_market %}
+        <li><strong>Days on market</strong> — {{ days_on_market }} days listed. {% if dom_signal == 'high' %}Well above average — a motivated seller is your leverage when data is thin.{% else %}Worth monitoring as a signal of seller appetite.{% endif %}</li>
+        {% endif %}
+        <li><strong>Manual comparable analysis</strong> — the full report sources comparables from adjacent streets and similar property types to build the case the local data alone can't.</li>
+      </ul>
+      <p>The full report does this work for you — producing a <strong>reasoned opening offer</strong> you can walk in with and defend, even in a market where the data is thin.</p>
+      {% endif %}
+
+    </div>
+  </div>
+
+  <!-- ─── LOCKED: £29 VALUATION RANGE (improved teaser) ─── -->
   <div class="locked-section">
     <div class="locked-header">
       <div class="locked-header-left">
@@ -331,34 +507,52 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </div>
       <div class="locked-price-badge">£29 Report</div>
     </div>
-    <div class="locked-body" style="min-height:220px;">
-      <div class="locked-blur" style="padding:20px 24px 10px;">
-        <div class="ff-wrapper">
-          <div class="ff-labels"><span>Walk away</span><span>Offer here</span><span>Asking</span></div>
-          <div class="ff-track">
-            <div class="ff-fill"></div>
-            <div class="ff-pin"></div>
-          </div>
-          <div class="ff-values">
-            <span class="ff-val">£███,███</span>
-            <span class="ff-val center">£███,███</span>
-            <span class="ff-val">£███,███</span>
+    <div class="locked-body" style="min-height:240px;">
+      <!-- Improved teaser: real range shape with blurred numbers -->
+      <div class="range-teaser">
+        <div class="range-bar-wrap">
+          <div class="range-bar-labels"><span>Walk away</span><span>Start here</span><span>Asking</span></div>
+          <div class="range-bar-track">
+            <div class="range-bar-fill"></div>
+            <div class="range-bar-pin"></div>
           </div>
         </div>
-        <div class="ff-row"><div class="ff-dot"></div><div class="ff-line" style="width:55%;"></div><div class="ff-line" style="width:20%;"></div></div>
-        <div class="ff-row"><div class="ff-dot"></div><div class="ff-line" style="width:40%;"></div><div class="ff-line" style="width:30%;"></div></div>
-        <div class="ff-row"><div class="ff-dot"></div><div class="ff-line" style="width:65%;"></div><div class="ff-line" style="width:15%;"></div></div>
+        <div class="range-values">
+          <div class="range-val">
+            <div class="range-val-label">Walk away</div>
+            <div class="range-val-num blurred">£000,000</div>
+          </div>
+          <div class="range-val">
+            <div class="range-val-label">Open with</div>
+            <div class="range-val-num target blurred">£000,000</div>
+          </div>
+          <div class="range-val">
+            <div class="range-val-label">Asking</div>
+            <div class="range-val-num">{{ asking_price_formatted }}</div>
+          </div>
+        </div>
+        <div class="range-hint">
+          {% if verdict == 'overpriced' %}
+            The report synthesises your comparable evidence, HPI data{% if days_on_market and dom_signal != 'low' %}, and days-on-market signal{% endif %} into a single number to walk in with — plus the written reasoning to hold your position when the agent pushes back.
+          {% elif verdict == 'value' %}
+            The report calculates the right opening offer to secure this competitively — not so high you overpay, not so low you lose it — with the reasoning to explain exactly why.
+          {% elif verdict == 'fair' %}
+            Even at fair value, there's a defensible opening offer below asking. The report builds the evidence-based case that makes it credible — not just a number, but a position.
+          {% else %}
+            The report constructs your offer from the data available — HPI history{% if days_on_market %}, days on market{% endif %}, and manual comparables — with the full reasoning written out so you can deliver it with confidence.
+          {% endif %}
+        </div>
       </div>
       <div class="lock-overlay">
         <div class="lock-icon">🔒</div>
-        <div class="lock-text">Full valuation range locked</div>
-        <div class="lock-sub">See your specific opening offer, target price, and walk-away number</div>
+        <div class="lock-text">Your numbers are ready</div>
+        <div class="lock-sub">Unlock your specific opening offer, target price, and walk-away number</div>
         <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="lock-btn">Unlock for £29</a>
       </div>
     </div>
   </div>
 
-  <!-- LOCKED: £49 NEGOTIATION EMAIL -->
+  <!-- ─── LOCKED: £49 NEGOTIATION PLAYBOOK ─── -->
   <div class="locked-section" style="margin-bottom:24px;">
     <div class="locked-header">
       <div class="locked-header-left">
@@ -391,40 +585,69 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </div>
       <div class="lock-overlay">
         <div class="lock-icon" style="background:var(--teal);">🔒</div>
-        <div class="lock-text">Negotiation playbook locked</div>
-        <div class="lock-sub">Get your word-for-word offer email, counter-offer strategy, and walk-away script</div>
+        <div class="lock-text">
+          {% if verdict == 'overpriced' %}Turn the gap into your opening line
+          {% elif verdict == 'value' %}Move fast — with the right words
+          {% else %}Your opening email, written for you{% endif %}
+        </div>
+        <div class="lock-sub">Word-for-word offer email, counter-offer strategy, and walk-away script — written for this property</div>
         <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="lock-btn teal">Unlock for £49</a>
       </div>
     </div>
   </div>
 
-  <!-- UPGRADE GRID -->
-  <div class="upgrade-grid">
-    <div class="upgrade-card report">
-      <div class="upgrade-eyebrow">Report</div>
-      <div class="upgrade-price-big">£29</div>
-      <div class="upgrade-body">Everything you need to make a confident, evidence-based offer</div>
-      <div class="upgrade-features">
-        <div class="upgrade-feature">Recommended opening offer</div>
-        <div class="upgrade-feature">Walk-away price</div>
-        <div class="upgrade-feature">Full comparable sales (10–15)</div>
-        <div class="upgrade-feature">Seller signal score</div>
-      </div>
-      <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="btn-upgrade report">Get my report — £29</a>
-      <div class="upgrade-note">One-time · Instant delivery</div>
+  <!-- ─── UPGRADE SECTION (with intro bridge) ─── -->
+  <div class="upgrade-section">
+    <div class="upgrade-intro">
+      {% if verdict == 'overpriced' %}
+        You've seen the data. This property is asking <strong>{{ sold_diff_pct }}% above</strong> what comparable homes have sold for.
+        The question now is: <strong>what number do you walk in with?</strong> That's exactly what the report answers.
+      {% elif verdict == 'value' %}
+        This looks like one of the better-priced properties in the area. <strong>Don't lose it by hesitating or guessing.</strong>
+        The report gives you a confident, evidence-based offer to make immediately.
+      {% elif verdict == 'fair' %}
+        A fair asking price still has room in it. <strong>The difference between a good offer and a great one is knowing where to start.</strong>
+        The report gives you that number — and the reasoning to back it up.
+      {% else %}
+        Without clear comparable data, you're negotiating blind. <strong>The report does the analysis for you</strong> — comparable sales, recommended offer, and walk-away number.
+      {% endif %}
     </div>
-    <div class="upgrade-card playbook">
-      <div class="upgrade-eyebrow">Full Playbook</div>
-      <div class="upgrade-price-big">£49</div>
-      <div class="upgrade-body">For competitive properties — includes everything to negotiate with confidence</div>
-      <div class="upgrade-features">
-        <div class="upgrade-feature">Everything in Report</div>
-        <div class="upgrade-feature">Word-for-word offer email</div>
-        <div class="upgrade-feature">Counter-offer strategy</div>
-        <div class="upgrade-feature">Email Q&A support</div>
+    <div class="upgrade-grid">
+      <div class="upgrade-card report">
+        <div class="upgrade-eyebrow">Report</div>
+        <div class="upgrade-price-big">£29</div>
+        <div class="upgrade-body">
+          {% if verdict == 'overpriced' %}Your evidence-based number to walk in with — and the data to back it up
+          {% elif verdict == 'value' %}A confident opening offer, ready to go — so you don't lose this one
+          {% elif verdict == 'fair' %}Know exactly where to start — and how far you can push
+          {% else %}Your recommended offer, built from comparable sales and manual analysis{% endif %}
+        </div>
+        <div class="upgrade-features">
+          <div class="upgrade-feature">Recommended opening offer</div>
+          <div class="upgrade-feature">Walk-away price</div>
+          <div class="upgrade-feature">Full comparable sales (10–15)</div>
+          <div class="upgrade-feature">Seller signal score</div>
+        </div>
+        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="btn-upgrade report">Get my report — £29</a>
+        <div class="upgrade-note">One-time · Instant delivery</div>
       </div>
-      <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="btn-upgrade playbook">Get the playbook — £49</a>
-      <div class="upgrade-note">One-time · Instant delivery</div>
+      <div class="upgrade-card playbook">
+        <div class="upgrade-eyebrow">Full Playbook</div>
+        <div class="upgrade-price-big">£49</div>
+        <div class="upgrade-body">
+          {% if verdict == 'overpriced' %}Includes the report plus the exact words to use — offer email, counter-offer script, walk-away line
+          {% elif verdict == 'value' %}Move fast and sound credible — word-for-word offer email included
+          {% else %}Everything in the report, plus a negotiation script written for this property{% endif %}
+        </div>
+        <div class="upgrade-features">
+          <div class="upgrade-feature">Everything in Report</div>
+          <div class="upgrade-feature">Word-for-word offer email</div>
+          <div class="upgrade-feature">Counter-offer strategy</div>
+          <div class="upgrade-feature">Email Q&A support</div>
+        </div>
+        <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="btn-upgrade playbook">Get the playbook — £49</a>
+        <div class="upgrade-note">One-time · Instant delivery</div>
+      </div>
     </div>
   </div>
 
