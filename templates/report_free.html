@@ -223,8 +223,8 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 
 <!-- MOBILE STICKY CTA -->
 <div class="mobile-sticky-cta">
-  <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="mobile-cta-btn report">Report — £29</a>
-  <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="mobile-cta-btn playbook">Playbook — £49</a>
+  <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="mobile-cta-btn report">Report — £29</a>
+  <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="mobile-cta-btn playbook">Playbook — £49</a>
 </div>
 
 <nav>
@@ -547,7 +547,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <div class="lock-icon">🔒</div>
         <div class="lock-text">Your numbers are ready</div>
         <div class="lock-sub">Unlock your specific opening offer, target price, and walk-away number</div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="lock-btn">Unlock for £29</a>
+        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="lock-btn">Unlock for £29</a>
       </div>
     </div>
   </div>
@@ -591,7 +591,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           {% else %}Your opening email, written for you{% endif %}
         </div>
         <div class="lock-sub">Word-for-word offer email, counter-offer strategy, and walk-away script — written for this property</div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="lock-btn teal">Unlock for £49</a>
+        <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="lock-btn teal">Unlock for £49</a>
       </div>
     </div>
   </div>
@@ -628,7 +628,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           <div class="upgrade-feature">Full comparable sales (10–15)</div>
           <div class="upgrade-feature">Seller signal score</div>
         </div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="btn-upgrade report">Get my report — £29</a>
+        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="btn-upgrade report">Get my report — £29</a>
         <div class="upgrade-note">One-time · Instant delivery</div>
       </div>
       <div class="upgrade-card playbook">
@@ -645,7 +645,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           <div class="upgrade-feature">Counter-offer strategy</div>
           <div class="upgrade-feature">Email Q&A support</div>
         </div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}" class="btn-upgrade playbook">Get the playbook — £49</a>
+        <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="btn-upgrade playbook">Get the playbook — £49</a>
         <div class="upgrade-note">One-time · Instant delivery</div>
       </div>
     </div>
@@ -658,5 +658,69 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
 
 </div>
+
+{% if report_id %}
+<script>
+// Engagement tracking — only fires on the live /r/<uuid> page, NOT in the email version
+(function() {
+  var REPORT_ID = "{{ report_id }}";
+  var BACKEND = "https://houseoffer-backend.onrender.com";
+  var startTime = Date.now();
+  var maxScrollPct = 0;
+  var milestones = {25: false, 50: false, 75: false, 100: false};
+
+  function log(event, extra) {
+    try {
+      navigator.sendBeacon(
+        BACKEND + "/log",
+        new Blob([JSON.stringify({report_id: REPORT_ID, event: event, extra: extra || {}})], {type: "application/json"})
+      );
+    } catch(e) {}
+  }
+
+  // Track scroll depth at 25/50/75/100% milestones
+  window.addEventListener("scroll", function() {
+    var scrollTop = window.scrollY || document.documentElement.scrollTop;
+    var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    if (docHeight <= 0) return;
+    var pct = Math.min(100, Math.round((scrollTop / docHeight) * 100));
+    if (pct > maxScrollPct) maxScrollPct = pct;
+    [25, 50, 75, 100].forEach(function(m) {
+      if (!milestones[m] && pct >= m) {
+        milestones[m] = true;
+        log("scroll_depth", {pct: m});
+      }
+    });
+  }, {passive: true});
+
+  // Track time on page when leaving
+  window.addEventListener("beforeunload", function() {
+    var seconds = Math.round((Date.now() - startTime) / 1000);
+    log("page_exit", {seconds: seconds, max_scroll_pct: maxScrollPct});
+  });
+
+  // Track lock-overlay engagement (when locked sections come into view)
+  if ("IntersectionObserver" in window) {
+    var seenLocks = new Set();
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          var label = entry.target.getAttribute("data-lock-label") || entry.target.className;
+          if (!seenLocks.has(label)) {
+            seenLocks.add(label);
+            log("lock_seen", {label: label});
+          }
+        }
+      });
+    }, {threshold: 0.5});
+    document.querySelectorAll(".lock-overlay").forEach(function(el, i) {
+      el.setAttribute("data-lock-label", "lock_" + (i + 1));
+      observer.observe(el);
+    });
+  }
+})();
+</script>
+{% endif %}
+
 </body>
 </html>
