@@ -144,7 +144,12 @@ def _find_json_objects(text: str):
 
 
 def _decode_page_model_refs(arr: list) -> dict:
-    """Decode Rightmove compact PAGE_MODEL (array with integer references)."""
+    """Decode Rightmove compact PAGE_MODEL (array with integer references).
+
+    Integers in objects point at array slots. Only slots holding dict/list are
+    dereferenced further; scalars (str/int/float/bool/None) are terminal values.
+    Without that rule, e.g. bedrooms -> 170 -> 2 wrongly follows index 2 (id).
+    """
     cache: dict = {}
 
     def resolve(val: Any) -> Any:
@@ -152,7 +157,11 @@ def _decode_page_model_refs(arr: list) -> dict:
             if val in cache:
                 return cache[val]
             cache[val] = None
-            out = resolve(arr[val])
+            target = arr[val]
+            if isinstance(target, (dict, list)):
+                out = resolve(target)
+            else:
+                out = target
             cache[val] = out
             return out
         if isinstance(val, list):
@@ -235,14 +244,19 @@ def _postcode_from_address(addr: dict) -> Optional[str]:
 def _apply_rightmove_property(result: dict, prop: dict) -> None:
     prices = prop.get("prices") or {}
     price = prices.get("primaryPrice") or prices.get("displayPrice") or prop.get("price")
-    parsed = parse_price(price)
-    if parsed:
-        result["asking_price"] = parsed
+    price_str = str(price or "").lower()
+    # Skip rental pcm/pw — HouseOffer compares sale prices only
+    if "pcm" not in price_str and "pw" not in price_str and "per week" not in price_str:
+        parsed = parse_price(price)
+        if parsed >= 10_000:
+            result["asking_price"] = parsed
 
     beds = prop.get("bedrooms") or prop.get("beds")
     if beds is not None:
         try:
-            result["bedrooms"] = int(beds)
+            beds_int = int(beds)
+            if 0 < beds_int <= 10:
+                result["bedrooms"] = beds_int
         except (TypeError, ValueError):
             pass
     if result["bedrooms"] == DEFAULT_RESULT["bedrooms"]:
