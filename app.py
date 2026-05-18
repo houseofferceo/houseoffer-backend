@@ -834,6 +834,7 @@ def submit():
             "property_type": report["property_type"],
             "asking_price": asking_price,
             "verdict": report["verdict"],
+            "buyer_estimate": buyer_estimate or "",
             "anchor_bias": anchor_bias,
             "property_url": property_url,
             "report_url": report_url,
