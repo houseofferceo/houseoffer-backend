@@ -1,6 +1,9 @@
 import os
 import re
 import json
+import time
+import uuid
+import hashlib
 import requests
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -11,10 +14,82 @@ from property_scraper import scrape_property_url
 app = Flask(__name__)
 CORS(app, origins=["https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
 
+# ── REPORT STORAGE ────────────────────────────────────────────────────────────
+# Reports stored as JSON files on disk under /tmp/reports/<uuid>.json
+# Engagement events stored under /tmp/events/<uuid>.json
+# Note: /tmp is ephemeral on Render — fine for now, swap to S3/Redis when needed
+REPORTS_DIR = "/tmp/houseoffer_reports"
+EVENTS_DIR = "/tmp/houseoffer_events"
+os.makedirs(REPORTS_DIR, exist_ok=True)
+os.makedirs(EVENTS_DIR, exist_ok=True)
+
+def save_report(report_id, payload):
+    """Persist report data to disk so /r/<uuid> can serve it later."""
+    try:
+        with open(os.path.join(REPORTS_DIR, f"{report_id}.json"), "w") as f:
+            json.dump(payload, f)
+        return True
+    except Exception as e:
+        print(f"save_report error: {e}")
+        return False
+
+def load_report(report_id):
+    """Retrieve stored report data by UUID. Returns None if not found."""
+    try:
+        path = os.path.join(REPORTS_DIR, f"{report_id}.json")
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"load_report error: {e}")
+        return None
+
+def log_event(report_id, event_type, extra=None):
+    """Append an engagement event for a given report UUID."""
+    try:
+        path = os.path.join(EVENTS_DIR, f"{report_id}.json")
+        events = []
+        if os.path.exists(path):
+            with open(path) as f:
+                events = json.load(f)
+        events.append({
+            "type": event_type,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "extra": extra or {},
+        })
+        with open(path, "w") as f:
+            json.dump(events, f)
+        return True
+    except Exception as e:
+        print(f"log_event error: {e}")
+        return False
+
+# ── DEDUP ─────────────────────────────────────────────────────────────────────
+# Simple in-memory dedup cache: {hash: timestamp}
+# Prevents same email+URL submission within 60s causing duplicate report emails
+_RECENT_SUBMISSIONS = {}
+DEDUP_WINDOW_SECONDS = 60
+
+def _is_duplicate_submission(email, property_url):
+    """Returns True if this email+URL was submitted within the last 60 seconds."""
+    key = hashlib.sha256(f"{email.lower().strip()}|{property_url.strip()}".encode()).hexdigest()
+    now = time.time()
+    # Clean up old entries
+    for k in list(_RECENT_SUBMISSIONS.keys()):
+        if now - _RECENT_SUBMISSIONS[k] > DEDUP_WINDOW_SECONDS:
+            del _RECENT_SUBMISSIONS[k]
+    if key in _RECENT_SUBMISSIONS:
+        return True
+    _RECENT_SUBMISSIONS[key] = now
+    return False
+
 PROPERTYDATA_API_KEY = os.environ.get("PROPERTYDATA_API_KEY")
 EPC_API_KEY = os.environ.get("EPC_API_KEY")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+# Base URL used when constructing shareable report links sent in emails
+BASE_URL = os.environ.get("BASE_URL", "https://houseoffer-backend.onrender.com")
 MIN_COMPARABLES = 10
 
 def format_postcode(raw):
@@ -369,8 +444,28 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "property_url": property_url,
     }
 
-def send_report_email(to_email, report_html, postcode, verdict):
+def send_report_email(to_email, report_html, postcode, verdict, report_url=None):
+    """Send the user their report. If report_url provided, prepend a banner with the live link."""
     try:
+        # Inject a "view online" banner at the top of the HTML if we have a report URL
+        if report_url:
+            banner = f'''
+            <div style="background:#1a6b5a;padding:20px;text-align:center;font-family:sans-serif;">
+              <p style="color:#e3f4ef;font-size:13px;margin:0 0 10px;letter-spacing:0.05em;">YOUR REPORT IS ALSO AVAILABLE ONLINE</p>
+              <a href="{report_url}" style="display:inline-block;background:white;color:#1a6b5a;padding:10px 22px;border-radius:20px;font-weight:700;text-decoration:none;font-size:14px;">View live report →</a>
+              <p style="color:rgba(255,255,255,0.7);font-size:12px;margin:10px 0 0;">Bookmark the link — your data stays accessible</p>
+            </div>
+            '''
+            # Insert banner immediately after <body> tag
+            if "<body" in report_html:
+                report_html = re.sub(r"(<body[^>]*>)", r"\1" + banner, report_html, count=1)
+            else:
+                report_html = banner + report_html
+
+        text_body = f"Your free HouseOffer report for {postcode}. Verdict: {verdict.upper()}."
+        if report_url:
+            text_body += f"\n\nView your full report online: {report_url}"
+
         r = requests.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
@@ -379,7 +474,7 @@ def send_report_email(to_email, report_html, postcode, verdict):
                 "to": [to_email],
                 "subject": f"Your free HouseOffer report — {postcode}",
                 "html": report_html,
-                "text": f"Your free HouseOffer report for {postcode}. Verdict: {verdict.upper()}."
+                "text": text_body,
             }
         )
         print(f"Resend: {r.status_code} {r.text}")
@@ -413,8 +508,18 @@ def track():
     postcode = request.args.get("postcode", "unknown")
     verdict = request.args.get("verdict", "unknown")
     anchor = request.args.get("anchor", "unknown")
+    report_id = request.args.get("rid", "")
     
-    print(f"UPGRADE CLICK: tier=£{tier} postcode={postcode} verdict={verdict} anchor_bias={anchor}")
+    print(f"UPGRADE CLICK: tier=£{tier} postcode={postcode} verdict={verdict} anchor_bias={anchor} rid={report_id}")
+
+    # Log engagement event tied to the report UUID (if we have one)
+    if report_id:
+        log_event(report_id, "upgrade_click", {
+            "tier": tier,
+            "postcode": postcode,
+            "verdict": verdict,
+            "anchor": anchor,
+        })
     
     # Notify owner
     try:
@@ -425,7 +530,7 @@ def track():
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
                 "to": [EMAIL_ADDRESS],
                 "subject": f"🔥 Upgrade click: £{tier} — {postcode} ({verdict})",
-                "text": f"Someone clicked upgrade!\n\nTier: £{tier}\nPostcode: {postcode}\nVerdict: {verdict}\nAnchor bias: {anchor}\n\nThis is a hot lead."
+                "text": f"Someone clicked upgrade!\n\nTier: £{tier}\nPostcode: {postcode}\nVerdict: {verdict}\nAnchor bias: {anchor}\nReport ID: {report_id}\n\nThis is a hot lead."
             }
         )
     except Exception as e:
@@ -434,9 +539,105 @@ def track():
     from flask import redirect
     return redirect("https://houseoffer.netlify.app/#pricing")
 
+@app.route("/r/<report_id>")
+def view_report(report_id):
+    """Serve a previously generated report by its UUID."""
+    # Basic safety check on the UUID format
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return "Report not found", 404
+
+    stored = load_report(report_id)
+    if not stored:
+        return ("<html><body style='font-family:sans-serif;padding:40px;text-align:center;'>"
+                "<h1>Report not found</h1>"
+                "<p>This report may have expired. Reports are kept for a limited time.</p>"
+                "<p><a href='https://houseoffer.netlify.app'>Generate a new report →</a></p>"
+                "</body></html>", 404)
+
+    # Log the view
+    log_event(report_id, "report_viewed", {
+        "user_agent": request.headers.get("User-Agent", "")[:200],
+        "referer": request.headers.get("Referer", "")[:200],
+    })
+
+    report = stored.get("report", {})
+    report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
+    return render_template("report_free.html", report_url=report_url, report_id=report_id, **report)
+
+@app.route("/log", methods=["POST"])
+def log_engagement():
+    """Receive engagement events from the report page (scroll depth, time on page, etc.)."""
+    data = request.get_json(silent=True) or {}
+    report_id = data.get("report_id", "")
+    event_type = data.get("event", "")
+    extra = data.get("extra", {})
+
+    if not report_id or not event_type:
+        return jsonify({"error": "report_id and event required"}), 400
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "invalid report_id"}), 400
+    if not re.fullmatch(r"[a-z0-9_]{1,40}", event_type):
+        return jsonify({"error": "invalid event type"}), 400
+
+    log_event(report_id, event_type, extra if isinstance(extra, dict) else {})
+    return jsonify({"status": "logged"})
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
+@app.route("/admin/events/<report_id>")
+def admin_events(report_id):
+    """Inspect engagement events for a specific report (basic auth via query param)."""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "unauthorized"}), 401
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "invalid report_id"}), 400
+    path = os.path.join(EVENTS_DIR, f"{report_id}.json")
+    if not os.path.exists(path):
+        return jsonify({"events": []})
+    with open(path) as f:
+        return jsonify({"events": json.load(f)})
+
+@app.route("/admin/recent")
+def admin_recent():
+    """List recent submissions for quick monitoring."""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "unauthorized"}), 401
+    out = []
+    try:
+        files = sorted(
+            os.listdir(REPORTS_DIR),
+            key=lambda f: os.path.getmtime(os.path.join(REPORTS_DIR, f)),
+            reverse=True,
+        )[:50]
+        for fname in files:
+            with open(os.path.join(REPORTS_DIR, fname)) as f:
+                d = json.load(f)
+            rid = fname.replace(".json", "")
+            report = d.get("report", {})
+            # Count events for this report
+            events_path = os.path.join(EVENTS_DIR, f"{rid}.json")
+            event_count = 0
+            if os.path.exists(events_path):
+                with open(events_path) as ef:
+                    event_count = len(json.load(ef))
+            out.append({
+                "report_id": rid,
+                "created_at": d.get("created_at"),
+                "email": d.get("email"),
+                "postcode": report.get("postcode"),
+                "verdict": report.get("verdict"),
+                "asking_price": report.get("asking_price"),
+                "anchor_bias": d.get("anchor_bias"),
+                "events": event_count,
+                "url": f"{BASE_URL.rstrip('/')}/r/{rid}",
+            })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"recent": out})
 
 @app.route("/debug-scrape")
 def debug_scrape():
@@ -542,6 +743,17 @@ def submit():
     if not to_email:
         return jsonify({"error": "Email address required"}), 400
 
+    if not property_url:
+        return jsonify({"error": "Property link required"}), 400
+
+    if "rightmove.co.uk" not in property_url.lower():
+        return jsonify({"error": "We currently support Rightmove links only. Zoopla support coming soon."}), 400
+
+    # Dedup: silently ignore duplicate submissions within 60s window
+    if _is_duplicate_submission(to_email, property_url):
+        print(f"DUPLICATE submission blocked: {to_email} | {property_url[:80]}")
+        return jsonify({"status": "sent", "deduped": True})
+
     postcode, asking_price, bedrooms, property_type, address = merge_scraped_listing(
         property_url, postcode, asking_price, bedrooms, property_type, address
     )
@@ -561,9 +773,12 @@ def submit():
             floor_area_sqm=floor_area_sqm,
             address=address,
         )
-        report_html = render_template("report_free.html", **report)
-        send_report_email(to_email, report_html, report["postcode"], report["verdict"])
-        # Calculate anchor bias
+
+        # Generate a UUID for this report so the user can access it online
+        report_id = uuid.uuid4().hex[:12]
+        report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
+
+        # Calculate anchor bias before storing (it goes into the persistence payload)
         anchor_bias = None
         if buyer_estimate and report.get("local_avg_sold"):
             try:
@@ -572,8 +787,36 @@ def submit():
                 anchor_bias = round(((est - local) / local) * 100, 1)
             except Exception:
                 pass
+
+        # Persist the report so /r/<uuid> can serve it later
+        save_report(report_id, {
+            "report": report,
+            "email": to_email,
+            "property_url": property_url,
+            "buyer_estimate": buyer_estimate,
+            "anchor_bias": anchor_bias,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+        })
+
+        # Log the initial submission as an event
+        log_event(report_id, "submission_created", {
+            "email": to_email,
+            "postcode": report["postcode"],
+            "verdict": report["verdict"],
+            "asking_price": asking_price,
+            "anchor_bias": anchor_bias,
+        })
+
+        report_html = render_template("report_free.html", report_url=report_url, **report)
+        send_report_email(to_email, report_html, report["postcode"], report["verdict"], report_url=report_url)
         notify_owner(to_email, property_url, report["postcode"], report["verdict"], buyer_estimate, anchor_bias)
-        return jsonify({"status": "sent", "postcode": report["postcode"]})
+
+        return jsonify({
+            "status": "sent",
+            "postcode": report["postcode"],
+            "report_id": report_id,
+            "report_url": report_url,
+        })
     except Exception as exc:
         print(f"Submit error: {exc}")
         return jsonify({"error": "Could not build report. Please try again."}), 500
