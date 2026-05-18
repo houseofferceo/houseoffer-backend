@@ -53,13 +53,23 @@ def log_event(report_id, event_type, extra=None):
         if os.path.exists(path):
             with open(path) as f:
                 events = json.load(f)
+        timestamp = datetime.utcnow().isoformat() + "Z"
         events.append({
             "type": event_type,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": timestamp,
             "extra": extra or {},
         })
         with open(path, "w") as f:
             json.dump(events, f)
+
+        # Mirror to Google Sheets (fire-and-forget)
+        post_to_sheets({
+            "type": "event",
+            "timestamp": timestamp,
+            "uuid": report_id,
+            "event_type": event_type,
+            "extra": extra or {},
+        })
         return True
     except Exception as e:
         print(f"log_event error: {e}")
@@ -90,7 +100,23 @@ EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 # Base URL used when constructing shareable report links sent in emails
 BASE_URL = os.environ.get("BASE_URL", "https://houseoffer-backend.onrender.com")
+# Google Sheets webhook (Apps Script web app) — receives submissions & events
+SHEETS_WEBHOOK_URL = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL", "")
+SHEETS_WEBHOOK_SECRET = os.environ.get("SHEETS_WEBHOOK_SECRET", "")
 MIN_COMPARABLES = 10
+
+
+def post_to_sheets(payload):
+    """Fire-and-forget POST to the Google Sheets Apps Script webhook.
+    Failures are logged but never block the response to the user."""
+    if not SHEETS_WEBHOOK_URL or not SHEETS_WEBHOOK_SECRET:
+        return
+    try:
+        body = dict(payload)
+        body["secret"] = SHEETS_WEBHOOK_SECRET
+        requests.post(SHEETS_WEBHOOK_URL, json=body, timeout=5)
+    except Exception as e:
+        print(f"Sheets webhook error: {e}")
 
 def format_postcode(raw):
     raw = raw.strip().upper().replace(" ", "")
@@ -796,6 +822,21 @@ def submit():
             "buyer_estimate": buyer_estimate,
             "anchor_bias": anchor_bias,
             "created_at": datetime.utcnow().isoformat() + "Z",
+        })
+
+        # Write the submission row to Google Sheets (Submissions tab)
+        post_to_sheets({
+            "type": "submission",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "uuid": report_id,
+            "email": to_email,
+            "postcode": report["postcode"],
+            "property_type": report["property_type"],
+            "asking_price": asking_price,
+            "verdict": report["verdict"],
+            "anchor_bias": anchor_bias,
+            "property_url": property_url,
+            "report_url": report_url,
         })
 
         # Log the initial submission as an event
