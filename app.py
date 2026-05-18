@@ -146,6 +146,42 @@ def _filter_sold(data, type_keys):
     except Exception:
         return []
 
+def _all_sold_transactions(data):
+    if not data:
+        return []
+    try:
+        transactions = data.get("data", {}).get("raw_data", [])
+        return [t for t in transactions if t.get("price") and t.get("price") < 2_000_000]
+    except Exception:
+        return []
+
+def get_all_sold_at_postcode(postcode):
+    """All Land Registry sales at this postcode (any property type)."""
+    formatted = format_postcode(postcode)
+    sales = _all_sold_transactions(fetch_sold_prices(formatted))
+    if sales:
+        return sales, formatted
+    district = district_postcode(postcode)
+    return _all_sold_transactions(fetch_sold_prices(district)), district
+
+def _normalise_text(value):
+    return re.sub(r"[^A-Z0-9 ]", " ", (value or "").upper()).split()
+
+def _sale_matches_postcode(sale, postcode):
+    addr = (sale.get("address") or "").upper().replace(" ", "")
+    pc = format_postcode(postcode).replace(" ", "").upper()
+    return pc in addr
+
+def _sale_matches_address(sale, address):
+    """Prefer sales matching the street/building name when multiple exist at one postcode."""
+    if not address:
+        return True
+    street_tokens = [t for t in _normalise_text(address.split(",")[0]) if len(t) > 3]
+    if not street_tokens:
+        return True
+    addr_tokens = set(_normalise_text(sale.get("address")))
+    return any(t in addr_tokens for t in street_tokens)
+
 def avg_sold_price(comparables):
     if not comparables:
         return None
@@ -194,6 +230,7 @@ POSTCODE_TO_REGION = {
     "SS": "east-of-england", "WD": "east-of-england",
     "B": "west-midlands-region", "CV": "west-midlands-region", "DY": "west-midlands-region",
     "ST": "west-midlands-region", "TF": "west-midlands-region",
+    "WR": "west-midlands-region",
     "WS": "west-midlands-region", "WV": "west-midlands-region",
     "DE": "east-midlands", "LE": "east-midlands", "LN": "east-midlands",
     "NG": "east-midlands", "NN": "east-midlands",
@@ -228,15 +265,22 @@ def postcode_to_region(postcode):
             return POSTCODE_TO_REGION[prefix]
     return "england"
 
-def find_last_sale(comparables, postcode):
-    """Find the most recent sale matching this postcode from comparables."""
-    if not comparables:
+def find_last_sale(postcode, address=None):
+    """Find the most recent sale of this property from Land Registry data at its postcode."""
+    sales, _ = get_all_sold_at_postcode(postcode)
+    if not sales:
         return None
-    formatted = format_postcode(postcode).upper()
-    postcode_sales = [c for c in comparables if formatted in c.get("address", "").upper()]
-    if postcode_sales:
-        return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
-    return None
+
+    postcode_sales = [s for s in sales if _sale_matches_postcode(s, postcode)]
+    if not postcode_sales:
+        return None
+
+    if address:
+        matched = [s for s in postcode_sales if _sale_matches_address(s, address)]
+        if matched:
+            postcode_sales = matched
+
+    return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
 
 def calculate_hpi_adjustment(last_sale_price, sale_date_str, region):
     """Adjust a historical price to today's value using regional HPI."""
@@ -286,7 +330,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     hpi_adjustment = None
     try:
         region = postcode_to_region(postcode)
-        last_sale = find_last_sale(comparables, postcode)
+        last_sale = find_last_sale(postcode, address=address)
         if last_sale:
             hpi_adjustment = calculate_hpi_adjustment(
                 last_sale["price"], last_sale["date"], region
@@ -344,20 +388,7 @@ def send_report_email(to_email, report_html, postcode, verdict):
         print(f"Email error: {e}")
         return False
 
-def send_holding_email(to_email, property_url):
-    try:
-        requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "from": f"HouseOffer <{EMAIL_ADDRESS}>",
-                "to": [to_email],
-                "subject": "Your HouseOffer report — we need one more detail",
-                "text": "Hi,\n\nThanks for your submission. Could you reply with:\n1. The property postcode\n2. The asking price\n3. Number of bedrooms\n4. Property type\n\nThe HouseOffer team"
-            }
-        )
-    except Exception as e:
-        print(f"Holding email error: {e}")
+
 
 def notify_owner(to_email, property_url, postcode, verdict, buyer_estimate="", anchor_bias=None):
     try:
@@ -500,6 +531,7 @@ def submit():
     data = request.get_json(silent=True) or request.form
     to_email      = data.get("email", "")
     property_url  = data.get("property-url", "") or data.get("property_url", "")
+    buyer_estimate = data.get("buyer_estimate", "")
     asking_price  = int(str(data.get("asking_price", 0) or 0).replace(",", "").replace("£", "")) or 0
     bedrooms      = data.get("bedrooms", "3")
     property_type = data.get("property_type", "semi-detached")
@@ -514,9 +546,7 @@ def submit():
         property_url, postcode, asking_price, bedrooms, property_type, address
     )
 
-    if not postcode:
-        send_holding_email(to_email, property_url)
-        return jsonify({"status": "sent"})
+
 
     try:
         report = build_report_data(
@@ -541,10 +571,7 @@ def submit():
                 pass
         notify_owner(to_email, property_url, report["postcode"], report["verdict"], buyer_estimate, anchor_bias)
         return jsonify({"status": "sent", "postcode": report["postcode"]})
-    except Exception as e:
-        print(f"Submit error: {e}")
-        send_holding_email(to_email, property_url)
-        return jsonify({"status": "sent"})
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
