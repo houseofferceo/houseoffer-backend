@@ -546,7 +546,10 @@ def submit():
         property_url, postcode, asking_price, bedrooms, property_type, address
     )
 
-
+    if not postcode:
+        return jsonify({"error": "Could not determine postcode from that link. Try a UK sale listing on Rightmove or Zoopla."}), 400
+    if not asking_price:
+        return jsonify({"error": "Could not determine asking price from that link. Use a for-sale listing (not to-rent)."}), 400
 
     try:
         report = build_report_data(
@@ -571,6 +574,9 @@ def submit():
                 pass
         notify_owner(to_email, property_url, report["postcode"], report["verdict"], buyer_estimate, anchor_bias)
         return jsonify({"status": "sent", "postcode": report["postcode"]})
+    except Exception as exc:
+        print(f"Submit error: {exc}")
+        return jsonify({"error": "Could not build report. Please try again."}), 500
 
 
 if __name__ == "__main__":
