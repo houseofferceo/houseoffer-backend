@@ -471,26 +471,23 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     }
 
 def send_report_email(to_email, report_html, postcode, verdict, report_url=None):
-    """Send the user their report. If report_url provided, prepend a banner with the live link."""
+    """Send the user their report. The HTML should already be email-safe (report_email.html)."""
     try:
-        # Inject a "view online" banner at the top of the HTML if we have a report URL
-        if report_url:
-            banner = f'''
-            <div style="background:#1a6b5a;padding:20px;text-align:center;font-family:sans-serif;">
-              <p style="color:#e3f4ef;font-size:13px;margin:0 0 10px;letter-spacing:0.05em;">YOUR REPORT IS ALSO AVAILABLE ONLINE</p>
-              <a href="{report_url}" style="display:inline-block;background:white;color:#1a6b5a;padding:10px 22px;border-radius:20px;font-weight:700;text-decoration:none;font-size:14px;">View live report →</a>
-              <p style="color:rgba(255,255,255,0.7);font-size:12px;margin:10px 0 0;">Bookmark the link — your data stays accessible</p>
-            </div>
-            '''
-            # Insert banner immediately after <body> tag
-            if "<body" in report_html:
-                report_html = re.sub(r"(<body[^>]*>)", r"\1" + banner, report_html, count=1)
-            else:
-                report_html = banner + report_html
+        # Plain-text fallback for clients that don't render HTML
+        verdict_line = {
+            "overpriced": "asking above what the market supports",
+            "value": "priced below comparable sales",
+            "fair": "priced fairly — but there's room to negotiate",
+            "unknown": "we couldn't find enough local data for a verdict",
+        }.get(verdict, "our verdict is in")
 
-        text_body = f"Your free HouseOffer report for {postcode}. Verdict: {verdict.upper()}."
+        text_body = (
+            f"Your HouseOffer report for {postcode}\n\n"
+            f"Verdict: This property is {verdict_line}.\n\n"
+        )
         if report_url:
-            text_body += f"\n\nView your full report online: {report_url}"
+            text_body += f"View your full report online:\n{report_url}\n\n"
+        text_body += "— The HouseOffer team\nhttps://houseoffer.uk"
 
         r = requests.post(
             "https://api.resend.com/emails",
@@ -498,7 +495,7 @@ def send_report_email(to_email, report_html, postcode, verdict, report_url=None)
             json={
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
                 "to": [to_email],
-                "subject": f"Your free HouseOffer report — {postcode}",
+                "subject": f"Your HouseOffer report — {postcode}",
                 "html": report_html,
                 "text": text_body,
             }
@@ -849,8 +846,9 @@ def submit():
             "anchor_bias": anchor_bias,
         })
 
-        report_html = render_template("report_free.html", report_url=report_url, **report)
-        send_report_email(to_email, report_html, report["postcode"], report["verdict"], report_url=report_url)
+        # Render the email-safe (Gmail-friendly) version for delivery
+        email_html = render_template("report_email.html", report_url=report_url, **report)
+        send_report_email(to_email, email_html, report["postcode"], report["verdict"], report_url=report_url)
         notify_owner(to_email, property_url, report["postcode"], report["verdict"], buyer_estimate, anchor_bias)
 
         return jsonify({
