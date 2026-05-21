@@ -1,0 +1,231 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Your HouseOffer report</title>
+<!--[if mso]>
+<noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+<![endif]-->
+<style>
+  /* Resets — only what's needed where inline styles can't reach */
+  body, table, td, a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+  table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+  img { -ms-interpolation-mode:bicubic; border:0; height:auto; line-height:100%; outline:none; text-decoration:none; }
+  body { margin:0 !important; padding:0 !important; width:100% !important; }
+  a[x-apple-data-detectors] { color:inherit !important; text-decoration:none !important; }
+  /* Mobile */
+  @media screen and (max-width: 600px) {
+    .container { width:100% !important; }
+    .mobile-padding { padding-left:20px !important; padding-right:20px !important; }
+    .mobile-button { width:100% !important; }
+    .mobile-h1 { font-size:24px !important; line-height:1.25 !important; }
+    .mobile-stat { font-size:32px !important; }
+  }
+</style>
+</head>
+<body style="margin:0; padding:0; background-color:#f7f3ed; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color:#1e1c18;">
+
+  <!-- Hidden preheader text — shows in inbox preview, hidden in the body -->
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#f7f3ed;">
+    {% if verdict == 'overpriced' %}Your verdict is in: this property is asking above what the market supports. View your full report online.
+    {% elif verdict == 'value' %}Your verdict is in: this property is priced below comparable sales. View your full report online.
+    {% elif verdict == 'fair' %}Your verdict is in: priced fairly — but there's still room to negotiate. View your full report.
+    {% else %}Your HouseOffer report is ready. View it online.{% endif %}
+  </div>
+
+  <!-- Outer wrapper (sand background) -->
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f7f3ed;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+
+        <!-- Container -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" class="container" style="width:560px; max-width:560px; background-color:#ffffff; border-radius:14px; border:1px solid #e0d9ce; overflow:hidden;">
+
+          <!-- Header bar -->
+          <tr>
+            <td style="background-color:#ffffff; padding:18px 28px; border-bottom:1px solid #e0d9ce;" class="mobile-padding">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td align="left" style="font-family: Georgia, 'Times New Roman', serif; font-size:18px; font-weight:700; color:#1e1c18;">
+                    <span style="display:inline-block; width:7px; height:7px; background-color:#1a6b5a; border-radius:50%; vertical-align:middle; margin-right:6px;"></span>
+                    HouseOffer
+                  </td>
+                  <td align="right" style="font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:600; color:#1a6b5a; letter-spacing:0.05em; text-transform:uppercase;">
+                    Free Report
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Property heading -->
+          <tr>
+            <td style="padding:28px 28px 16px 28px;" class="mobile-padding">
+              <p style="margin:0 0 6px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:600; color:#1a6b5a; letter-spacing:0.1em; text-transform:uppercase;">
+                Independent property analysis
+              </p>
+              <h1 style="margin:0 0 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size:24px; font-weight:700; color:#1e1c18; line-height:1.25;" class="mobile-h1">
+                {{ postcode }}
+              </h1>
+              <p style="margin:0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; color:#5c5849; line-height:1.5;">
+                {{ property_type|title }} · {{ bedrooms }} bedrooms · Asking <strong style="color:#1e1c18;">{{ asking_price_formatted }}</strong>
+              </p>
+            </td>
+          </tr>
+
+          <!-- VERDICT CARD (colour varies by verdict) -->
+          <tr>
+            <td style="padding:0 28px 20px 28px;" class="mobile-padding">
+              {% if verdict == 'overpriced' %}
+                {% set vbg = '#fdf0f0' %}{% set vborder = '#e8b4b4' %}{% set vaccent = '#b83232' %}{% set veyebrow = 'OUR VERDICT' %}
+                {% set vheadline = 'Asking above what the market supports' %}
+              {% elif verdict == 'value' %}
+                {% set vbg = '#e3f4ef' %}{% set vborder = '#b8dfd5' %}{% set vaccent = '#1a6b5a' %}{% set veyebrow = 'OUR VERDICT' %}
+                {% set vheadline = 'Priced below comparable sales' %}
+              {% elif verdict == 'fair' %}
+                {% set vbg = '#fdf0e3' %}{% set vborder = '#f0c98a' %}{% set vaccent = '#c06a1a' %}{% set veyebrow = 'OUR VERDICT' %}
+                {% set vheadline = 'Fairly priced — but room to negotiate' %}
+              {% else %}
+                {% set vbg = '#ece7de' %}{% set vborder = '#e0d9ce' %}{% set vaccent = '#5c5849' %}{% set veyebrow = 'OUR VERDICT' %}
+                {% set vheadline = 'Not enough local data for a verdict' %}
+              {% endif %}
+
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:{{ vbg }}; border:1.5px solid {{ vborder }}; border-radius:12px;">
+                <tr>
+                  <td style="padding:22px 24px;">
+                    <p style="margin:0 0 8px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; color:{{ vaccent }}; letter-spacing:0.1em;">
+                      {{ veyebrow }}
+                    </p>
+                    <p style="margin:0 0 12px 0; font-family: Georgia, 'Times New Roman', serif; font-size:22px; font-weight:700; color:{{ vaccent }}; line-height:1.25;">
+                      {{ vheadline }}
+                    </p>
+
+                    {% if local_avg_sold and sold_diff_pct is not none %}
+                    <!-- Headline stat -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:6px;">
+                      <tr>
+                        <td style="padding:14px 18px; background-color:#ffffff; border-radius:8px; border:1px solid {{ vborder }};">
+                          <p style="margin:0 0 4px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:600; color:#9b9488; letter-spacing:0.06em; text-transform:uppercase;">
+                            {% if sold_diff_pct > 0 %}Asking above market by{% elif sold_diff_pct < 0 %}Asking below market by{% else %}In line with market{% endif %}
+                          </p>
+                          <p style="margin:0; font-family: Georgia, 'Times New Roman', serif; font-size:38px; font-weight:700; color:{{ vaccent }}; line-height:1;" class="mobile-stat">
+                            {% if sold_diff_pct > 0 %}{{ sold_diff_pct }}%{% elif sold_diff_pct < 0 %}{{ sold_diff_pct|abs }}%{% else %}0%{% endif %}
+                          </p>
+                          <p style="margin:8px 0 0 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; color:#5c5849; line-height:1.5;">
+                            Based on <strong style="color:#1e1c18;">{{ comparables_count }} comparable {{ property_type }} sales</strong>
+                            {% if search_broadened %}in {{ postcode.split()[0] }}{% else %}near {{ postcode }}{% endif %}, averaging <strong style="color:#1e1c18;">{{ local_avg_sold_formatted }}</strong>.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    {% endif %}
+
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- CTA (the only thing that really matters in this email) -->
+          <tr>
+            <td style="padding:0 28px 8px 28px;" class="mobile-padding">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td align="center" style="padding:8px 0 20px 0;">
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ report_url }}" style="height:52px;v-text-anchor:middle;width:280px;" arcsize="40%" stroke="f" fillcolor="#1a6b5a">
+                      <w:anchorlock/>
+                      <center style="color:#ffffff;font-family:sans-serif;font-size:15px;font-weight:bold;">View your full report →</center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-- -->
+                    <a href="{{ report_url }}" class="mobile-button" style="display:inline-block; background-color:#1a6b5a; color:#ffffff; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:15px; font-weight:700; text-decoration:none; padding:16px 36px; border-radius:26px; box-shadow:0 4px 16px rgba(26,107,90,0.25); mso-padding-alt:0;">
+                      View your full report →
+                    </a>
+                    <!--<![endif]-->
+                    <p style="margin:12px 0 0 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:12px; color:#9b9488;">
+                      Bookmark this link — your report stays accessible
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- WHAT'S IN THE FULL REPORT (teaser bullets) -->
+          <tr>
+            <td style="padding:8px 28px 28px 28px;" class="mobile-padding">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f7f3ed; border-radius:10px; border:1px solid #e0d9ce;">
+                <tr>
+                  <td style="padding:18px 22px;">
+                    <p style="margin:0 0 10px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; color:#1a6b5a; letter-spacing:0.1em; text-transform:uppercase;">
+                      WHAT'S IN YOUR FULL REPORT
+                    </p>
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                      {% if local_avg_sold %}
+                      <tr>
+                        <td valign="top" style="padding:5px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13.5px; color:#1e1c18; line-height:1.55;">
+                          <strong>✓</strong>&nbsp;&nbsp;Their asking price vs <strong>{{ comparables_count }} comparable sold sales</strong>
+                        </td>
+                      </tr>
+                      {% endif %}
+                      {% if hpi_adjustment %}
+                      <tr>
+                        <td valign="top" style="padding:5px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13.5px; color:#1e1c18; line-height:1.55;">
+                          <strong>✓</strong>&nbsp;&nbsp;This property's last sale ({{ hpi_adjustment.sale_price_formatted }}) HPI-adjusted to today
+                        </td>
+                      </tr>
+                      {% endif %}
+                      <tr>
+                        <td valign="top" style="padding:5px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13.5px; color:#1e1c18; line-height:1.55;">
+                          <strong>✓</strong>&nbsp;&nbsp;Anchor-bias analysis — why their number shouldn't be your starting point
+                        </td>
+                      </tr>
+                      <tr>
+                        <td valign="top" style="padding:5px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13.5px; color:#1e1c18; line-height:1.55;">
+                          <strong>✓</strong>&nbsp;&nbsp;Your specific negotiation weapons explained
+                        </td>
+                      </tr>
+                      <tr>
+                        <td valign="top" style="padding:5px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13.5px; color:#1e1c18; line-height:1.55;">
+                          <span style="color:#9b9488;">🔒</span>&nbsp;&nbsp;<span style="color:#5c5849;">Unlock: recommended opening offer + walk-away price (£29)</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td valign="top" style="padding:5px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13.5px; color:#1e1c18; line-height:1.55;">
+                          <span style="color:#9b9488;">🔒</span>&nbsp;&nbsp;<span style="color:#5c5849;">Unlock: word-for-word offer email + counter-offer playbook (£49)</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+
+        <!-- Footer -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" class="container" style="width:560px; max-width:560px;">
+          <tr>
+            <td align="center" style="padding:20px 12px 8px 12px;">
+              <p style="margin:0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; color:#9b9488; line-height:1.6;">
+                Generated {{ generated }} · Contains HM Land Registry data © Crown copyright<br>
+                <a href="https://houseoffer.uk" style="color:#9b9488; text-decoration:underline;">houseoffer.uk</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
