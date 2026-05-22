@@ -42,27 +42,127 @@ SUBREDDITS = [
     "HousingUK",
     "UKPersonalFinance",
     "HomeOwnersUK",
-    "FirstTimeBuyerUK",
     "UKHousing",
+    "MortgageUK",
 ]
 
-# Keywords/phrases that suggest a post is a fit for HouseOffer
+# Keywords/phrases that suggest a post is a fit for HouseOffer.
+# Cast wide here — is_relevant() filters first BEFORE the expensive Claude call,
+# and Claude itself can reply "SKIP" if a triggered post isn't actually a fit.
 TRIGGER_PHRASES = [
+    # — Considering an offer —
     "should i offer",
-    "offer below asking",
-    "overpriced",
-    "overpaying",
-    "first time buyer offer",
-    "negotiate house price",
     "what to offer",
-    "house valuation",
-    "land registry",
-    "asking price too high",
-    "is this house overpriced",
     "how much to offer",
-    "how much under asking",
+    "how much should i offer",
+    "what's a fair offer",
+    "fair offer",
+    "first offer",
+    "opening offer",
+    "initial offer",
+    "make an offer",
+    "making an offer",
+    "putting in an offer",
+    "putting an offer",
+
+    # — Below / under asking —
+    "below asking",
+    "under asking",
+    "under the asking",
+    "off asking",
+    "off the asking",
     "low offer",
     "cheeky offer",
+    "rude offer",
+    "lowball",
+    "low ball",
+
+    # — Pricing concerns —
+    "overpriced",
+    "over priced",
+    "over-priced",
+    "asking too much",
+    "priced too high",
+    "way too expensive",
+    "feels expensive",
+    "seems expensive",
+    "seems overpriced",
+    "asking price too high",
+    "asking price seems",
+    "is the asking price",
+    "fair price",
+    "fair value",
+    "is this fair",
+    "is it worth",
+    "is this worth",
+    "worth what they",
+
+    # — Valuation help —
+    "house valuation",
+    "property valuation",
+    "what's it worth",
+    "how to value",
+    "land registry",
+    "sold prices",
+    "sold price",
+    "comparable sales",
+    "what did it last sell for",
+    "what did it previously sell",
+    "previous sale price",
+    "house price",
+    "property worth",
+    "house worth",
+
+    # — Negotiation —
+    "negotiate",
+    "negotiating",
+    "haggle",
+    "haggling",
+    "bargaining",
+    "counter offer",
+    "counter-offer",
+    "counteroffer",
+    "rejected my offer",
+    "rejected our offer",
+    "estate agent said",
+    "estate agent told",
+    "the agent said",
+    "agent rejected",
+
+    # — First-time buyer panic —
+    "first time buyer",
+    "first-time buyer",
+    " ftb ",
+    "first home",
+    "buying my first",
+    "found my dream",
+    "viewing tomorrow",
+    "second viewing",
+    "third viewing",
+
+    # — Specific situations —
+    "overpaying",
+    "over paying",
+    "paying over",
+    "paying too much",
+    "above asking",
+    "above the asking",
+    "below market",
+    "above market",
+
+    # — Reddit-natural phrasings —
+    "thoughts on price",
+    "thoughts on this offer",
+    "thoughts on the price",
+    "advice on offer",
+    "advice on price",
+    "talk me down",
+    "talk me out",
+    "am i mad",
+    "am i crazy",
+    "is this nuts",
+    "is this normal",
+    "how much under asking",
 ]
 
 # Local cache file to avoid duplicate drafts on the same post
@@ -70,7 +170,8 @@ SEEN_POSTS_PATH = "/tmp/houseoffer_seen_posts.json"
 DAILY_DIGEST_BUFFER_PATH = "/tmp/houseoffer_digest_buffer.json"
 
 # Look back this many hours when fetching new posts
-LOOKBACK_HOURS = 6
+# Cron runs every 4hr; 12hr lookback gives some buffer for missed runs
+LOOKBACK_HOURS = 12
 
 # How many drafts to generate per run (hard cap to control cost)
 MAX_DRAFTS_PER_RUN = 10
@@ -106,8 +207,8 @@ def is_relevant(post):
     age_seconds = time.time() - post.get("created_utc", 0)
     if age_seconds > LOOKBACK_HOURS * 3600:
         return False
-    # Skip very short or very long posts
-    if len(body) < 80 or len(body) > 4000:
+    # Skip very short posts (title-only is too thin for context) or very long ones
+    if len(body) < 40 or len(body) > 5000:
         return False
     # Skip posts asking general non-buyer questions
     if any(skip in combined for skip in ["selling my", "as a seller", "estate agent here", "i am a landlord", "rental"]):
