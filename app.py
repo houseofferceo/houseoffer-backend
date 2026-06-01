@@ -236,6 +236,8 @@ def get_sold_comparables(postcode, property_type):
         comparables = _filter_sold(data, type_keys)
         broadened = True
         postcode_used = district
+    # HPI-adjust all comparables to today's value before returning
+    comparables = hpi_adjust_comparables(comparables, postcode)
     return comparables, postcode_used, broadened
 
 def _filter_sold(data, type_keys):
@@ -286,7 +288,8 @@ def _sale_matches_address(sale, address):
 def avg_sold_price(comparables):
     if not comparables:
         return None
-    prices = sorted(c["price"] for c in comparables)
+    # Use HPI-adjusted price if available, otherwise fall back to raw price
+    prices = sorted(c.get("adjusted_price") or c["price"] for c in comparables)
     n = len(prices)
     if n >= 5:
         q1 = n // 4
@@ -294,6 +297,40 @@ def avg_sold_price(comparables):
         trimmed = prices[q1:q3]
         return round(sum(trimmed) / len(trimmed)) if trimmed else round(sum(prices) / n)
     return round(sum(prices) / n)
+
+
+def hpi_adjust_comparables(comparables, postcode):
+    """Adjust each comparable's price to today's value using regional HPI.
+    Adds an 'adjusted_price' field to each comparable. Falls back to raw
+    price if HPI data is unavailable for any individual transaction."""
+    if not comparables:
+        return comparables
+    try:
+        region = postcode_to_region(postcode)
+        current_hpi, _ = get_current_hpi(region)
+        if not current_hpi or current_hpi <= 0:
+            return comparables
+    except Exception as e:
+        print(f"hpi_adjust_comparables: could not get current HPI — {e}")
+        return comparables
+
+    adjusted = []
+    for c in comparables:
+        comp = dict(c)
+        try:
+            date_str = comp.get("date", "")
+            sale_month = date_str[:7]  # "YYYY-MM"
+            sale_hpi = hpi_index(region, sale_month) if sale_month else None
+            if sale_hpi and sale_hpi > 0:
+                comp["adjusted_price"] = round(comp["price"] * (current_hpi / sale_hpi))
+            else:
+                # HPI data missing for this month — use raw price as fallback
+                comp["adjusted_price"] = comp["price"]
+        except Exception as e:
+            print(f"hpi_adjust_comparables: fallback for {comp.get('address','?')} — {e}")
+            comp["adjusted_price"] = comp["price"]
+        adjusted.append(comp)
+    return adjusted
 
 def get_local_avg_psqm(postcode, property_type):
     type_keys = normalise_type_listings(property_type)
@@ -442,10 +479,31 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     verdict = sold_verdict or psqm_verdict or "unknown"
     diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
 
+    # Build comparables list for report — sorted by date desc, capped at 20
+    comparables_list = []
+    try:
+        sorted_comps = sorted(
+            [c for c in comparables if c.get("date")],
+            key=lambda x: x["date"],
+            reverse=True
+        )[:20]
+        for c in sorted_comps:
+            comparables_list.append({
+                "address": c.get("address", ""),
+                "date": c.get("date", ""),
+                "price": c.get("price"),
+                "price_formatted": f"£{c['price']:,}" if c.get("price") else "",
+                "adjusted_price": c.get("adjusted_price"),
+                "adjusted_price_formatted": f"£{c['adjusted_price']:,}" if c.get("adjusted_price") else "",
+            })
+    except Exception as e:
+        print(f"comparables_list build error: {e}")
+
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
         "comparables_count": len(comparables),
+        "comparables": comparables_list,
         "search_broadened": broadened,
         "asking_price": asking_price,
         "asking_price_formatted": f"£{asking_price:,}",
