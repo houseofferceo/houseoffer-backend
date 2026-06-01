@@ -45,7 +45,6 @@ SUBREDDITS = [
     "UKPersonalFinance",
     "HomeOwnersUK",
     "UKHousing",
-    "MortgageUK",
 ]
 
 # Keywords/phrases that suggest a post is a fit for HouseOffer.
@@ -398,9 +397,13 @@ def post_draft_to_sheets(post, draft_text):
     }
     try:
         r = requests.post(SHEETS_WEBHOOK_URL, json=payload, timeout=10)
+        if r.status_code != 200:
+            print(f"    Sheets webhook FAILED: HTTP {r.status_code} — {r.text[:200]}")
+        else:
+            print(f"    Sheets webhook OK: {r.text[:120]}")
         return r.status_code == 200
     except Exception as e:
-        print(f"Sheets webhook error: {e}")
+        print(f"    Sheets webhook error: {e}")
         return False
 
 
