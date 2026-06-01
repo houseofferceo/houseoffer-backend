@@ -217,6 +217,23 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .mobile-cta-btn { flex: 1; text-align: center; padding: 13px 10px; border-radius: 10px; font-size: 14px; font-weight: 700; text-decoration: none; }
 .mobile-cta-btn.report { background: var(--ink); color: white; }
 .mobile-cta-btn.playbook { background: var(--teal); color: white; }
+
+/* ─── COMPARABLE TABLE ─── */
+.comp-table-section { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.comp-table-header { padding: 16px 22px 12px; border-bottom: 1px solid var(--sand-border); }
+.comp-table-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.comp-table-sub { font-size: 12px; color: var(--ink-light); margin-top: 2px; }
+.comp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.comp-table th { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-light); padding: 8px 16px; text-align: left; background: var(--sand); border-bottom: 1px solid var(--sand-border); }
+.comp-table td { padding: 9px 16px; border-bottom: 1px solid var(--sand-border); color: var(--ink-mid); vertical-align: middle; }
+.comp-table tr:last-child td { border-bottom: none; }
+.comp-table td.price { font-family: 'Lora', serif; font-weight: 600; color: var(--ink); }
+.comp-table td.date { color: var(--ink-light); font-size: 12px; white-space: nowrap; }
+.comp-table tr.blurred td { filter: blur(4px); user-select: none; pointer-events: none; }
+.comp-table-footer { padding: 14px 22px 16px; border-top: 1px solid var(--sand-border); text-align: center; }
+.comp-table-cta { display: inline-block; background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 10px 22px; border-radius: 20px; text-decoration: none; margin-bottom: 8px; }
+.comp-table-cta:hover { background: var(--teal); }
+.comp-table-hint { font-size: 12px; color: var(--ink-light); }
 </style>
 </head>
 <body>
@@ -336,6 +353,38 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
   </div>
   <div class="source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales only · interquartile mean</div>
+
+  {% if comparables %}
+  <div class="comp-table-section">
+    <div class="comp-table-header">
+      <div class="comp-table-title">{{ comparables_count }} sold prices used in this analysis</div>
+      <div class="comp-table-sub">HPI-adjusted to today's value · HM Land Registry</div>
+    </div>
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>Address</th>
+          <th>Date</th>
+          <th>Sale Price</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for comp in comparables[:8] %}
+        <tr{% if loop.index > 3 %} class="blurred"{% endif %}>
+          <td>{{ comp.address }}</td>
+          <td class="date">{{ comp.date[:7] }}</td>
+          <td class="price">{{ comp.adjusted_price_formatted or comp.price_formatted }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="comp-table-footer">
+      <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="comp-table-cta">Unlock all {{ comparables_count }} comparable sales — £29</a>
+      <div class="comp-table-hint">See the exact sales our algorithm used to reach this verdict.</div>
+    </div>
+  </div>
+  {% endif %}
+
   {% endif %}
 
   <!-- DATA POINT 2: HPI-ADJUSTED LAST SALE -->
