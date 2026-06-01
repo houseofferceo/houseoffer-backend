@@ -480,11 +480,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
 
     # Build comparables list for report — sorted by date desc, capped at 20
+    # Include all records; those without a date sort to the end
     comparables_list = []
     try:
         sorted_comps = sorted(
-            [c for c in comparables if c.get("date")],
-            key=lambda x: x["date"],
+            comparables,
+            key=lambda x: x.get("date") or "",
             reverse=True
         )[:20]
         for c in sorted_comps:
