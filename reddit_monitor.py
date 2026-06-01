@@ -25,6 +25,8 @@ import json
 import time
 import hashlib
 import requests
+import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
@@ -177,18 +179,52 @@ LOOKBACK_HOURS = 12
 MAX_DRAFTS_PER_RUN = 10
 
 
-# ── REDDIT FETCH (no API key needed — uses public JSON) ───────────────────────
+# ── REDDIT FETCH (RSS feed — bypasses JSON endpoint IP block) ─────────────────
 
 def fetch_subreddit_new(subreddit, limit=25):
-    """Fetch newest posts from a subreddit. Reddit's public JSON endpoint."""
-    url = f"https://www.reddit.com/r/{subreddit}/new.json?limit={limit}"
+    """Fetch newest posts via RSS. JSON endpoint 403s from cloud IPs; RSS may not."""
+    url = f"https://www.reddit.com/r/{subreddit}/new.rss?limit={limit}"
     try:
         r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=10)
         if r.status_code != 200:
             print(f"Reddit {subreddit}: HTTP {r.status_code}")
             return []
-        data = r.json().get("data", {}).get("children", [])
-        return [item.get("data", {}) for item in data]
+
+        root = ET.fromstring(r.content)
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        entries = root.findall("atom:entry", ns)
+
+        posts = []
+        for entry in entries:
+            title = entry.findtext("atom:title", "", ns)
+            link_el = entry.find("atom:link", ns)
+            link = link_el.get("href", "") if link_el is not None else ""
+            content = entry.findtext("atom:content", "", ns) or ""
+            post_id = (entry.findtext("atom:id", "", ns) or "").split("_")[-1]
+            updated = entry.findtext("atom:updated", "", ns) or ""
+
+            permalink = link.replace("https://www.reddit.com", "")
+
+            try:
+                created_utc = datetime.fromisoformat(
+                    updated.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                created_utc = 0
+
+            body = re.sub("<[^<]+?>", "", content)[:3000]
+
+            posts.append({
+                "id": post_id,
+                "title": title,
+                "selftext": body,
+                "permalink": permalink,
+                "subreddit": subreddit,
+                "created_utc": created_utc,
+                "removed_by_category": None,
+            })
+
+        return posts
+
     except Exception as e:
         print(f"Reddit fetch error ({subreddit}): {e}")
         return []
