@@ -283,7 +283,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       {% if local_avg_sold %}
         Based on {{ comparables_count }} completed sales of similar {{ property_type }} homes in
         {% if search_broadened %}the {{ postcode.split()[0] }} area{% else %}{{ postcode }}{% endif %},
-        this property is asking
+        HPI-adjusted to today's value, this property is asking
         <strong>
           {% if sold_diff_pct > 0 %}{{ sold_diff_pct }}% more
           {% elif sold_diff_pct < 0 %}{{ sold_diff_pct|abs }}% less
@@ -352,13 +352,13 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </div>
     </div>
   </div>
-  <div class="source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales only · interquartile mean</div>
+  <div class="source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales · HPI-adjusted to today's value · interquartile mean</div>
 
   {% if comparables %}
   <div class="comp-table-section">
     <div class="comp-table-header">
       <div class="comp-table-title">{{ comparables_count }} sold prices used in this analysis</div>
-      <div class="comp-table-sub">HPI-adjusted to today's value · HM Land Registry</div>
+      <div class="comp-table-sub">All prices adjusted to today's value using ONS regional House Price Index · HM Land Registry</div>
     </div>
     <table class="comp-table">
       <thead>
