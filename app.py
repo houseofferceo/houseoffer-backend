@@ -3,6 +3,7 @@ import re
 import json
 import time
 import uuid
+import base64
 import hashlib
 import requests
 from flask import Flask, request, jsonify, render_template
@@ -172,29 +173,44 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         address = scraped.get("address")
     return postcode, asking_price, bedrooms, property_type, address
 
+def _extract_floor_area(row):
+    """Try all known field name variants for floor area across old and new EPC APIs."""
+    for field in ("total-floor-area", "totalFloorArea", "total_floor_area", "floor-area", "floorArea", "floor_area"):
+        val = row.get(field)
+        if val is not None:
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                continue
+    return None
+
 def get_floor_area_from_epc(postcode, address=None):
     try:
         formatted = format_postcode(postcode)
         r = requests.get(
-            "https://epc.opendatacommunities.org/api/v1/domestic/search",
+            "https://get-energy-performance-data.communities.gov.uk/api/domestic/search",
             params={"postcode": formatted, "size": 10},
             headers={"Accept": "application/json", "Authorization": f"Bearer {EPC_API_KEY}"},
             timeout=10
         )
         if r.status_code != 200:
+            print(f"EPC API error: {r.status_code} — {r.text[:300]}")
             return None
-        rows = r.json().get("rows", [])
+        data = r.json()
+        # New API may wrap rows differently — try 'data', fall back to 'rows'
+        rows = data.get("data", data.get("rows", []))
         if not rows:
             return None
         if address:
             for row in rows:
-                if any(part in row.get("address", "").upper() for part in address.upper().split()[:2]):
-                    area = row.get("total-floor-area")
+                addr_field = row.get("address", row.get("addressSummary", ""))
+                if any(part in addr_field.upper() for part in address.upper().split()[:2]):
+                    area = _extract_floor_area(row)
                     if area:
-                        return float(area)
-        area = rows[0].get("total-floor-area")
-        return float(area) if area else None
-    except Exception:
+                        return area
+        return _extract_floor_area(rows[0])
+    except Exception as e:
+        print(f"EPC API exception: {e}")
         return None
 
 def fetch_sold_prices(postcode):
