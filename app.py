@@ -412,42 +412,68 @@ def hpi_adjust_comparables(comparables, postcode):
         adjusted.append(comp)
     return adjusted
 
-def get_local_avg_psqm(postcode, property_type):
+def _psqf_points(data, type_keys):
+    """Extract type-matched points carrying both a £/sqf value and floor area (sqf)."""
+    if not data:
+        return []
+    try:
+        raw = data.get("data", {}).get("raw_data", [])
+    except Exception:
+        return []
+    if not raw:
+        print(f"_psqf_points: no raw_data — keys: {list(data.get('data', {}).keys())}")
+        return []
+
+    def psqf_value(p):
+        for f in ("price_per_sqf", "sold_price_per_sqf", "psqf", "price_per_sqft"):
+            if p.get(f):
+                return p[f]
+        return None
+
+    points = []
+    for p in raw:
+        if p.get("type") in type_keys:
+            v = psqf_value(p)
+            if v:
+                points.append({"psqf": v, "sqf": p.get("sqf")})
+    if not points:
+        print(f"_psqf_points: no matches for {type_keys}. Types present: {sorted({p.get('type') for p in raw})}")
+    return points
+
+def get_psqm_benchmarks(postcode, property_type, floor_area_sqm=None):
+    """Return both sold £/sqm benchmarks:
+      - area_wide_psqm: all comparable-type homes
+      - size_matched_psqm: homes within ±20% of subject floor area (only if >=3, else None)
+    Size-matched is the accurate like-for-like; area-wide is broad market context."""
     type_keys = normalise_type_listings(property_type)
     formatted = format_postcode(postcode)
-    data = fetch_sold_psqf(formatted)
-    avg = _calc_avg_psqm(data, type_keys)
-    if avg is None:
-        data = fetch_sold_psqf(district_postcode(postcode))
-        avg = _calc_avg_psqm(data, type_keys)
-    return avg
+    points = _psqf_points(fetch_sold_psqf(formatted), type_keys)
+    if not points:
+        points = _psqf_points(fetch_sold_psqf(district_postcode(postcode)), type_keys)
+    if not points:
+        return {"area_wide_psqm": None, "size_matched_psqm": None, "size_matched_count": 0}
 
-def _calc_avg_psqm(data, type_keys):
-    if not data:
-        return None
-    try:
-        points = data.get("data", {}).get("raw_data", [])
-        if not points:
-            print(f"_calc_avg_psqm: no raw_data in response — keys: {list(data.get('data', {}).keys())}")
-            return None
-        # Tolerate field-name variation for the £/sqft value across endpoints
-        def psqf_value(p):
-            for f in ("price_per_sqf", "sold_price_per_sqf", "psqf", "price_per_sqft"):
-                if p.get(f):
-                    return p[f]
-            return None
-        matching = [psqf_value(p) for p in points
-                    if p.get("type") in type_keys and psqf_value(p)]
-        if not matching:
-            # Type filter may have excluded everything — log what types are present
-            types_present = sorted({p.get("type") for p in points})
-            print(f"_calc_avg_psqm: no matches for {type_keys}. Types present: {types_present}")
-            return None
-        avg_psqf = sum(matching) / len(matching)
-        return round(price_per_sqft_to_sqm(avg_psqf))
-    except Exception as e:
-        print(f"_calc_avg_psqm exception: {e}")
-        return None
+    # Area-wide average across all matching points
+    area_wide_psqf = sum(p["psqf"] for p in points) / len(points)
+    area_wide_psqm = round(price_per_sqft_to_sqm(area_wide_psqf))
+
+    # Size-matched: homes within ±20% of subject floor area, needs >=3 to be reliable
+    size_matched_psqm = None
+    size_matched_count = 0
+    if floor_area_sqm and floor_area_sqm > 0:
+        subject_sqf = floor_area_sqm * 10.764
+        lo, hi = subject_sqf * 0.8, subject_sqf * 1.2
+        sized = [p for p in points if p.get("sqf") and lo <= p["sqf"] <= hi]
+        if len(sized) >= 3:
+            sm_psqf = sum(p["psqf"] for p in sized) / len(sized)
+            size_matched_psqm = round(price_per_sqft_to_sqm(sm_psqf))
+            size_matched_count = len(sized)
+
+    return {
+        "area_wide_psqm": area_wide_psqm,
+        "size_matched_psqm": size_matched_psqm,
+        "size_matched_count": size_matched_count,
+    }
 
 
 # ── HPI ADJUSTMENT ─────────────────────────────────────────────────────────────
@@ -551,9 +577,19 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         floor_area_sqm = get_floor_area_from_epc(postcode, address)
 
     asking_psqm = local_avg_psqm = psqm_diff_pct = psqm_verdict = None
+    size_matched_psqm = area_wide_psqm = None
+    size_matched_count = 0
+    psqm_basis = None
     if floor_area_sqm and floor_area_sqm > 0:
         asking_psqm = round(asking_price / floor_area_sqm)
-        local_avg_psqm = get_local_avg_psqm(postcode, property_type)
+        benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm)
+        size_matched_psqm = benchmarks["size_matched_psqm"]
+        area_wide_psqm = benchmarks["area_wide_psqm"]
+        size_matched_count = benchmarks["size_matched_count"]
+        # Verdict uses size-matched when available (accurate like-for-like),
+        # falling back to area-wide when fewer than 3 similar-sized homes exist
+        local_avg_psqm = size_matched_psqm or area_wide_psqm
+        psqm_basis = "size_matched" if size_matched_psqm else ("area_wide" if area_wide_psqm else None)
         if local_avg_psqm:
             psqm_diff_pct = round(((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100, 1)
             psqm_verdict = "overpriced" if psqm_diff_pct > 8 else ("value" if psqm_diff_pct < -5 else "fair")
@@ -612,6 +648,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "hpi_adjustment": hpi_adjustment,
         "asking_psqm": asking_psqm,
         "local_avg_psqm": local_avg_psqm,
+        "size_matched_psqm": size_matched_psqm,
+        "size_matched_psqm_formatted": f"£{size_matched_psqm:,}/m²" if size_matched_psqm else None,
+        "area_wide_psqm": area_wide_psqm,
+        "area_wide_psqm_formatted": f"£{area_wide_psqm:,}/m²" if area_wide_psqm else None,
+        "size_matched_count": size_matched_count,
+        "psqm_basis": psqm_basis,
         "psqm_diff_pct": psqm_diff_pct,
         "psqm_verdict": psqm_verdict,
         "verdict": verdict,
@@ -843,44 +885,29 @@ def debug_sold():
 
 @app.route("/debug-psqf")
 def debug_psqf():
-    """Dump the raw sold-prices-per-sqf response and what our parser extracts.
-    Usage: /debug-psqf?postcode=WD4&type=semi-detached"""
+    """Dump the raw sold-prices-per-sqf response and both computed benchmarks.
+    Usage: /debug-psqf?postcode=WD4&type=semi-detached&floor=141"""
     postcode = request.args.get("postcode", "WD4")
     property_type = request.args.get("type", "semi-detached")
+    floor_area_sqm = float(request.args.get("floor", 0) or 0) or None
     type_keys = normalise_type_listings(property_type)
     formatted = format_postcode(postcode)
 
     raw_full = fetch_sold_psqf(formatted)
-    raw_district = fetch_sold_psqf(district_postcode(postcode)) if raw_full is None else None
-    used = raw_full if raw_full else raw_district
+    used = raw_full if raw_full else fetch_sold_psqf(district_postcode(postcode))
+    points = used.get("data", {}).get("raw_data", []) if used else []
+    matched = _psqf_points(used, type_keys)
 
-    points = []
-    if used:
-        points = used.get("data", {}).get("raw_data", [])
-
-    # Show every field present on the first point so we can see the real schema
-    sample_keys = list(points[0].keys()) if points else []
-    types_present = sorted({p.get("type") for p in points}) if points else []
-
-    def psqf_value(p):
-        for f in ("price_per_sqf", "sold_price_per_sqf", "psqf", "price_per_sqft"):
-            if p.get(f):
-                return p[f]
-        return None
-
-    matching = [{"type": p.get("type"), "psqf": psqf_value(p)} for p in points
-                if p.get("type") in type_keys and psqf_value(p)]
+    benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm)
 
     return jsonify({
         "postcode_tried": formatted,
+        "floor_area_sqm": floor_area_sqm,
         "type_keys_we_filter_for": type_keys,
         "total_points_returned": len(points),
-        "fields_on_first_point": sample_keys,
-        "all_types_present": types_present,
-        "matching_points_count": len(matching),
-        "matching_points": matching[:30],
-        "computed_avg_psqm": _calc_avg_psqm(used, type_keys),
-        "first_raw_point": points[0] if points else None,
+        "all_types_present": sorted({p.get("type") for p in points}) if points else [],
+        "matched_points_count": len(matched),
+        "benchmarks": benchmarks,
     })
 
 @app.route("/debug-report")
