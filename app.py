@@ -218,20 +218,45 @@ def _epc_fetch_certificate(certificate_number):
     cert = r.json().get("data")
     return cert if isinstance(cert, dict) else None
 
-def _select_epc_match(results, address):
-    """Pick the best certificate summary matching the address, else the first."""
-    if not results:
+def _leading_house_number(addr):
+    """Extract the leading house number from an address string, e.g. '9 Chantry Close' -> '9'."""
+    if not addr:
         return None
-    if address:
-        # Match on house number / first token of the address against addressLine1
-        first_token = address.upper().split(",")[0].strip().split()
-        if first_token:
-            house = first_token[0]
-            for r in results:
-                line1 = (r.get("addressLine1") or "").upper()
-                if line1.split() and line1.split()[0] == house:
-                    return r
-    return results[0]
+    m = re.match(r"\s*(\d+[A-Za-z]?)\b", addr.strip())
+    return m.group(1).upper() if m else None
+
+def _street_tokens(addr):
+    """Significant street-name word tokens (len > 3), uppercased.
+    Handles both '9 Chantry Close' and '9, Chantry Close, Kings Langley' formats."""
+    if not addr:
+        return set()
+    # Strip a leading house number first (handles '9' and '9,' prefixes), then
+    # take the first comma-separated segment of what remains as the street.
+    stripped = re.sub(r"^\s*\d+[A-Za-z]?\s*,?\s*", "", addr.strip())
+    first_seg = stripped.split(",")[0]
+    return {t for t in re.sub(r"[^A-Za-z0-9 ]", " ", first_seg).upper().split() if len(t) > 3}
+
+def _select_epc_match(results, address):
+    """Confidently match the subject property's certificate.
+    Requires the house number to match AND at least one street-name token to overlap.
+    Returns None if no confident match — we omit £/sqm rather than guess a neighbour's floor area."""
+    if not results or not address:
+        return None
+    subj_num = _leading_house_number(address)
+    subj_streets = _street_tokens(address)
+    if not subj_num:
+        return None
+    for r in results:
+        line1 = r.get("addressLine1") or ""
+        if _leading_house_number(line1) != subj_num:
+            continue
+        # House number matches — confirm street overlap if we have street tokens to check
+        if subj_streets:
+            cand_streets = _street_tokens(line1)
+            if not (subj_streets & cand_streets):
+                continue
+        return r
+    return None
 
 def get_floor_area_from_epc(postcode, address=None):
     """Two-call EPC lookup: search by postcode → fetch certificate → read floor area."""
@@ -263,17 +288,19 @@ def fetch_sold_prices(postcode):
         pass
     return None
 
-def fetch_listings_psqf(postcode):
+def fetch_sold_psqf(postcode):
+    """Fetch SOLD £/sqft for an area (not asking-price listings)."""
     try:
         r = requests.get(
-            "https://api.propertydata.co.uk/prices-per-sqf",
+            "https://api.propertydata.co.uk/sold-prices-per-sqf",
             params={"key": PROPERTYDATA_API_KEY, "postcode": postcode},
             timeout=10
         )
         if r.status_code == 200:
             return r.json()
-    except Exception:
-        pass
+        print(f"sold-prices-per-sqf error: {r.status_code} — {r.text[:200]}")
+    except Exception as e:
+        print(f"sold-prices-per-sqf exception: {e}")
     return None
 
 def get_sold_comparables(postcode, property_type):
@@ -388,10 +415,10 @@ def hpi_adjust_comparables(comparables, postcode):
 def get_local_avg_psqm(postcode, property_type):
     type_keys = normalise_type_listings(property_type)
     formatted = format_postcode(postcode)
-    data = fetch_listings_psqf(formatted)
+    data = fetch_sold_psqf(formatted)
     avg = _calc_avg_psqm(data, type_keys)
     if avg is None:
-        data = fetch_listings_psqf(district_postcode(postcode))
+        data = fetch_sold_psqf(district_postcode(postcode))
         avg = _calc_avg_psqm(data, type_keys)
     return avg
 
@@ -400,12 +427,26 @@ def _calc_avg_psqm(data, type_keys):
         return None
     try:
         points = data.get("data", {}).get("raw_data", [])
-        matching = [p for p in points if p.get("type") in type_keys and p.get("price_per_sqf")]
-        if not matching:
+        if not points:
+            print(f"_calc_avg_psqm: no raw_data in response — keys: {list(data.get('data', {}).keys())}")
             return None
-        avg_psqf = sum(p["price_per_sqf"] for p in matching) / len(matching)
+        # Tolerate field-name variation for the £/sqft value across endpoints
+        def psqf_value(p):
+            for f in ("price_per_sqf", "sold_price_per_sqf", "psqf", "price_per_sqft"):
+                if p.get(f):
+                    return p[f]
+            return None
+        matching = [psqf_value(p) for p in points
+                    if p.get("type") in type_keys and psqf_value(p)]
+        if not matching:
+            # Type filter may have excluded everything — log what types are present
+            types_present = sorted({p.get("type") for p in points})
+            print(f"_calc_avg_psqm: no matches for {type_keys}. Types present: {types_present}")
+            return None
+        avg_psqf = sum(matching) / len(matching)
         return round(price_per_sqft_to_sqm(avg_psqf))
-    except Exception:
+    except Exception as e:
+        print(f"_calc_avg_psqm exception: {e}")
         return None
 
 
@@ -805,7 +846,8 @@ def debug_report():
     postcode = request.args.get("postcode", "WD4 9EW")
     asking_price = int(request.args.get("price", "675000"))
     property_type = request.args.get("type", "semi-detached")
-    report = build_report_data("", asking_price, "3", property_type, postcode)
+    address = request.args.get("address", "")
+    report = build_report_data("", asking_price, "3", property_type, postcode, address=address)
     return jsonify(report)
 
 @app.route("/report", methods=["POST"])
