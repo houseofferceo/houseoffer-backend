@@ -841,6 +841,48 @@ def debug_sold():
         "district_matching": len([t for t in district_raw if t.get("type") in type_keys]),
     })
 
+@app.route("/debug-psqf")
+def debug_psqf():
+    """Dump the raw sold-prices-per-sqf response and what our parser extracts.
+    Usage: /debug-psqf?postcode=WD4&type=semi-detached"""
+    postcode = request.args.get("postcode", "WD4")
+    property_type = request.args.get("type", "semi-detached")
+    type_keys = normalise_type_listings(property_type)
+    formatted = format_postcode(postcode)
+
+    raw_full = fetch_sold_psqf(formatted)
+    raw_district = fetch_sold_psqf(district_postcode(postcode)) if raw_full is None else None
+    used = raw_full if raw_full else raw_district
+
+    points = []
+    if used:
+        points = used.get("data", {}).get("raw_data", [])
+
+    # Show every field present on the first point so we can see the real schema
+    sample_keys = list(points[0].keys()) if points else []
+    types_present = sorted({p.get("type") for p in points}) if points else []
+
+    def psqf_value(p):
+        for f in ("price_per_sqf", "sold_price_per_sqf", "psqf", "price_per_sqft"):
+            if p.get(f):
+                return p[f]
+        return None
+
+    matching = [{"type": p.get("type"), "psqf": psqf_value(p)} for p in points
+                if p.get("type") in type_keys and psqf_value(p)]
+
+    return jsonify({
+        "postcode_tried": formatted,
+        "type_keys_we_filter_for": type_keys,
+        "total_points_returned": len(points),
+        "fields_on_first_point": sample_keys,
+        "all_types_present": types_present,
+        "matching_points_count": len(matching),
+        "matching_points": matching[:30],
+        "computed_avg_psqm": _calc_avg_psqm(used, type_keys),
+        "first_raw_point": points[0] if points else None,
+    })
+
 @app.route("/debug-report")
 def debug_report():
     postcode = request.args.get("postcode", "WD4 9EW")
