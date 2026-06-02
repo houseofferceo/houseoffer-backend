@@ -173,44 +173,81 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         address = scraped.get("address")
     return postcode, asking_price, bedrooms, property_type, address
 
-def _extract_floor_area(row):
-    """Try all known field name variants for floor area across old and new EPC APIs."""
-    for field in ("total-floor-area", "totalFloorArea", "total_floor_area", "floor-area", "floorArea", "floor_area"):
-        val = row.get(field)
+EPC_API_BASE = "https://api.get-energy-performance-data.communities.gov.uk"
+
+def _extract_floor_area(cert):
+    """Read total floor area (sqm) from a full certificate response."""
+    for field in ("total_floor_area", "total-floor-area", "totalFloorArea", "floor_area", "floor-area", "floorArea"):
+        val = cert.get(field)
         if val is not None:
             try:
-                return float(val)
+                area = float(val)
+                if area > 0:
+                    return area
             except (ValueError, TypeError):
                 continue
     return None
 
+def _epc_search(postcode):
+    """Search the EPC register by postcode. Returns list of certificate summaries."""
+    formatted = format_postcode(postcode)
+    r = requests.get(
+        f"{EPC_API_BASE}/api/domestic/search",
+        params={"postcode": formatted, "page_size": 100},
+        headers={"Accept": "application/json", "Authorization": f"Bearer {EPC_API_KEY}"},
+        timeout=10
+    )
+    if r.status_code != 200:
+        print(f"EPC search error: {r.status_code} — {r.text[:200]}")
+        return []
+    data = r.json().get("data", [])
+    # When no certificates found, the API returns {"data": {"error": ...}} not a list
+    return data if isinstance(data, list) else []
+
+def _epc_fetch_certificate(certificate_number):
+    """Fetch a full EPC certificate by its number. Returns the cert dict or None."""
+    r = requests.get(
+        f"{EPC_API_BASE}/api/certificate",
+        params={"certificate_number": certificate_number},
+        headers={"Accept": "application/json", "Authorization": f"Bearer {EPC_API_KEY}"},
+        timeout=10
+    )
+    if r.status_code != 200:
+        print(f"EPC certificate error: {r.status_code} — {r.text[:200]}")
+        return None
+    cert = r.json().get("data")
+    return cert if isinstance(cert, dict) else None
+
+def _select_epc_match(results, address):
+    """Pick the best certificate summary matching the address, else the first."""
+    if not results:
+        return None
+    if address:
+        # Match on house number / first token of the address against addressLine1
+        first_token = address.upper().split(",")[0].strip().split()
+        if first_token:
+            house = first_token[0]
+            for r in results:
+                line1 = (r.get("addressLine1") or "").upper()
+                if line1.split() and line1.split()[0] == house:
+                    return r
+    return results[0]
+
 def get_floor_area_from_epc(postcode, address=None):
+    """Two-call EPC lookup: search by postcode → fetch certificate → read floor area."""
     try:
-        formatted = format_postcode(postcode)
-        r = requests.get(
-            "https://get-energy-performance-data.communities.gov.uk/api/domestic/search",
-            params={"postcode": formatted, "size": 10},
-            headers={"Accept": "application/json", "Authorization": f"Bearer {EPC_API_KEY}"},
-            timeout=10
-        )
-        if r.status_code != 200:
-            print(f"EPC API error: {r.status_code} — {r.text[:300]}")
+        results = _epc_search(postcode)
+        if not results:
             return None
-        data = r.json()
-        # New API may wrap rows differently — try 'data', fall back to 'rows'
-        rows = data.get("data", data.get("rows", []))
-        if not rows:
+        match = _select_epc_match(results, address)
+        if not match or not match.get("certificateNumber"):
             return None
-        if address:
-            for row in rows:
-                addr_field = row.get("address", row.get("addressSummary", ""))
-                if any(part in addr_field.upper() for part in address.upper().split()[:2]):
-                    area = _extract_floor_area(row)
-                    if area:
-                        return area
-        return _extract_floor_area(rows[0])
+        cert = _epc_fetch_certificate(match["certificateNumber"])
+        if not cert:
+            return None
+        return _extract_floor_area(cert)
     except Exception as e:
-        print(f"EPC API exception: {e}")
+        print(f"EPC lookup exception: {e}")
         return None
 
 def fetch_sold_prices(postcode):
