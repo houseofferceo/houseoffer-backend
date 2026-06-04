@@ -45,6 +45,8 @@ SUBREDDITS = [
     "UKPersonalFinance",
     "HomeOwnersUK",
     "UKHousing",
+    "FirstTimeBuyersUK",
+    "SpottedonRightmove",
 ]
 
 # Keywords/phrases that suggest a post is a fit for HouseOffer.
@@ -583,5 +585,23 @@ def run_monitor():
         send_digest_email()
 
 
+def test_webhook():
+    """One-off: send a dummy row to the Sheet to verify the webhook in isolation.
+    Triggered by env var TEST_WEBHOOK=true. Does NOT call Reddit (no 429 risk)."""
+    print("TEST_WEBHOOK mode — sending one dummy row to the Sheet…")
+    dummy_post = {
+        "id": "testrow",
+        "subreddit": "WEBHOOK_TEST",
+        "title": "Webhook self-test — safe to delete this row",
+        "permalink": "/r/test/comments/testrow/",
+        "selftext": "If you can see this row in the Sheet, the webhook is working.",
+    }
+    ok = post_draft_to_sheets(dummy_post, "This is a test draft. Delete this row.")
+    print(f"TEST_WEBHOOK result: {'OK — check the Sheet for the test row' if ok else 'FAILED — see the HTTP code above'}")
+
+
 if __name__ == "__main__":
-    run_monitor()
+    if os.environ.get("TEST_WEBHOOK", "false").lower() == "true":
+        test_webhook()
+    else:
+        run_monitor()
