@@ -119,6 +119,7 @@ TRIGGER_PHRASES = [
     # — Negotiation —
     "negotiate",
     "negotiating",
+    "negotiation",
     "haggle",
     "haggling",
     "bargaining",
@@ -166,6 +167,28 @@ TRIGGER_PHRASES = [
     "is this nuts",
     "is this normal",
     "how much under asking",
+
+    # — Broader property search phrases (added Session 13) —
+    "asking price",
+    "rightmove",
+    "zoopla",
+    "before viewing",
+    "house viewing",
+    "property viewing",
+    "what should i pay",
+    "price reduction",
+    "reduced price",
+    "just reduced",
+    "what's the catch",
+    "too expensive",
+    "too cheap",
+    "days on market",
+    "been on rightmove",
+    "how much did",
+    "what did it sell",
+    "sellers accept",
+    "market value",
+    "worth the asking",
 ]
 
 # Local cache file to avoid duplicate drafts on the same post
@@ -245,7 +268,9 @@ def is_relevant(post):
     if age_seconds > LOOKBACK_HOURS * 3600:
         return False
     # Skip very short posts (title-only is too thin for context) or very long ones
-    if len(body) < 40 or len(body) > 5000:
+    # SpottedonRightmove posts are often just a title + image with a short caption
+    min_body = 10 if post.get("subreddit") == "SpottedonRightmove" else 40
+    if len(body) < min_body or len(body) > 5000:
         return False
     # Skip posts asking general non-buyer questions
     if any(skip in combined for skip in ["selling my", "as a seller", "estate agent here", "i am a landlord", "rental"]):
