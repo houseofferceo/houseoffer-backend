@@ -49,6 +49,14 @@ SUBREDDITS = [
     "SpottedonRightmove",
 ]
 
+# Property-buying subs where virtually every post is relevant.
+# Posts from these subs skip the trigger phrase check — Claude's SKIP logic filters instead.
+TRUSTED_SUBREDDITS = [
+    "FirstTimeBuyersUK",
+    "SpottedonRightmove",
+    "HousingUK",
+]
+
 # Keywords/phrases that suggest a post is a fit for HouseOffer.
 # Cast wide here — is_relevant() filters first BEFORE the expensive Claude call,
 # and Claude itself can reply "SKIP" if a triggered post isn't actually a fit.
@@ -189,6 +197,8 @@ TRIGGER_PHRASES = [
     "sellers accept",
     "market value",
     "worth the asking",
+    "estate agent",
+    "estate agents",
 ]
 
 # Local cache file to avoid duplicate drafts on the same post
@@ -268,14 +278,23 @@ def is_relevant(post):
     if age_seconds > LOOKBACK_HOURS * 3600:
         return False
     # Skip very short posts (title-only is too thin for context) or very long ones
-    # SpottedonRightmove posts are often just a title + image with a short caption
-    min_body = 10 if post.get("subreddit") == "SpottedonRightmove" else 40
+    # Trusted subs (property-specific) and SpottedonRightmove have relaxed body minimums
+    # because RSS often returns truncated content for these subs
+    subreddit = post.get("subreddit", "")
+    if subreddit in TRUSTED_SUBREDDITS:
+        min_body = 0
+    else:
+        min_body = 40
     if len(body) < min_body or len(body) > 5000:
         return False
     # Skip posts asking general non-buyer questions
     if any(skip in combined for skip in ["selling my", "as a seller", "estate agent here", "i am a landlord", "rental"]):
         return False
-    # Must hit at least one trigger phrase
+    # Trusted property subs: the subreddit IS the relevance filter.
+    # Let Claude's SKIP logic handle the fine-grained filtering.
+    if subreddit in TRUSTED_SUBREDDITS:
+        return True
+    # Other subs: must hit at least one trigger phrase
     return any(phrase in combined for phrase in TRIGGER_PHRASES)
 
 
