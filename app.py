@@ -13,7 +13,7 @@ from hpi_data import get_hpi_index as hpi_index, get_current_hpi
 from property_scraper import scrape_property_url
 
 app = Flask(__name__)
-CORS(app, origins=["https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
+CORS(app, origins=["https://houseoffer.uk", "https://www.houseoffer.uk", "https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
 
 # ── REPORT STORAGE ────────────────────────────────────────────────────────────
 # Reports stored as JSON files on disk under /tmp/reports/<uuid>.json
