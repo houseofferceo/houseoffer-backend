@@ -155,23 +155,34 @@ def extract_postcode_from_url(url):
     return None
 
 def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, property_type, address=""):
-    """Fill listing fields from Rightmove/Zoopla when a property URL is provided."""
+    """Fill listing fields from Rightmove/Zoopla when a property URL is provided.
+    Returns a 6-tuple: (postcode, asking_price, bedrooms, property_type, address, extra_dict)
+    where extra_dict carries days_on_market and price-reduction fields from the scraper."""
+    extra = {}
     if not property_url:
-        return postcode, asking_price, bedrooms, property_type, address
+        return postcode, asking_price, bedrooms, property_type, address, extra
 
     scraped = scrape_property_url(property_url)
     if not postcode:
         postcode = scraped.get("postcode") or ""
     if not asking_price:
         asking_price = scraped.get("asking_price") or 0
-    # Beds/type are not on the landing form — always take from scrape when available
     if scraped.get("bedrooms") is not None:
         bedrooms = scraped.get("bedrooms", bedrooms)
     if scraped.get("property_type"):
         property_type = scraped.get("property_type", property_type)
     if scraped.get("address") and not address:
         address = scraped.get("address")
-    return postcode, asking_price, bedrooms, property_type, address
+
+    extra = {
+        "days_on_market": scraped.get("days_on_market"),
+        "price_reduced": scraped.get("price_reduced", False),
+        "original_asking_price": scraped.get("original_asking_price"),
+        "reduction_date": scraped.get("reduction_date"),
+        "reduction_amount": scraped.get("reduction_amount"),
+        "reduction_pct": scraped.get("reduction_pct"),
+    }
+    return postcode, asking_price, bedrooms, property_type, address, extra
 
 EPC_API_BASE = "https://api.get-energy-performance-data.communities.gov.uk"
 
@@ -440,6 +451,86 @@ def _psqf_points(data, type_keys):
         print(f"_psqf_points: no matches for {type_keys}. Types present: {sorted({p.get('type') for p in raw})}")
     return points
 
+def fetch_avg_dom(postcode):
+    """Fetch average days on market from PropertyData API. Returns int or None."""
+    try:
+        r = requests.get(
+            "https://api.propertydata.co.uk/avg-days-on-market",
+            params={"key": PROPERTYDATA_API_KEY, "postcode": postcode},
+            timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            inner = data.get("data") or {}
+            for field in ("average_days_on_market", "avg_dom", "days_on_market", "average"):
+                val = inner.get(field) if isinstance(inner, dict) else None
+                if val is not None:
+                    try:
+                        return int(val)
+                    except (TypeError, ValueError):
+                        pass
+    except Exception as e:
+        print(f"avg_dom error: {e}")
+    return None
+
+
+def fetch_propertydata_avm(postcode, property_type, bedrooms=None):
+    """Attempt PropertyData AVM/valuation endpoint. Returns dict or None."""
+    try:
+        params = {"key": PROPERTYDATA_API_KEY, "postcode": postcode, "property_type": property_type}
+        if bedrooms:
+            params["bedrooms"] = bedrooms
+        r = requests.get(
+            "https://api.propertydata.co.uk/valuation",
+            params=params,
+            timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            inner = data.get("data") or {}
+            low = inner.get("lower_estimate") or inner.get("low") or inner.get("min")
+            high = inner.get("upper_estimate") or inner.get("high") or inner.get("max")
+            mid = inner.get("estimate") or inner.get("mid") or inner.get("value")
+            if low and high:
+                low, high = int(low), int(high)
+                mid = int(mid) if mid else (low + high) // 2
+                return {"low": low, "high": high, "mid": mid}
+    except Exception as e:
+        print(f"AVM error: {e}")
+    return None
+
+
+def fetch_asking_sold_ratio(postcode, property_type):
+    """Fetch local asking-to-sold discount percentage from PropertyData.
+    Returns discount as a positive float (e.g. 4.2 = 4.2% below asking), or None."""
+    try:
+        r = requests.get(
+            "https://api.propertydata.co.uk/asking-vs-sold",
+            params={"key": PROPERTYDATA_API_KEY, "postcode": postcode, "property_type": property_type},
+            timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            inner = data.get("data") or {}
+            for field in ("avg_discount_pct", "discount", "discount_pct", "pct_below_asking"):
+                val = inner.get(field) if isinstance(inner, dict) else None
+                if val is not None:
+                    return abs(float(val))
+    except Exception as e:
+        print(f"asking_sold_ratio error: {e}")
+    return None
+
+
+def _hpi_month_offset(year_month: str, months: int) -> str:
+    """Return a YYYY-MM string shifted by `months` from year_month (negative = earlier)."""
+    try:
+        y, m = int(year_month[:4]), int(year_month[5:7])
+        total = y * 12 + m - 1 + months
+        return f"{total // 12:04d}-{(total % 12) + 1:02d}"
+    except Exception:
+        return year_month
+
+
 def get_psqm_benchmarks(postcode, property_type, floor_area_sqm=None):
     """Return both sold £/sqm benchmarks:
       - area_wide_psqm: all comparable-type homes
@@ -561,9 +652,33 @@ def calculate_hpi_adjustment(last_sale_price, sale_date_str, region):
         print(f"HPI adjustment error: {e}")
     return None
 
+def _fmt(value):
+    """Format an integer price as £X,XXX,XXX."""
+    return f"£{value:,}" if value else None
+
+
+def _method_dict(name, low, high, midpoint, source, available, weight=1):
+    return {
+        "name": name,
+        "low": low,
+        "high": high,
+        "midpoint": midpoint,
+        "source": source,
+        "available": available,
+        "weight": weight,
+        "low_formatted": _fmt(low),
+        "high_formatted": _fmt(high),
+        "midpoint_formatted": _fmt(midpoint),
+    }
+
+
 def build_report_data(property_url, asking_price, bedrooms, property_type,
-                      postcode, floor_area_sqm=None, address=None):
+                      postcode, floor_area_sqm=None, address=None,
+                      scraper_days_on_market=None, price_reduced=False,
+                      original_asking_price=None, reduction_date=None,
+                      reduction_amount=None, reduction_pct=None):
     formatted = format_postcode(postcode)
+    region = postcode_to_region(postcode)
     comparables, postcode_used, broadened = get_sold_comparables(postcode, property_type)
     local_avg_sold = avg_sold_price(comparables)
 
@@ -580,44 +695,49 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     size_matched_psqm = area_wide_psqm = None
     size_matched_count = 0
     psqm_basis = None
+    psqm_implied_value = None
     if floor_area_sqm and floor_area_sqm > 0:
         asking_psqm = round(asking_price / floor_area_sqm)
         benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm)
         size_matched_psqm = benchmarks["size_matched_psqm"]
         area_wide_psqm = benchmarks["area_wide_psqm"]
         size_matched_count = benchmarks["size_matched_count"]
-        # Verdict uses size-matched when available (accurate like-for-like),
-        # falling back to area-wide when fewer than 3 similar-sized homes exist
         local_avg_psqm = size_matched_psqm or area_wide_psqm
         psqm_basis = "size_matched" if size_matched_psqm else ("area_wide" if area_wide_psqm else None)
         if local_avg_psqm:
+            psqm_implied_value = round(floor_area_sqm * local_avg_psqm)
             psqm_diff_pct = round(((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100, 1)
             psqm_verdict = "overpriced" if psqm_diff_pct > 8 else ("value" if psqm_diff_pct < -5 else "fair")
 
     # HPI-adjusted last sale
     hpi_adjustment = None
+    hpi_adjusted_value = None
     try:
-        region = postcode_to_region(postcode)
         last_sale = find_last_sale(postcode, address=address)
         if last_sale:
             hpi_adjustment = calculate_hpi_adjustment(
                 last_sale["price"], last_sale["date"], region
             )
+            if hpi_adjustment:
+                hpi_adjusted_value = hpi_adjustment["adjusted_price"]
     except Exception as e:
         print(f"HPI section error: {e}")
+
+    # Days on market: try PropertyData first, fall back to scraper
+    local_avg_dom = fetch_avg_dom(postcode_used)
+    days_on_market = scraper_days_on_market
+    dom_signal = None
+    if days_on_market and local_avg_dom:
+        ratio = days_on_market / local_avg_dom
+        dom_signal = "high" if ratio > 1.5 else ("medium" if ratio > 1.0 else "low")
 
     verdict = sold_verdict or psqm_verdict or "unknown"
     diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
 
-    # Build comparables list for report — sorted by date desc, capped at 20
-    # Include all records; those without a date sort to the end
+    # Build comparables list for report
     comparables_list = []
     try:
-        sorted_comps = sorted(
-            comparables,
-            key=lambda x: x.get("date") or "",
-            reverse=True
-        )[:20]
+        sorted_comps = sorted(comparables, key=lambda x: x.get("date") or "", reverse=True)[:20]
         for c in sorted_comps:
             comparables_list.append({
                 "address": c.get("address", ""),
@@ -629,6 +749,152 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             })
     except Exception as e:
         print(f"comparables_list build error: {e}")
+
+    # ── FOOTBALL FIELD: build seven valuation methods ──────────────────────────
+
+    methods = []
+
+    # Method 1: Comparable sold prices (weight 2)
+    if local_avg_sold and comparables:
+        try:
+            adj_prices = sorted(
+                c.get("adjusted_price") or c["price"] for c in comparables if c.get("price")
+            )
+            n = len(adj_prices)
+            q1_idx = max(0, n // 4)
+            q3_idx = min(n - 1, n - n // 4)
+            m1_low = round(adj_prices[q1_idx])
+            m1_high = round(adj_prices[q3_idx])
+            m1_mid = local_avg_sold
+            methods.append(_method_dict(
+                "Comparable sold prices", m1_low, m1_high, m1_mid,
+                "HM Land Registry (HPI-adjusted)", True, weight=2
+            ))
+        except Exception as e:
+            print(f"Method 1 error: {e}")
+            methods.append(_method_dict("Comparable sold prices", 0, 0, 0, "HM Land Registry", False, weight=2))
+    else:
+        methods.append(_method_dict("Comparable sold prices", 0, 0, 0, "HM Land Registry", False, weight=2))
+
+    # Method 2: HPI-adjusted last sale (weight 2)
+    if hpi_adjusted_value:
+        m2_low = round(hpi_adjusted_value * 0.95)
+        m2_high = round(hpi_adjusted_value * 1.05)
+        methods.append(_method_dict(
+            "HPI-adjusted last sale", m2_low, hpi_adjusted_value, m2_high,
+            "ONS House Price Index", True, weight=2
+        ))
+    else:
+        methods.append(_method_dict("HPI-adjusted last sale", 0, 0, 0, "ONS House Price Index", False, weight=2))
+
+    # Method 3: Price per square metre
+    if psqm_implied_value and floor_area_sqm:
+        m3_low = round(psqm_implied_value * 0.95)
+        m3_high = round(psqm_implied_value * 1.05)
+        methods.append(_method_dict(
+            "Price per m²", m3_low, psqm_implied_value, m3_high,
+            "EPC register + PropertyData sold £/m²", True
+        ))
+    else:
+        methods.append(_method_dict("Price per m²", 0, 0, 0, "EPC register + PropertyData", False))
+
+    # Method 4: Area price trend (12-month HPI range)
+    if local_avg_sold:
+        try:
+            current_hpi, current_month = get_current_hpi(region)
+            month_12m_ago = _hpi_month_offset(current_month, -12)
+            hpi_12m = hpi_index(region, month_12m_ago)
+            if current_hpi and hpi_12m and hpi_12m > 0:
+                price_12m_ago = round(local_avg_sold / (current_hpi / hpi_12m))
+                m4_low = round(min(local_avg_sold, price_12m_ago) * 0.98)
+                m4_high = round(max(local_avg_sold, price_12m_ago) * 1.02)
+                m4_mid = round((m4_low + m4_high) / 2)
+                methods.append(_method_dict(
+                    "Area price trend", m4_low, m4_mid, m4_high,
+                    "ONS House Price Index", True
+                ))
+            else:
+                methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index", False))
+        except Exception as e:
+            print(f"Method 4 error: {e}")
+            methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index", False))
+    else:
+        methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index", False))
+
+    # Method 5: Online estimate (AVM via PropertyData)
+    try:
+        avm = fetch_propertydata_avm(postcode_used, property_type, bedrooms)
+        if avm:
+            methods.append(_method_dict(
+                "Automated valuation", avm["low"], avm["mid"], avm["high"],
+                "Automated valuation model", True
+            ))
+        else:
+            methods.append(_method_dict("Automated valuation", 0, 0, 0, "Automated valuation model", False))
+    except Exception as e:
+        print(f"Method 5 error: {e}")
+        methods.append(_method_dict("Automated valuation", 0, 0, 0, "Automated valuation model", False))
+
+    # Method 6: Lender valuation band
+    base_candidates = [v for v in (local_avg_sold, hpi_adjusted_value, psqm_implied_value) if v]
+    if base_candidates:
+        lender_base = min(base_candidates)
+        m6_low = round(lender_base * 0.90)
+        m6_high = round(lender_base * 0.97)
+        m6_mid = round((m6_low + m6_high) / 2)
+        methods.append(_method_dict(
+            "Lender valuation band", m6_low, m6_mid, m6_high,
+            "Estimated lender valuation", True
+        ))
+    else:
+        methods.append(_method_dict("Lender valuation band", 0, 0, 0, "Estimated lender valuation", False))
+
+    # Method 7: Asking-to-sold discount
+    try:
+        discount_pct = fetch_asking_sold_ratio(postcode_used, property_type)
+        is_national_fallback = False
+        if discount_pct is None:
+            discount_pct = 4.5
+            is_national_fallback = True
+        m7_low = round(asking_price * (1 - 0.055))
+        m7_high = round(asking_price * (1 - 0.035))
+        if not is_national_fallback:
+            m7_low = round(asking_price * (1 - (discount_pct + 1) / 100))
+            m7_high = round(asking_price * (1 - (discount_pct - 1) / 100))
+        m7_mid = round((m7_low + m7_high) / 2)
+        source_note = "National avg asking-to-sold discount" if is_national_fallback else "Local asking-to-sold discount"
+        methods.append(_method_dict(
+            "Asking-to-sold discount", m7_low, m7_mid, m7_high,
+            source_note, True
+        ))
+    except Exception as e:
+        print(f"Method 7 error: {e}")
+        methods.append(_method_dict("Asking-to-sold discount", 0, 0, 0, "Asking-to-sold discount", False))
+
+    # ── FOOTBALL FIELD WEIGHTED RANGE ─────────────────────────────────────────
+
+    available_methods = [m for m in methods if m["available"]]
+    weighted_low = weighted_high = weighted_midpoint = None
+    recommended_offer = None
+
+    if available_methods:
+        total_weight = sum(m["weight"] for m in available_methods)
+        weighted_low = round(sum(m["low"] * m["weight"] for m in available_methods) / total_weight)
+        weighted_high = round(sum(m["high"] * m["weight"] for m in available_methods) / total_weight)
+        weighted_midpoint = round((weighted_low + weighted_high) / 2)
+        recommended_offer = round(weighted_low + 0.30 * (weighted_high - weighted_low))
+
+    # Chart axis bounds: include all method ranges and asking price
+    chart_price_min = chart_price_max = None
+    if available_methods:
+        all_lows = [m["low"] for m in available_methods]
+        all_highs = [m["high"] for m in available_methods]
+        chart_price_min = int(min(all_lows + [asking_price]) * 0.96)
+        chart_price_max = int(max(all_highs + [asking_price]) * 1.04)
+
+    # Price reduction formatting
+    original_asking_price_formatted = _fmt(original_asking_price)
+    reduction_amount_formatted = _fmt(reduction_amount)
 
     return {
         "postcode": formatted,
@@ -658,9 +924,27 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "psqm_verdict": psqm_verdict,
         "verdict": verdict,
         "diff_pct": diff_pct,
-        "days_on_market": None,
-        "local_avg_dom": None,
-        "dom_signal": None,
+        "days_on_market": days_on_market,
+        "local_avg_dom": local_avg_dom,
+        "dom_signal": dom_signal,
+        "price_reduced": price_reduced,
+        "original_asking_price": original_asking_price,
+        "original_asking_price_formatted": original_asking_price_formatted,
+        "reduction_date": reduction_date,
+        "reduction_amount": reduction_amount,
+        "reduction_amount_formatted": reduction_amount_formatted,
+        "reduction_pct": reduction_pct,
+        "football_field": methods,
+        "weighted_low": weighted_low,
+        "weighted_high": weighted_high,
+        "weighted_midpoint": weighted_midpoint,
+        "weighted_low_formatted": _fmt(weighted_low),
+        "weighted_high_formatted": _fmt(weighted_high),
+        "weighted_midpoint_formatted": _fmt(weighted_midpoint),
+        "recommended_offer": recommended_offer,
+        "recommended_offer_formatted": _fmt(recommended_offer),
+        "chart_price_min": chart_price_min,
+        "chart_price_max": chart_price_max,
         "generated": datetime.now().strftime("%-d %B %Y"),
         "property_url": property_url,
     }
@@ -719,6 +1003,12 @@ def notify_owner(to_email, property_url, postcode, verdict, buyer_estimate="", a
         print(f"Owner notify error: {e}")
 
 
+@app.route("/track-upgrade")
+def track_upgrade():
+    """Alias for /track used by locked-section CTAs on the free report."""
+    return track()
+
+
 @app.route("/track")
 def track():
     """Track upgrade button clicks and redirect to pricing page."""
@@ -760,7 +1050,6 @@ def track():
 @app.route("/r/<report_id>")
 def view_report(report_id):
     """Serve a previously generated report by its UUID."""
-    # Basic safety check on the UUID format
     if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
         return "Report not found", 404
 
@@ -772,7 +1061,6 @@ def view_report(report_id):
                 "<p><a href='https://houseoffer.netlify.app'>Generate a new report →</a></p>"
                 "</body></html>", 404)
 
-    # Log the view
     log_event(report_id, "report_viewed", {
         "user_agent": request.headers.get("User-Agent", "")[:200],
         "referer": request.headers.get("Referer", "")[:200],
@@ -780,7 +1068,26 @@ def view_report(report_id):
 
     report = stored.get("report", {})
     report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
-    return render_template("report_free.html", report_url=report_url, report_id=report_id, **report)
+    paid = stored.get("paid", False)
+    template = "report_paid.html" if paid else "report_free.html"
+    return render_template(template, report_url=report_url, report_id=report_id, **report)
+
+
+@app.route("/admin/unlock/<report_id>")
+def admin_unlock(report_id):
+    """Set paid=True for a given report UUID (manual unlock until Stripe is live)."""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "unauthorized"}), 401
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "invalid report_id"}), 400
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+    stored["paid"] = True
+    save_report(report_id, stored)
+    log_event(report_id, "report_unlocked", {})
+    return jsonify({"status": "unlocked", "report_id": report_id})
 
 @app.route("/log", methods=["POST"])
 def log_engagement():
@@ -930,7 +1237,7 @@ def generate_report():
     address = data.get("address", "")
     if not postcode and property_url:
         postcode = extract_postcode_from_url(property_url) or ""
-    postcode, asking_price, bedrooms, property_type, address = merge_scraped_listing(
+    postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
         property_url, postcode, asking_price, bedrooms, property_type, address
     )
     if not postcode:
@@ -943,6 +1250,7 @@ def generate_report():
         postcode=postcode,
         floor_area_sqm=float(data.get("floor_area_sqm", 0) or 0) or None,
         address=address,
+        **extra,
     )
     return render_template("report_free.html", **report)
 
@@ -957,7 +1265,7 @@ def report_data_json():
     address = data.get("address", "")
     if not postcode and property_url:
         postcode = extract_postcode_from_url(property_url) or ""
-    postcode, asking_price, bedrooms, property_type, address = merge_scraped_listing(
+    postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
         property_url, postcode, asking_price, bedrooms, property_type, address
     )
     if not postcode:
@@ -970,6 +1278,7 @@ def report_data_json():
         postcode=postcode,
         floor_area_sqm=float(data.get("floor_area_sqm", 0) or 0) or None,
         address=address,
+        **extra,
     )
     return jsonify(report)
 
@@ -1000,7 +1309,7 @@ def submit():
         print(f"DUPLICATE submission blocked: {to_email} | {property_url[:80]}")
         return jsonify({"status": "sent", "deduped": True})
 
-    postcode, asking_price, bedrooms, property_type, address = merge_scraped_listing(
+    postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
         property_url, postcode, asking_price, bedrooms, property_type, address
     )
 
@@ -1018,6 +1327,7 @@ def submit():
             postcode=postcode,
             floor_area_sqm=floor_area_sqm,
             address=address,
+            **extra,
         )
 
         # Generate a UUID for this report so the user can access it online

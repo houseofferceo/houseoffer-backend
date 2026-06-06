@@ -8,6 +8,7 @@ residential proxy if Zoopla returns 403 from your host (e.g. Render).
 import json
 import os
 import re
+from datetime import date, datetime
 from typing import Any, Optional
 
 import requests
@@ -19,6 +20,13 @@ DEFAULT_RESULT = {
     "property_type": "semi-detached",
     "address": None,
     "source": None,
+    "date_first_listed": None,
+    "days_on_market": None,
+    "price_reduced": False,
+    "original_asking_price": None,
+    "reduction_date": None,
+    "reduction_amount": None,
+    "reduction_pct": None,
 }
 
 BROWSER_HEADERS = {
@@ -241,6 +249,125 @@ def _postcode_from_address(addr: dict) -> Optional[str]:
     return None
 
 
+_MONTH_ABBR = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+
+
+def _parse_date_to_date(raw: str) -> Optional[date]:
+    raw = raw.strip()
+    # ISO / datetime format: "2024-01-15" or "2024-01-15T00:00:00.000Z"
+    if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+        try:
+            return datetime.fromisoformat(raw[:10]).date()
+        except ValueError:
+            pass
+    # "15 January 2024" or "15 Jan 2024"
+    m = re.match(r"(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", raw)
+    if m:
+        day, month_word, year = int(m.group(1)), m.group(2).lower(), int(m.group(3))
+        month_num = _MONTH_ABBR.get(month_word)
+        if month_num:
+            try:
+                return date(year, month_num, day)
+            except ValueError:
+                pass
+    return None
+
+
+def _apply_rightmove_listing_dates(result: dict, prop: dict, html: str) -> None:
+    """Extract first-listed date and price reduction info from Rightmove data."""
+    first_listed_raw: Optional[str] = None
+
+    # PAGE_MODEL fields
+    listing_update = prop.get("listingUpdate") or {}
+    update_date_str = str(listing_update.get("listingUpdateDate") or "")
+    update_reason = (listing_update.get("listingUpdateReason") or "").lower()
+
+    if update_reason == "new_listing" and update_date_str:
+        first_listed_raw = update_date_str
+    elif update_reason in ("price_reduced", "price_changed") and update_date_str:
+        result["price_reduced"] = True
+        reduction_dt = _parse_date_to_date(update_date_str)
+        result["reduction_date"] = reduction_dt.isoformat() if reduction_dt else update_date_str[:10]
+
+    # Explicit first-listed date fields
+    for field in ("firstListedDate", "dateAdded", "firstVisibleDate"):
+        val = prop.get(field)
+        if val and not first_listed_raw:
+            first_listed_raw = str(val)
+
+    # Price history for original asking price
+    price_history = prop.get("priceHistory") or []
+    if isinstance(price_history, list) and len(price_history) >= 2:
+        try:
+            # History usually newest-first; last entry is original
+            original_entry = price_history[-1]
+            orig_price = parse_price(
+                original_entry.get("price") or original_entry.get("amount") or 0
+            )
+            if orig_price and orig_price > 10_000:
+                result["original_asking_price"] = orig_price
+                if orig_price != result.get("asking_price", 0):
+                    result["price_reduced"] = True
+            # Use the oldest history date as first_listed if we don't have one
+            if not first_listed_raw:
+                hist_date = original_entry.get("date") or original_entry.get("changeDate") or ""
+                if hist_date:
+                    first_listed_raw = str(hist_date)
+        except Exception:
+            pass
+
+    # HTML pattern fallbacks
+    if html:
+        if not first_listed_raw:
+            added_m = re.search(
+                r"(?:Added\s+on|First\s+listed[:\s]+)\s*(\d{1,2}\s+\w+\s+\d{4})",
+                html, re.IGNORECASE,
+            )
+            if added_m:
+                first_listed_raw = added_m.group(1)
+
+        if not result["price_reduced"]:
+            reduced_m = re.search(r"Reduced\s+on\s+(\d{1,2}\s+\w+\s+\d{4})", html, re.IGNORECASE)
+            if reduced_m:
+                result["price_reduced"] = True
+                rd = _parse_date_to_date(reduced_m.group(1))
+                result["reduction_date"] = rd.isoformat() if rd else reduced_m.group(1)
+
+        if not result.get("original_asking_price"):
+            was_m = re.search(r"[Ww]as\s+£([\d,]+)", html)
+            if was_m:
+                try:
+                    orig = int(was_m.group(1).replace(",", ""))
+                    if orig > 10_000:
+                        result["original_asking_price"] = orig
+                        result["price_reduced"] = True
+                except ValueError:
+                    pass
+
+    # Parse first_listed and compute DOM
+    if first_listed_raw:
+        result["date_first_listed"] = first_listed_raw
+        dt = _parse_date_to_date(first_listed_raw)
+        if dt:
+            result["days_on_market"] = (date.today() - dt).days
+
+    # Compute reduction_amount / reduction_pct
+    orig = result.get("original_asking_price")
+    curr = result.get("asking_price", 0)
+    if result["price_reduced"] and orig and curr and orig > curr > 0:
+        result["reduction_amount"] = orig - curr
+        result["reduction_pct"] = round((orig - curr) / orig * 100, 1)
+    elif result["price_reduced"] and orig and curr and orig <= curr:
+        # Original was not higher; clear false-positive
+        result["original_asking_price"] = None
+        result["price_reduced"] = False
+
+
 def _apply_rightmove_property(result: dict, prop: dict) -> None:
     prices = prop.get("prices") or {}
     price = prices.get("primaryPrice") or prices.get("displayPrice") or prop.get("price")
@@ -296,6 +423,10 @@ def scrape_rightmove(url: str) -> dict:
         prop = model.get("propertyData") or model
         if isinstance(prop, dict):
             _apply_rightmove_property(result, prop)
+            _apply_rightmove_listing_dates(result, prop, html)
+    else:
+        # HTML-only fallbacks for listing dates
+        _apply_rightmove_listing_dates(result, {}, html)
 
     if not result["postcode"]:
         match = UK_POSTCODE_RE.search(html.upper())
@@ -448,6 +579,27 @@ def scrape_zoopla(url: str) -> dict:
             print(f"Zoopla __NEXT_DATA__ parse error: {exc}")
 
     _apply_zoopla_json_ld(result, _parse_json_ld(html))
+
+    # Listing date fallback from __NEXT_DATA__ (Zoopla field names vary)
+    if next_match:
+        try:
+            next_data = json.loads(next_match.group(1))
+            page_props = next_data.get("props", {}).get("pageProps", {})
+            listing = (
+                _deep_get(page_props, ("listingDetails",), ("listing",), ("property",))
+                or page_props
+            )
+            for field in ("listingDate", "dateAdded", "firstListedDate", "publishedAt"):
+                val = _walk_find_first(listing, {field})
+                if val and isinstance(val, str):
+                    from datetime import date as _date
+                    dt = _parse_date_to_date(val)
+                    if dt:
+                        result["date_first_listed"] = val
+                        result["days_on_market"] = (_date.today() - dt).days
+                        break
+        except Exception:
+            pass
 
     # Meta / visible fallbacks
     if not result["asking_price"]:
