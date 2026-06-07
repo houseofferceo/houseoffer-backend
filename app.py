@@ -181,6 +181,7 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "reduction_date": scraped.get("reduction_date"),
         "reduction_amount": scraped.get("reduction_amount"),
         "reduction_pct": scraped.get("reduction_pct"),
+        "scraper_floor_area_sqm": scraped.get("floor_area_sqm"),
     }
     return postcode, asking_price, bedrooms, property_type, address, extra
 
@@ -703,9 +704,9 @@ def _method_dict(name, low, high, midpoint, source, available, weight=1):
 
 def build_report_data(property_url, asking_price, bedrooms, property_type,
                       postcode, floor_area_sqm=None, address=None,
-                      scraper_days_on_market=None, price_reduced=False,
-                      original_asking_price=None, reduction_date=None,
-                      reduction_amount=None, reduction_pct=None):
+                      scraper_days_on_market=None, scraper_floor_area_sqm=None,
+                      price_reduced=False, original_asking_price=None,
+                      reduction_date=None, reduction_amount=None, reduction_pct=None):
     formatted = format_postcode(postcode)
     region = postcode_to_region(postcode)
     comparables, postcode_used, broadened = get_sold_comparables(postcode, property_type)
@@ -717,6 +718,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         sold_diff_pct = round(((asking_price - local_avg_sold) / local_avg_sold) * 100, 1)
         sold_verdict = "overpriced" if sold_diff_pct > 8 else ("value" if sold_diff_pct < -5 else "fair")
 
+    if not floor_area_sqm and scraper_floor_area_sqm:
+        floor_area_sqm = scraper_floor_area_sqm
     if not floor_area_sqm and EPC_API_KEY:
         floor_area_sqm = get_floor_area_from_epc(postcode, address)
 

@@ -27,6 +27,7 @@ DEFAULT_RESULT = {
     "reduction_date": None,
     "reduction_amount": None,
     "reduction_pct": None,
+    "floor_area_sqm": None,
 }
 
 BROWSER_HEADERS = {
@@ -446,6 +447,32 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
         result["postcode"] = pc
     if isinstance(addr, dict) and addr.get("displayAddress"):
         result["address"] = addr["displayAddress"]
+
+    # Floor area from sizings array (present on some listings)
+    sizings = prop.get("sizings") or []
+    if isinstance(sizings, list):
+        for s in sizings:
+            if not isinstance(s, dict):
+                continue
+            # Try sqm first, then convert sqft
+            sqm = s.get("sqm") or s.get("areaSqMetres") or s.get("sqM") or s.get("floorAreaSqM")
+            if sqm:
+                try:
+                    area = float(sqm)
+                    if area > 10:
+                        result["floor_area_sqm"] = area
+                        break
+                except (TypeError, ValueError):
+                    pass
+            sqft = s.get("sqft") or s.get("areaSqFeet") or s.get("sqFt") or s.get("floorAreaSqFt")
+            if sqft:
+                try:
+                    area = float(sqft) / 10.764
+                    if area > 10:
+                        result["floor_area_sqm"] = round(area, 1)
+                        break
+                except (TypeError, ValueError):
+                    pass
 
 
 def scrape_rightmove(url: str) -> dict:
