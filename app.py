@@ -644,22 +644,84 @@ def postcode_to_region(postcode):
             return POSTCODE_TO_REGION[prefix]
     return "england"
 
+def _fetch_land_registry_direct(postcode):
+    """Query Land Registry SPARQL endpoint directly for sales at this postcode."""
+    try:
+        pc = format_postcode(postcode).upper()
+        query = f"""
+PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
+PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
+SELECT ?address ?amount ?date WHERE {{
+  ?transx lrppi:propertyAddress ?addr ;
+          lrppi:pricePaid ?amount ;
+          lrppi:transactionDate ?date .
+  ?addr lrcommon:postcode "{pc}" .
+  OPTIONAL {{ ?addr lrcommon:paon ?paon }}
+  OPTIONAL {{ ?addr lrcommon:saon ?saon }}
+  OPTIONAL {{ ?addr lrcommon:street ?street }}
+  BIND(CONCAT(COALESCE(?saon,""), " ", COALESCE(?paon,""), " ", COALESCE(?street,""), " {pc}") AS ?address)
+}}
+ORDER BY DESC(?date)
+LIMIT 50
+"""
+        resp = requests.get(
+            "https://landregistry.data.gov.uk/sparql",
+            params={"query": query, "output": "json"},
+            timeout=10,
+            headers={"Accept": "application/sparql-results+json"},
+        )
+        if resp.status_code != 200:
+            return []
+        bindings = resp.json().get("results", {}).get("bindings", [])
+        results = []
+        for b in bindings:
+            price = int(float(b["amount"]["value"])) if b.get("amount") else None
+            date = b["date"]["value"][:10] if b.get("date") else None
+            addr = b["address"]["value"].strip() if b.get("address") else pc
+            if price and price < 2_000_000:
+                results.append({"address": addr, "price": price, "date": date})
+        return results
+    except Exception as e:
+        print(f"land_registry_direct error: {e}")
+        return []
+
+
 def find_last_sale(postcode, address=None):
-    """Find the most recent sale of this property from Land Registry data at its postcode."""
+    """Find the most recent sale of this property from Land Registry data at its postcode.
+
+    Strategy:
+    1. PropertyData radius results filtered to exact postcode match (most common case).
+    2. If no exact postcode match, try address-only matching from the same radius results.
+    3. If still nothing, query Land Registry SPARQL directly for this postcode.
+    """
     sales, _ = get_all_sold_at_postcode(postcode)
-    if not sales:
-        return None
 
-    postcode_sales = [s for s in sales if _sale_matches_postcode(s, postcode)]
-    if not postcode_sales:
-        return None
+    # Step 1: exact postcode match
+    if sales:
+        postcode_sales = [s for s in sales if _sale_matches_postcode(s, postcode)]
+        if postcode_sales:
+            if address:
+                matched = [s for s in postcode_sales if _sale_matches_address(s, address)]
+                if matched:
+                    postcode_sales = matched
+            return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
 
-    if address:
-        matched = [s for s in postcode_sales if _sale_matches_address(s, address)]
-        if matched:
-            postcode_sales = matched
+        # Step 2: address-only fallback within radius results
+        if address:
+            addr_matched = [s for s in sales if _sale_matches_address(s, address)]
+            if addr_matched:
+                return sorted(addr_matched, key=lambda x: x.get("date", ""), reverse=True)[0]
 
-    return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
+    # Step 3: Land Registry SPARQL direct query
+    lr_sales = _fetch_land_registry_direct(postcode)
+    if lr_sales:
+        if address:
+            matched = [s for s in lr_sales if _sale_matches_address(s, address)]
+            if matched:
+                return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
+        return sorted(lr_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
+
+    return None
 
 def calculate_hpi_adjustment(last_sale_price, sale_date_str, region):
     """Adjust a historical price to today's value using regional HPI."""
@@ -771,13 +833,19 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     try:
         sorted_comps = sorted(comparables, key=lambda x: x.get("date") or "", reverse=True)[:20]
         for c in sorted_comps:
+            c_price = c.get("price")
+            c_sqm = c.get("floor_area_sqm") or c.get("sqm")
+            c_psqm = round(c_price / c_sqm) if c_price and c_sqm and c_sqm > 0 else None
             comparables_list.append({
                 "address": c.get("address", ""),
                 "date": c.get("date", ""),
-                "price": c.get("price"),
-                "price_formatted": f"£{c['price']:,}" if c.get("price") else "",
+                "price": c_price,
+                "price_formatted": f"£{c_price:,}" if c_price else "",
                 "adjusted_price": c.get("adjusted_price"),
                 "adjusted_price_formatted": f"£{c['adjusted_price']:,}" if c.get("adjusted_price") else "",
+                "floor_area_sqm": c_sqm,
+                "psqm": c_psqm,
+                "psqm_formatted": f"£{c_psqm:,}/m²" if c_psqm else "",
             })
     except Exception as e:
         print(f"comparables_list build error: {e}")
@@ -970,6 +1038,11 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # Safety check: ensure open < target < walk_away
         open_offer = min(open_offer, target_price - 1000)
         walk_away = max(walk_away, target_price + 1000)
+        # On overpriced properties, cap walk_away at asking_price - £1k so we never
+        # recommend paying above asking for something priced above comparables
+        if verdict == "overpriced" and asking_price:
+            walk_away = min(walk_away, asking_price - 1000)
+            walk_away = max(walk_away, target_price + 1000)
         recommended_offer = open_offer
 
     # Confidence text: how far open offer is below asking vs below comparables

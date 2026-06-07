@@ -490,6 +490,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           <th>Date</th>
           <th>Original Price</th>
           <th>HPI-adjusted</th>
+          <th>£/m²</th>
         </tr>
       </thead>
       <tbody>
@@ -499,6 +500,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           <td class="date">{{ comp.date[:7] }}</td>
           <td class="price">{{ comp.price_formatted }}</td>
           <td class="price">{{ comp.adjusted_price_formatted or comp.price_formatted }}</td>
+          <td class="price">{{ comp.psqm_formatted or "—" }}</td>
         </tr>
         {% endfor %}
       </tbody>
