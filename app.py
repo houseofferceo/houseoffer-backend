@@ -781,7 +781,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         m2_low = round(hpi_adjusted_value * 0.95)
         m2_high = round(hpi_adjusted_value * 1.05)
         methods.append(_method_dict(
-            "HPI-adjusted last sale", m2_low, hpi_adjusted_value, m2_high,
+            "HPI-adjusted last sale", m2_low, m2_high, round((m2_low + m2_high) / 2),
             "ONS House Price Index", True, weight=2
         ))
     else:
@@ -810,7 +810,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                 m4_high = round(max(local_avg_sold, price_12m_ago) * 1.02)
                 m4_mid = round((m4_low + m4_high) / 2)
                 methods.append(_method_dict(
-                    "Area price trend", m4_low, m4_mid, m4_high,
+                    "Area price trend", m4_low, m4_high, m4_mid,
                     "ONS House Price Index", True
                 ))
             else:
