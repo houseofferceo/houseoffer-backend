@@ -1279,6 +1279,35 @@ def debug_report():
     report = build_report_data("", asking_price, "3", property_type, postcode, address=address)
     return jsonify(report)
 
+@app.route("/preview-paid")
+def preview_paid():
+    """Render paid report for any Rightmove URL without payment. Admin-key protected.
+    Usage: /preview-paid?url=https://www.rightmove.co.uk/properties/XXX&key=YOUR_ADMIN_KEY
+    """
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    property_url = request.args.get("url", "")
+    if not property_url:
+        return "Pass ?url= with a Rightmove URL and ?key= with your admin key", 400
+    postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
+        property_url, "", 0, "3", "semi-detached", ""
+    )
+    if not postcode:
+        return "Could not determine postcode from that URL.", 400
+    report = build_report_data(
+        property_url=property_url,
+        asking_price=asking_price,
+        bedrooms=bedrooms,
+        property_type=property_type,
+        postcode=postcode,
+        floor_area_sqm=None,
+        address=address,
+        **extra,
+    )
+    return render_template("report_paid.html", **report)
+
+
 @app.route("/report", methods=["POST"])
 def generate_report():
     data = request.get_json(silent=True) or request.form
