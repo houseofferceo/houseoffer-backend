@@ -1497,7 +1497,19 @@ def debug_scrape_dates():
         "html_around_485000": [html[max(0, m.start()-120):m.start()+40] for m in re.finditer(r"485[,.]?000", html)][:3],
         "html_around_398050": [html[max(0, m.start()-120):m.start()+40] for m in re.finditer(r"398[,.]?050", html)][:3],
     }
-    return jsonify({"date_fields": date_fields, "floor_area_fields": floor_fields, "sold_fields": sold_fields, "html_patterns": html_dates, "sold_history_hunt": sold_history})
+    # transactionHistory endpoint needs encId + deliveryPointId — locate both
+    id_hunt = {
+        "encId_top": prop.get("encId"),
+        "id_top": prop.get("id"),
+        "buildingId": prop.get("buildingId"),
+        "address": prop.get("address"),
+        "location": prop.get("location"),
+        "propertyUrls": prop.get("propertyUrls"),
+        "html_keys_with_delivery": sorted(set(re.findall(r'"(\w*[Dd]elivery\w*)"\s*:', html)))[:20],
+        "html_around_deliveryPointId": [html[max(0, m.start()-10):m.start()+60] for m in re.finditer(r"deliveryPointId", html)][:3],
+        "html_around_108499996": [html[max(0, m.start()-60):m.start()+30] for m in re.finditer(r"108499996", html)][:3],
+    }
+    return jsonify({"date_fields": date_fields, "floor_area_fields": floor_fields, "sold_fields": sold_fields, "html_patterns": html_dates, "sold_history_hunt": sold_history, "id_hunt": id_hunt})
 
 @app.route("/debug-sold")
 def debug_sold():
