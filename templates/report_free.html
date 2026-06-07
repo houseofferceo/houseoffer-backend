@@ -439,21 +439,33 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   {% endif %}
 
   <!-- DAYS ON MARKET -->
-  {% if days_on_market and local_avg_dom %}
+  {% if days_on_market %}
   <div class="dom-card">
-    <div class="dom-icon">⏱️</div>
-    <div>
+    <div class="dom-icon">&#9200;</div>
+    <div style="flex:1;">
       <div class="dom-title">
-        Listed for {{ days_on_market }} days —
-        {% if dom_signal == 'high' %}a strong negotiation signal
-        {% elif dom_signal == 'medium' %}worth noting
-        {% else %}moving at normal pace{% endif %}
+        Listed for {{ days_on_market }} days
+        {% if local_avg_dom %} —
+          {% if dom_signal == 'high' %}well above the local average
+          {% elif dom_signal == 'medium' %}slightly above the local average
+          {% else %}within the normal range{% endif %}
+        {% endif %}
       </div>
       <div class="dom-body">
-        Properties in this area typically sell within <strong>{{ local_avg_dom }} days</strong>.
-        {% if dom_signal == 'high' %}Sellers waiting this long are usually open to offers below asking.
-        {% elif dom_signal == 'medium' %}It hasn't been on long enough to signal desperation — but it's not flying off the shelf either.
-        {% else %}This is moving normally. Competition may be real.{% endif %}
+        {% if local_avg_dom %}Properties in this area typically sell within <strong>{{ local_avg_dom }} days</strong>.{% endif %}
+        This property has been on the market for <strong>{{ days_on_market }} days</strong>.
+      </div>
+      <!-- Blurred: what this means for your offer -->
+      <div style="margin-top:12px; position:relative;">
+        <div style="filter:blur(4px); user-select:none; pointer-events:none; font-size:13.5px; color:var(--ink-mid); line-height:1.6;">
+          {% if dom_signal == 'high' %}Sellers waiting this long are typically motivated. This gives you meaningful leverage to open well below asking and hold your position.
+          {% elif dom_signal == 'medium' %}The seller has had time to feel the lack of offers. A confident opening below asking is justified here.
+          {% else %}The property is moving at a normal pace, which means competition may be real. Factor this into how aggressive your opening offer is.{% endif %}
+          The full report calculates exactly how many pounds this adds to your negotiating position.
+        </div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+          <a href="#unlock-cta" style="background:var(--forest);color:#fff;font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px;text-decoration:none;white-space:nowrap;">Unlock negotiation analysis &rarr;</a>
+        </div>
       </div>
     </div>
   </div>
