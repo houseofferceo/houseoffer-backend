@@ -1190,6 +1190,41 @@ def debug_scrape():
         return jsonify({"error": "Pass ?url= with a Rightmove or Zoopla listing URL"}), 400
     return jsonify(scrape_property_url(url))
 
+@app.route("/debug-scrape-dates")
+def debug_scrape_dates():
+    """Dump raw PAGE_MODEL date-related fields for diagnosing DOM extraction."""
+    from property_scraper import _fetch_html, _parse_rightmove_page_model
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"error": "Pass ?url= with a Rightmove listing URL"}), 400
+    html = _fetch_html(url, referer="https://www.rightmove.co.uk/")
+    if not html:
+        return jsonify({"error": "Could not fetch page"}), 400
+    model = _parse_rightmove_page_model(html)
+    if not model:
+        return jsonify({"error": "Could not parse PAGE_MODEL", "html_length": len(html)}), 400
+    prop = model.get("propertyData") or model
+    date_fields = {
+        "listingUpdate": prop.get("listingUpdate"),
+        "firstListedDate": prop.get("firstListedDate"),
+        "dateAdded": prop.get("dateAdded"),
+        "firstVisibleDate": prop.get("firstVisibleDate"),
+        "addedOrReduced": prop.get("addedOrReduced"),
+        "priceHistory": prop.get("priceHistory"),
+        "listingHistory": prop.get("listingHistory"),
+        "addedOn": prop.get("addedOn"),
+        "reducedOn": prop.get("reducedOn"),
+        "staticMapUrl": None,
+    }
+    # Also search HTML for date patterns
+    import re
+    html_dates = {
+        "added_on_pattern": re.findall(r"(?:Added\s+on|First\s+listed)[:\s]+(\d{1,2}\s+\w+\s+\d{4})", html, re.IGNORECASE),
+        "reduced_on_pattern": re.findall(r"Reduced\s+on\s+(\d{1,2}\s+\w+\s+\d{4})", html, re.IGNORECASE),
+        "was_price_pattern": re.findall(r"[Ww]as\s+£[\d,]+", html),
+    }
+    return jsonify({"page_model_date_fields": date_fields, "html_patterns": html_dates})
+
 @app.route("/debug-sold")
 def debug_sold():
     postcode = request.args.get("postcode", "WD4 9EW")
