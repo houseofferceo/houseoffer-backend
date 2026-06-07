@@ -645,17 +645,21 @@ def postcode_to_region(postcode):
     return "england"
 
 def find_last_sale(postcode, address=None):
-    """Find the most recent sale of THIS specific property.
-    PropertyData returns radius-based results so we must match by address.
-    Returns None rather than a nearby property's sale if we can't confirm a match."""
+    """Find the most recent sale of this property from Land Registry data at its postcode."""
     sales, _ = get_all_sold_at_postcode(postcode)
-    if not sales or not address:
+    if not sales:
         return None
 
-    matched = [s for s in sales if _sale_matches_address(s, address)]
-    if not matched:
+    postcode_sales = [s for s in sales if _sale_matches_postcode(s, postcode)]
+    if not postcode_sales:
         return None
-    return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
+
+    if address:
+        matched = [s for s in postcode_sales if _sale_matches_address(s, address)]
+        if matched:
+            postcode_sales = matched
+
+    return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
 
 def calculate_hpi_adjustment(last_sale_price, sale_date_str, region):
     """Adjust a historical price to today's value using regional HPI."""
@@ -893,7 +897,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         m6_high = round(lender_base * 0.97)
         m6_mid = round((m6_low + m6_high) / 2)
         methods.append(_method_dict(
-            "Lender valuation band", m6_low, m6_mid, m6_high,
+            "Lender valuation band", m6_low, m6_high, m6_mid,
             "Estimated lender valuation", True
         ))
     else:

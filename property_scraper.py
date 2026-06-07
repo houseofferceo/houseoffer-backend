@@ -448,31 +448,29 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
     if isinstance(addr, dict) and addr.get("displayAddress"):
         result["address"] = addr["displayAddress"]
 
-    # Floor area from sizings array (present on some listings)
+    # Floor area from sizings array -- Rightmove format:
+    # {"unit":"sqm","minimumSize":92,"maximumSize":92,"displayUnit":"sq. m."}
     sizings = prop.get("sizings") or []
     if isinstance(sizings, list):
         for s in sizings:
             if not isinstance(s, dict):
                 continue
-            # Try sqm first, then convert sqft
-            sqm = s.get("sqm") or s.get("areaSqMetres") or s.get("sqM") or s.get("floorAreaSqM")
-            if sqm:
-                try:
-                    area = float(sqm)
-                    if area > 10:
-                        result["floor_area_sqm"] = area
-                        break
-                except (TypeError, ValueError):
-                    pass
-            sqft = s.get("sqft") or s.get("areaSqFeet") or s.get("sqFt") or s.get("floorAreaSqFt")
-            if sqft:
-                try:
-                    area = float(sqft) / 10.764
-                    if area > 10:
-                        result["floor_area_sqm"] = round(area, 1)
-                        break
-                except (TypeError, ValueError):
-                    pass
+            unit = (s.get("unit") or "").lower()
+            size = s.get("minimumSize") or s.get("maximumSize")
+            if not size:
+                continue
+            try:
+                size = float(size)
+                if size <= 10:
+                    continue
+                if unit in ("sqm", "sq m", "sq. m.", "m2", "m²"):
+                    result["floor_area_sqm"] = size
+                    break
+                elif unit in ("sqft", "sq ft", "sq. ft.", "ft2"):
+                    result["floor_area_sqm"] = round(size / 10.764, 1)
+                    break
+            except (TypeError, ValueError):
+                pass
 
 
 def scrape_rightmove(url: str) -> dict:
