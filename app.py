@@ -447,7 +447,12 @@ def _psqf_points(data, type_keys):
         if p.get("type") in type_keys:
             v = psqf_value(p)
             if v:
-                points.append({"psqf": v, "sqf": p.get("sqf")})
+                points.append({
+                    "psqf": v,
+                    "sqf": p.get("sqf"),
+                    "address": p.get("address"),
+                    "price": p.get("price"),
+                })
     if not points:
         print(f"_psqf_points: no matches for {type_keys}. Types present: {sorted({p.get('type') for p in raw})}")
     return points
@@ -594,6 +599,7 @@ def get_psqm_benchmarks(postcode, property_type, floor_area_sqm=None):
         "area_wide_psqm": area_wide_psqm,
         "size_matched_psqm": size_matched_psqm,
         "size_matched_count": size_matched_count,
+        "psqf_points": points,
     }
 
 
@@ -790,12 +796,28 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     size_matched_count = 0
     psqm_basis = None
     psqm_implied_value = None
+
+    # Always fetch psqf data — needed for comparables enrichment even without subject floor area
+    benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm)
+    size_matched_psqm = benchmarks["size_matched_psqm"]
+    area_wide_psqm = benchmarks["area_wide_psqm"]
+    size_matched_count = benchmarks["size_matched_count"]
+    psqf_points = benchmarks.get("psqf_points", [])
+
+    # Build address lookup from psqf records for comparables enrichment
+    psqf_lookup = {}
+    for pt in psqf_points:
+        addr = pt.get("address")
+        sqf = pt.get("sqf")
+        if addr and sqf and sqf > 0:
+            key = re.sub(r"[^A-Z0-9]", "", addr.upper())
+            sqm = round(sqf / 10.764, 1)
+            price = pt.get("price")
+            psqm_val = round(price / sqm) if price else round(price_per_sqft_to_sqm(pt["psqf"]))
+            psqf_lookup[key] = {"sqm": sqm, "psqm": psqm_val}
+
     if floor_area_sqm and floor_area_sqm > 0:
         asking_psqm = round(asking_price / floor_area_sqm)
-        benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm)
-        size_matched_psqm = benchmarks["size_matched_psqm"]
-        area_wide_psqm = benchmarks["area_wide_psqm"]
-        size_matched_count = benchmarks["size_matched_count"]
         local_avg_psqm = size_matched_psqm or area_wide_psqm
         psqm_basis = "size_matched" if size_matched_psqm else ("area_wide" if area_wide_psqm else None)
         if local_avg_psqm:
@@ -835,6 +857,11 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         for c in sorted_comps:
             c_price = c.get("price")
             c_sqm = c.get("floor_area_sqm") or c.get("sqm")
+            if not c_sqm:
+                c_addr_key = re.sub(r"[^A-Z0-9]", "", (c.get("address") or "").upper())
+                psqf_match = psqf_lookup.get(c_addr_key)
+                if psqf_match:
+                    c_sqm = psqf_match["sqm"]
             c_psqm = round(c_price / c_sqm) if c_price and c_sqm and c_sqm > 0 else None
             comparables_list.append({
                 "address": c.get("address", ""),
