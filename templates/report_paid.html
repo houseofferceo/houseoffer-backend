@@ -155,15 +155,15 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     <div class="offer-trio">
       <div class="offer-trio-item">
         <div class="offer-trio-label">Open with</div>
-        <div class="offer-trio-value">{{ recommended_offer_formatted }}</div>
+        <div class="offer-trio-value">{{ open_offer_formatted or recommended_offer_formatted }}</div>
       </div>
       <div class="offer-trio-item">
         <div class="offer-trio-label">Target price</div>
-        <div class="offer-trio-value">{{ weighted_midpoint_formatted }}</div>
+        <div class="offer-trio-value">{{ target_price_formatted or weighted_midpoint_formatted }}</div>
       </div>
       <div class="offer-trio-item">
-        <div class="offer-trio-label">Walk away below</div>
-        <div class="offer-trio-value">{{ weighted_low_formatted }}</div>
+        <div class="offer-trio-label">Walk away above</div>
+        <div class="offer-trio-value">{{ walk_away_formatted or weighted_high_formatted }}</div>
       </div>
     </div>
   </div>
