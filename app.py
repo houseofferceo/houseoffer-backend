@@ -175,7 +175,7 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         address = scraped.get("address")
 
     extra = {
-        "days_on_market": scraped.get("days_on_market"),
+        "scraper_days_on_market": scraped.get("days_on_market"),
         "price_reduced": scraped.get("price_reduced", False),
         "original_asking_price": scraped.get("original_asking_price"),
         "reduction_date": scraped.get("reduction_date"),
