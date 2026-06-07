@@ -474,6 +474,35 @@ def fetch_avg_dom(postcode):
     return None
 
 
+def fetch_avg_rents(postcode, property_type, bedrooms=None):
+    """Fetch average monthly rent from PropertyData. Returns float (monthly rent) or None."""
+    try:
+        params = {"key": PROPERTYDATA_API_KEY, "postcode": postcode}
+        if bedrooms:
+            params["bedrooms"] = str(bedrooms)
+        r = requests.get(
+            "https://api.propertydata.co.uk/rents",
+            params=params,
+            timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            inner = data.get("data") or {}
+            # Try bedroom-specific first, then overall average
+            beds_key = str(bedrooms) if bedrooms else None
+            avg = None
+            if beds_key and isinstance(inner, dict):
+                beds_data = inner.get(beds_key) or {}
+                avg = beds_data.get("average") or beds_data.get("mean") or beds_data.get("avg")
+            if not avg and isinstance(inner, dict):
+                avg = inner.get("average") or inner.get("mean") or inner.get("avg")
+            if avg:
+                return float(avg)
+    except Exception as e:
+        print(f"fetch_avg_rents error: {e}")
+    return None
+
+
 def fetch_propertydata_avm(postcode, property_type, bedrooms=None):
     """Attempt PropertyData AVM/valuation endpoint. Returns dict or None."""
     try:
@@ -754,7 +783,29 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
 
     methods = []
 
-    # Method 1: Comparable sold prices (weight 2)
+    # Method 1a: Raw comparable sold prices (no HPI adjustment, weight 1, context)
+    raw_avg_sold = None
+    if comparables:
+        try:
+            raw_prices = sorted(c["price"] for c in comparables if c.get("price"))
+            if raw_prices:
+                n_raw = len(raw_prices)
+                q1_raw = max(0, n_raw // 4)
+                q3_raw = min(n_raw - 1, n_raw - n_raw // 4)
+                raw_avg_sold = round(sum(raw_prices) / n_raw)
+                methods.append(_method_dict(
+                    "Comparable sales (unadjusted)", raw_prices[q1_raw], raw_prices[q3_raw], raw_avg_sold,
+                    "HM Land Registry (no HPI adjustment)", True, weight=1
+                ))
+            else:
+                methods.append(_method_dict("Comparable sales (unadjusted)", 0, 0, 0, "HM Land Registry", False, weight=1))
+        except Exception as e:
+            print(f"Method 1a error: {e}")
+            methods.append(_method_dict("Comparable sales (unadjusted)", 0, 0, 0, "HM Land Registry", False, weight=1))
+    else:
+        methods.append(_method_dict("Comparable sales (unadjusted)", 0, 0, 0, "HM Land Registry", False, weight=1))
+
+    # Method 1b: Comparable sold prices HPI-adjusted (weight 2)
     if local_avg_sold and comparables:
         try:
             adj_prices = sorted(
@@ -767,14 +818,14 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             m1_high = round(adj_prices[q3_idx])
             m1_mid = local_avg_sold
             methods.append(_method_dict(
-                "Comparable sold prices", m1_low, m1_high, m1_mid,
+                "Comparable sales (HPI-adjusted)", m1_low, m1_high, m1_mid,
                 "HM Land Registry (HPI-adjusted)", True, weight=2
             ))
         except Exception as e:
-            print(f"Method 1 error: {e}")
-            methods.append(_method_dict("Comparable sold prices", 0, 0, 0, "HM Land Registry", False, weight=2))
+            print(f"Method 1b error: {e}")
+            methods.append(_method_dict("Comparable sales (HPI-adjusted)", 0, 0, 0, "HM Land Registry", False, weight=2))
     else:
-        methods.append(_method_dict("Comparable sold prices", 0, 0, 0, "HM Land Registry", False, weight=2))
+        methods.append(_method_dict("Comparable sales (HPI-adjusted)", 0, 0, 0, "HM Land Registry", False, weight=2))
 
     # Method 2: HPI-adjusted last sale (weight 2)
     if hpi_adjusted_value:
@@ -849,6 +900,28 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     else:
         methods.append(_method_dict("Lender valuation band", 0, 0, 0, "Estimated lender valuation", False))
 
+    # Method 6b: Rental yield implied value
+    # Gross yield for UK residential typically 4-6%; we use 5% as target yield
+    # Implied value = annual_rent / target_yield
+    TARGET_GROSS_YIELD = 0.05
+    try:
+        monthly_rent = fetch_avg_rents(postcode_used, property_type, bedrooms)
+        if monthly_rent and monthly_rent > 100:
+            annual_rent = monthly_rent * 12
+            # Range: 4% yield (higher value) to 6% yield (lower value)
+            m_rent_high = round(annual_rent / 0.04)
+            m_rent_low = round(annual_rent / 0.06)
+            m_rent_mid = round(annual_rent / TARGET_GROSS_YIELD)
+            methods.append(_method_dict(
+                "Rental yield implied value", m_rent_low, m_rent_high, m_rent_mid,
+                f"PropertyData avg rents ({_fmt(round(monthly_rent))}/mo)", True, weight=1
+            ))
+        else:
+            methods.append(_method_dict("Rental yield implied value", 0, 0, 0, "PropertyData avg rents", False, weight=1))
+    except Exception as e:
+        print(f"Method 6b error: {e}")
+        methods.append(_method_dict("Rental yield implied value", 0, 0, 0, "PropertyData avg rents", False, weight=1))
+
     # Method 7: Asking-to-sold discount
     try:
         discount_pct = fetch_asking_sold_ratio(postcode_used, property_type)
@@ -888,13 +961,21 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # Target = midpoint
         # Walk away = weighted_low (always highest of the three shown to buyer)
         # Enforce ordering: open_offer < target < walk_away_ceiling
-        open_offer = round(weighted_low + 0.30 * (weighted_high - weighted_low))
-        target_price = weighted_midpoint
-        walk_away = weighted_high
+        open_offer = round(round(weighted_low + 0.30 * (weighted_high - weighted_low)) / 1000) * 1000
+        target_price = round(weighted_midpoint / 1000) * 1000
+        walk_away = round(weighted_high / 1000) * 1000
         # Safety check: ensure open < target < walk_away
-        open_offer = min(open_offer, target_price - 1)
-        walk_away = max(walk_away, target_price + 1)
+        open_offer = min(open_offer, target_price - 1000)
+        walk_away = max(walk_away, target_price + 1000)
         recommended_offer = open_offer
+
+    # Confidence text: how far open offer is below asking vs below comparables
+    open_offer_vs_asking_pct = None
+    open_offer_vs_comps_pct = None
+    if open_offer and asking_price:
+        open_offer_vs_asking_pct = round(((asking_price - open_offer) / asking_price) * 100, 1)
+    if open_offer and local_avg_sold:
+        open_offer_vs_comps_pct = round(((local_avg_sold - open_offer) / local_avg_sold) * 100, 1)
 
     # Chart axis bounds: include all method ranges and asking price
     chart_price_min = chart_price_max = None
@@ -961,6 +1042,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "target_price_formatted": _fmt(target_price) if available_methods else None,
         "walk_away": walk_away if available_methods else None,
         "walk_away_formatted": _fmt(walk_away) if available_methods else None,
+        "open_offer_vs_asking_pct": open_offer_vs_asking_pct,
+        "open_offer_vs_comps_pct": open_offer_vs_comps_pct,
         "chart_price_min": chart_price_min,
         "chart_price_max": chart_price_max,
         "generated": datetime.now().strftime("%-d %B %Y"),

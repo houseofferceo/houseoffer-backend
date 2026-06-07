@@ -166,6 +166,18 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <div class="offer-trio-value">{{ walk_away_formatted or weighted_high_formatted }}</div>
       </div>
     </div>
+    {% if open_offer_vs_asking_pct is not none %}
+    <div style="margin-top:14px;padding:12px 16px;background:rgba(255,255,255,0.1);border-radius:8px;font-size:13px;color:rgba(255,255,255,0.9);line-height:1.6;">
+      Your opening offer is <strong style="color:white;">{{ open_offer_vs_asking_pct }}% below the asking price</strong>
+      {% if open_offer_vs_comps_pct is not none and open_offer_vs_comps_pct > 0 %}
+      — but only <strong style="color:white;">{{ open_offer_vs_comps_pct }}% below what comparable homes have actually sold for</strong>. That is a credible, evidence-backed position. Do not be put off by the agent's reaction.
+      {% elif open_offer_vs_comps_pct is not none and open_offer_vs_comps_pct <= 0 %}
+      — and comparable sales support this number. You are opening at or above what similar homes have sold for, which is a strong position.
+      {% else %}
+      — use the comparable evidence below to justify this position in the room.
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -424,21 +436,24 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   {% endif %}
 
   <!-- DAYS ON MARKET -->
-  {% if days_on_market and local_avg_dom %}
+  {% if days_on_market %}
   <div class="dom-card">
-    <div class="dom-icon">⏱️</div>
+    <div class="dom-icon">&#9200;</div>
     <div>
       <div class="dom-title">
-        Listed for {{ days_on_market }} days —
-        {% if dom_signal == 'high' %}a strong negotiation signal
-        {% elif dom_signal == 'medium' %}worth noting
-        {% else %}moving at normal pace{% endif %}
+        Listed for {{ days_on_market }} days
+        {% if local_avg_dom %} —
+          {% if dom_signal == 'high' %}a strong negotiation signal
+          {% elif dom_signal == 'medium' %}worth noting
+          {% else %}moving at normal pace{% endif %}
+        {% endif %}
       </div>
       <div class="dom-body">
-        Properties in this area typically sell within <strong>{{ local_avg_dom }} days</strong>.
+        {% if local_avg_dom %}Properties in this area typically sell within <strong>{{ local_avg_dom }} days</strong>. {% endif %}
         {% if dom_signal == 'high' %}Sellers waiting this long are usually open to offers below asking.
         {% elif dom_signal == 'medium' %}It has not been on long enough to signal desperation, but it is not flying off the shelf either.
-        {% else %}This is moving at a normal pace. Competition may be real.{% endif %}
+        {% elif dom_signal == 'low' %}This is moving at a normal pace. Competition may be real.
+        {% else %}Use this as context when assessing seller motivation.{% endif %}
       </div>
     </div>
   </div>
