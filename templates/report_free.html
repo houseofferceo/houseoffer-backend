@@ -303,29 +303,6 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
   </div>
 
-  <!-- ─── ANCHOR BIAS CALLOUT ─── -->
-  {% if local_avg_sold %}
-  <div class="anchor-card">
-    <div class="anchor-eyebrow">🧠 A note on anchor bias</div>
-    <div class="anchor-headline">
-      {% if verdict == 'overpriced' %}Their number is designed to be your starting point. It shouldn't be.
-      {% elif verdict == 'value' %}Move fast — but move with the right number, not theirs.
-      {% else %}The asking price feels reasonable. That's exactly when anchoring works best.{% endif %}
-    </div>
-    <div class="anchor-body">
-      Estate agents know that the first number you see shapes every decision that follows. It's called anchoring — and it's deliberate.
-      {% if verdict == 'overpriced' %}
-      The data shows this property is asking <strong>{{ sold_diff_pct }}% above</strong> what comparable homes have actually sold for.
-      Don't negotiate down from their number. The full report gives you <em>your</em> number to anchor from instead.
-      {% elif verdict == 'fair' %}
-      This asking price is close to the market — which makes it feel unchallengeable. It isn't. The full report shows you exactly where to start and how far you can push.
-      {% else %}
-      This property looks like good value — which means others may think so too. The full report gives you a confident opening offer and a strategy to secure it before someone else does.
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-
   <!-- DATA POINT 1: SOLD PRICE COMPARISON -->
   {% if local_avg_sold %}
   <div class="section-title">📊 Their number vs the market</div>
@@ -385,6 +362,29 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
+  {% endif %}
+
+  <!-- ANCHOR BIAS CALLOUT -->
+  {% if local_avg_sold %}
+  <div class="anchor-card">
+    <div class="anchor-eyebrow">&#129504; A note on anchor bias</div>
+    <div class="anchor-headline">
+      {% if verdict == 'overpriced' %}Their number is designed to be your starting point. It shouldn't be.
+      {% elif verdict == 'value' %}Move fast — but move with the right number, not theirs.
+      {% else %}The asking price feels reasonable. That's exactly when anchoring works best.{% endif %}
+    </div>
+    <div class="anchor-body">
+      Estate agents know that the first number you see shapes every decision that follows. It's called anchoring — and it's deliberate.
+      {% if verdict == 'overpriced' %}
+      The data shows this property is asking <strong>{{ sold_diff_pct }}% above</strong> what comparable homes have actually sold for.
+      Don't negotiate down from their number. The full report gives you <em>your</em> number to anchor from instead.
+      {% elif verdict == 'fair' %}
+      This asking price is close to the market — which makes it feel unchallengeable. It isn't. The full report shows you exactly where to start and how far you can push.
+      {% else %}
+      This property looks like good value — which means others may think so too. The full report gives you a confident opening offer and a strategy to secure it before someone else does.
+      {% endif %}
+    </div>
+  </div>
   {% endif %}
 
   <!-- DATA POINT 2: HPI-ADJUSTED LAST SALE -->
@@ -487,41 +487,56 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
-  <!-- ─── LOCKED: FOOTBALL FIELD PREVIEW ─── -->
-  <div class="locked-section" style="margin-bottom:16px;">
-    <div class="locked-header">
-      <div class="locked-header-left">
-        <div class="locked-header-label">Seven-method valuation range</div>
-        <div class="locked-header-title">Football field analysis across all data sources</div>
+  <!-- ─── LOCKED: FOOTBALL FIELD + OFFER TRIO PREVIEW ─── -->
+  <div style="position:relative; margin-bottom:20px; border-radius:var(--radius); overflow:hidden; border:1.5px solid var(--sand-border); background:var(--white); box-shadow:var(--shadow-sm);">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--sand-border);">
+      <div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-light);margin-bottom:3px;">Seven-method valuation range</div>
+        <div style="font-size:15px;font-weight:700;color:var(--ink);">Football field analysis + your offer strategy</div>
       </div>
-      <div class="locked-price-badge">£29 Report</div>
+      <div style="background:var(--forest);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;">£29 Report</div>
     </div>
-    <div class="locked-body" style="min-height:200px;">
-      <div class="ff-wrapper" style="padding:16px 20px;">
-        <div class="ff-labels"><span>Low</span><span>Market range</span><span>High</span></div>
-        {% for i in range(4) %}
-        <div class="ff-row">
-          <div class="ff-dot"></div>
-          <div class="ff-line" style="width:{{ [45, 62, 38, 55][i] }}%; opacity:{{ [1, 0.7, 0.85, 0.6][i] }};"></div>
-        </div>
-        {% endfor %}
-        <div class="ff-track" style="margin-top:14px;">
-          <div class="ff-fill"></div>
-          <div class="ff-pin"></div>
-        </div>
-        <div class="ff-values">
-          <div class="ff-val" style="filter:blur(5px);user-select:none;">£000,000</div>
-          <div class="ff-val center" style="filter:blur(5px);user-select:none;">£000,000</div>
-          <div class="ff-val" style="filter:blur(5px);user-select:none;">£000,000</div>
+
+    <!-- Football field bars (partially visible) -->
+    <div style="padding:16px 20px 4px;">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-light);font-weight:600;margin-bottom:8px;"><span>Low estimate</span><span>Valuation range</span><span>High estimate</span></div>
+      {% for i in range(5) %}
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--forest);flex-shrink:0;opacity:{{ [1,0.7,0.85,0.6,0.5][i] }};"></div>
+        <div style="flex:1;height:8px;border-radius:4px;background:var(--sand-border);overflow:hidden;">
+          <div style="height:100%;border-radius:4px;background:var(--forest);width:{{ [52,68,41,59,47][i] }}%;opacity:{{ [1,0.7,0.85,0.6,0.5][i] }};"></div>
         </div>
       </div>
-      <div class="lock-overlay" data-lock-label="ff_preview">
-        <div class="lock-icon">🔒</div>
-        <div class="lock-text">Full valuation range locked</div>
-        <div class="lock-sub">Seven methods — comparable sales, HPI history, £/m², area trend, lender band, AVM, and asking-to-sold discount — synthesised into one weighted range</div>
-        <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}" class="lock-btn">Unlock for £29</a>
+      {% endfor %}
+    </div>
+
+    <!-- Offer trio (blurred) -->
+    <div style="position:relative;margin:4px 0 0;">
+      <!-- Visible label row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--sand-border);border-top:1px solid var(--sand-border);">
+        <div style="background:var(--white);padding:14px 16px;text-align:center;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Open with</div>
+          <div style="font-size:22px;font-weight:800;color:var(--forest);filter:blur(6px);user-select:none;">£385,000</div>
+        </div>
+        <div style="background:#f7faf8;padding:14px 16px;text-align:center;border-left:1px solid var(--sand-border);border-right:1px solid var(--sand-border);">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Target price</div>
+          <div style="font-size:22px;font-weight:800;color:var(--forest);filter:blur(6px);user-select:none;">£397,500</div>
+        </div>
+        <div style="background:var(--white);padding:14px 16px;text-align:center;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Walk away above</div>
+          <div style="font-size:22px;font-weight:800;color:var(--red);filter:blur(6px);user-select:none;">£412,000</div>
+        </div>
+      </div>
+      <!-- Overlay CTA -->
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,0.5);backdrop-filter:blur(1px);">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);text-align:center;">Your numbers are ready</div>
+        <div style="font-size:12px;color:var(--ink-mid);text-align:center;max-width:240px;">Opening offer, target, and walk-away price — calculated from 7 valuation methods</div>
+        <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}" style="background:var(--forest);color:#fff;font-size:13px;font-weight:700;padding:9px 20px;border-radius:24px;text-decoration:none;margin-top:4px;">Unlock for £29</a>
       </div>
     </div>
+
   </div>
 
   <!-- ─── BRIDGE SECTION ─── -->
