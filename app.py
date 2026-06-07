@@ -1358,6 +1358,14 @@ def debug_scrape_dates():
         "keyFeatures_floor": [f for f in (prop.get("keyFeatures") or []) if "m²" in str(f) or "sqft" in str(f).lower() or "sq ft" in str(f).lower() or "sqm" in str(f).lower()],
         "top_level_keys": list(prop.keys()) if isinstance(prop, dict) else [],
     }
+    sold_fields = {
+        "soldPropertyType": prop.get("soldPropertyType"),
+        "tags": prop.get("tags"),
+        "misInfo": prop.get("misInfo"),
+        "text": prop.get("text"),
+        "infoReelItems": prop.get("infoReelItems"),
+        "features": prop.get("features"),
+    }
     import re
     html_dates = {
         "added_on_pattern": re.findall(r"(?:Added\s+on|First\s+listed)[:\s]+(\d{1,2}\s+\w+\s+\d{4})", html, re.IGNORECASE),
@@ -1365,11 +1373,12 @@ def debug_scrape_dates():
         "floor_area_pattern": re.findall(r"(\d+(?:\.\d+)?)\s*(?:m²|sq\.?\s*m|sqm)", html, re.IGNORECASE),
         "sqft_pattern": re.findall(r"(\d+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft)", html, re.IGNORECASE),
     }
-    return jsonify({"date_fields": date_fields, "floor_area_fields": floor_fields, "html_patterns": html_dates})
+    return jsonify({"date_fields": date_fields, "floor_area_fields": floor_fields, "sold_fields": sold_fields, "html_patterns": html_dates})
 
 @app.route("/debug-sold")
 def debug_sold():
     postcode = request.args.get("postcode", "WD4 9EW")
+    address = request.args.get("address", "")
     property_type = request.args.get("type", "semi-detached")
     formatted = format_postcode(postcode)
     district = district_postcode(postcode)
@@ -1378,11 +1387,16 @@ def debug_sold():
     district_data = fetch_sold_prices(district)
     full_raw = full_data.get("data", {}).get("raw_data", []) if full_data else []
     district_raw = district_data.get("data", {}).get("raw_data", []) if district_data else []
+    last_sale = find_last_sale(postcode, address=address or None)
     return jsonify({
         "postcode": formatted,
         "district": district,
-        "full_matching": len([t for t in full_raw if t.get("type") in type_keys]),
-        "district_matching": len([t for t in district_raw if t.get("type") in type_keys]),
+        "address_used": address or None,
+        "full_postcode_total": len(full_raw),
+        "full_matching_type": len([t for t in full_raw if t.get("type") in type_keys]),
+        "district_matching_type": len([t for t in district_raw if t.get("type") in type_keys]),
+        "last_sale_found": last_sale,
+        "all_sales_at_postcode": full_raw[:5],
     })
 
 @app.route("/debug-psqf")
