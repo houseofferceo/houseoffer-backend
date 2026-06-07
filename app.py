@@ -846,7 +846,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         m3_low = round(psqm_implied_value * 0.95)
         m3_high = round(psqm_implied_value * 1.05)
         methods.append(_method_dict(
-            "Price per m²", m3_low, psqm_implied_value, m3_high,
+            "Price per m²", m3_low, m3_high, psqm_implied_value,
             "EPC register + PropertyData sold £/m²", True
         ))
     else:
@@ -880,7 +880,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         avm = fetch_propertydata_avm(postcode_used, property_type, bedrooms)
         if avm:
             methods.append(_method_dict(
-                "Automated valuation", avm["low"], avm["mid"], avm["high"],
+                "Automated valuation", avm["low"], avm["high"], avm["mid"],
                 "Automated valuation model", True
             ))
         else:
@@ -942,7 +942,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # Weight 0 = shown in table as context but excluded from weighted range calculation
         weight = 0 if is_national_fallback else 1
         methods.append(_method_dict(
-            "Asking-to-sold discount", m7_low, m7_mid, m7_high,
+            "Asking-to-sold discount", m7_low, m7_high, m7_mid,
             source_note, True, weight=weight
         ))
     except Exception as e:
