@@ -1283,6 +1283,22 @@ def debug_epc():
     address = request.args.get("address", "")
     if not postcode:
         return jsonify({"error": "Pass ?postcode= and ?address="}), 400
+    # Raw API call so we can see the actual response
+    formatted_pc = format_postcode(postcode)
+    raw_status = None
+    raw_body = None
+    try:
+        raw_r = requests.get(
+            f"{EPC_API_BASE}/api/domestic/search",
+            params={"postcode": formatted_pc, "page_size": 100},
+            headers={"Accept": "application/json", "Authorization": f"Bearer {EPC_API_KEY}"},
+            timeout=10
+        )
+        raw_status = raw_r.status_code
+        raw_body = raw_r.text[:500]
+    except Exception as e:
+        raw_body = str(e)
+
     results = _epc_search(postcode)
     match = _select_epc_match(results, address)
     floor_area = None
@@ -1291,8 +1307,11 @@ def debug_epc():
         cert = _epc_fetch_certificate(match.get("certificateNumber", ""))
         floor_area = _extract_floor_area(cert) if cert else None
     return jsonify({
-        "postcode": postcode,
+        "postcode": formatted_pc,
         "address": address,
+        "raw_api_status": raw_status,
+        "raw_api_body": raw_body,
+        "epc_api_key_set": bool(EPC_API_KEY),
         "epc_results_count": len(results),
         "epc_results_sample": results[:3],
         "match": match,
