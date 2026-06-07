@@ -265,6 +265,13 @@ def _parse_date_to_date(raw: str) -> Optional[date]:
             return datetime.fromisoformat(raw[:10]).date()
         except ValueError:
             pass
+    # "28/05/2026" dd/mm/yyyy
+    slash_m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})$", raw)
+    if slash_m:
+        try:
+            return date(int(slash_m.group(3)), int(slash_m.group(2)), int(slash_m.group(1)))
+        except ValueError:
+            pass
     # "15 January 2024" or "15 Jan 2024"
     m = re.match(r"(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", raw)
     if m:
@@ -293,6 +300,37 @@ def _apply_rightmove_listing_dates(result: dict, prop: dict, html: str) -> None:
         result["price_reduced"] = True
         reduction_dt = _parse_date_to_date(update_date_str)
         result["reduction_date"] = reduction_dt.isoformat() if reduction_dt else update_date_str[:10]
+
+    # listingHistory.listingUpdateReason contains human-readable strings like
+    # "Added on 28/05/2026" or "Reduced on 15/06/2026" -- parse these directly
+    listing_history = prop.get("listingHistory") or {}
+    if isinstance(listing_history, dict):
+        history_reason = listing_history.get("listingUpdateReason") or ""
+        added_m = re.search(r"(?:Added|First\s+listed)[^0-9]*(\d{1,2}/\d{1,2}/\d{4}|\d{1,2}\s+\w+\s+\d{4})", history_reason, re.IGNORECASE)
+        reduced_m = re.search(r"Reduced[^0-9]*(\d{1,2}/\d{1,2}/\d{4}|\d{1,2}\s+\w+\s+\d{4})", history_reason, re.IGNORECASE)
+        if added_m and not first_listed_raw:
+            raw = added_m.group(1)
+            # Convert dd/mm/yyyy to parseable format
+            slash_m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
+            first_listed_raw = f"{slash_m.group(1).zfill(2)}/{slash_m.group(2).zfill(2)}/{slash_m.group(3)}" if slash_m else raw
+            if slash_m:
+                try:
+                    first_listed_raw = date(int(slash_m.group(3)), int(slash_m.group(2)), int(slash_m.group(1))).isoformat()
+                except ValueError:
+                    pass
+        if reduced_m and not result["price_reduced"]:
+            result["price_reduced"] = True
+            raw = reduced_m.group(1)
+            slash_m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
+            if slash_m:
+                try:
+                    rd = date(int(slash_m.group(3)), int(slash_m.group(2)), int(slash_m.group(1)))
+                    result["reduction_date"] = rd.isoformat()
+                except ValueError:
+                    pass
+            else:
+                rd = _parse_date_to_date(raw)
+                result["reduction_date"] = rd.isoformat() if rd else raw
 
     # Explicit first-listed date fields
     for field in ("firstListedDate", "dateAdded", "firstVisibleDate"):
