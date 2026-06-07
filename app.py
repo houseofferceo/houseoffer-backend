@@ -1483,7 +1483,21 @@ def debug_scrape_dates():
         "floor_area_pattern": re.findall(r"(\d+(?:\.\d+)?)\s*(?:m²|sq\.?\s*m|sqm)", html, re.IGNORECASE),
         "sqft_pattern": re.findall(r"(\d+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft)", html, re.IGNORECASE),
     }
-    return jsonify({"date_fields": date_fields, "floor_area_fields": floor_fields, "sold_fields": sold_fields, "html_patterns": html_dates})
+    # Sold-history hunt: where does the "Year sold / Sold price" table live?
+    sold_history = {
+        "prices_key": prop.get("prices"),
+        "soldHistory": prop.get("soldHistory"),
+        "saleHistory": prop.get("saleHistory"),
+        "transactionHistory": prop.get("transactionHistory"),
+        "priceHistory_full": prop.get("priceHistory"),
+        "html_has_year_sold": bool(re.search(r"[Yy]ear\s+sold", html)),
+        "html_has_sold_price": bool(re.search(r"[Ss]old\s+price", html)),
+        "html_keys_with_sold": sorted(set(re.findall(r'"(\w*[Ss]old\w*)"\s*:', html)))[:30],
+        "html_keys_with_transaction": sorted(set(re.findall(r'"(\w*[Tt]ransaction\w*)"\s*:', html)))[:30],
+        "html_around_485000": [html[max(0, m.start()-120):m.start()+40] for m in re.finditer(r"485[,.]?000", html)][:3],
+        "html_around_398050": [html[max(0, m.start()-120):m.start()+40] for m in re.finditer(r"398[,.]?050", html)][:3],
+    }
+    return jsonify({"date_fields": date_fields, "floor_area_fields": floor_fields, "sold_fields": sold_fields, "html_patterns": html_dates, "sold_history_hunt": sold_history})
 
 @app.route("/debug-sold")
 def debug_sold():
