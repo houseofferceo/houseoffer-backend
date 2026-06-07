@@ -863,13 +863,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             m7_high = round(asking_price * (1 - (discount_pct - 1) / 100))
         m7_mid = round((m7_low + m7_high) / 2)
         source_note = "National avg asking-to-sold discount" if is_national_fallback else "Local asking-to-sold discount"
+        # Weight 0 = shown in table as context but excluded from weighted range calculation
+        weight = 0 if is_national_fallback else 1
         methods.append(_method_dict(
             "Asking-to-sold discount", m7_low, m7_mid, m7_high,
-            source_note, True
+            source_note, True, weight=weight
         ))
     except Exception as e:
         print(f"Method 7 error: {e}")
-        methods.append(_method_dict("Asking-to-sold discount", 0, 0, 0, "Asking-to-sold discount", False))
+        methods.append(_method_dict("Asking-to-sold discount", 0, 0, 0, "Asking-to-sold discount", False, weight=0))
 
     # ── FOOTBALL FIELD WEIGHTED RANGE ─────────────────────────────────────────
 

@@ -321,7 +321,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <tbody>
         {% for m in football_field %}
         <tr{% if not m.available %} style="opacity:0.45;"{% endif %}>
-          <td>{{ m.name }}{% if m.weight == 2 %} <span style="font-size:10px;color:var(--teal);font-weight:600;">x2</span>{% endif %}</td>
+          <td>{{ m.name }}{% if m.weight == 2 %} <span style="font-size:10px;color:var(--teal);font-weight:600;">x2</span>{% elif m.weight == 0 and m.available %} <span style="font-size:10px;color:var(--ink-light);font-weight:600;">context only</span>{% endif %}</td>
           <td class="price">{% if m.available %}{{ m.low_formatted }}{% else %}n/a{% endif %}</td>
           <td class="price">{% if m.available %}{{ m.midpoint_formatted }}{% else %}n/a{% endif %}</td>
           <td class="price">{% if m.available %}{{ m.high_formatted }}{% else %}n/a{% endif %}</td>
