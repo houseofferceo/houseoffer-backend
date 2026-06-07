@@ -1273,6 +1273,33 @@ def debug_scrape():
         return jsonify({"error": "Pass ?url= with a Rightmove or Zoopla listing URL"}), 400
     return jsonify(scrape_property_url(url))
 
+@app.route("/debug-epc")
+def debug_epc():
+    """Test EPC floor area lookup. Usage: /debug-epc?postcode=WD4+9EW&address=9+Chantry+Close&key=ADMIN"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    postcode = request.args.get("postcode", "")
+    address = request.args.get("address", "")
+    if not postcode:
+        return jsonify({"error": "Pass ?postcode= and ?address="}), 400
+    results = _epc_search(postcode)
+    match = _select_epc_match(results, address)
+    floor_area = None
+    cert = None
+    if match:
+        cert = _epc_fetch_certificate(match.get("certificateNumber", ""))
+        floor_area = _extract_floor_area(cert) if cert else None
+    return jsonify({
+        "postcode": postcode,
+        "address": address,
+        "epc_results_count": len(results),
+        "epc_results_sample": results[:3],
+        "match": match,
+        "floor_area_sqm": floor_area,
+    })
+
+
 @app.route("/debug-scrape-dates")
 def debug_scrape_dates():
     """Dump raw PAGE_MODEL date-related fields for diagnosing DOM extraction."""
