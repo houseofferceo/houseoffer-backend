@@ -1489,6 +1489,7 @@ def debug_psqf():
 
     benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm)
 
+    matched_raw = [p for p in points if p.get("type") in type_keys]
     return jsonify({
         "postcode_tried": formatted,
         "floor_area_sqm": floor_area_sqm,
@@ -1497,6 +1498,7 @@ def debug_psqf():
         "all_types_present": sorted({p.get("type") for p in points}) if points else [],
         "matched_points_count": len(matched),
         "benchmarks": benchmarks,
+        "sample_matched_records": matched_raw[:3],
     })
 
 @app.route("/debug-report")
