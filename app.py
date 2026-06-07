@@ -645,19 +645,17 @@ def postcode_to_region(postcode):
     return "england"
 
 def find_last_sale(postcode, address=None):
-    """Find the most recent sale of this property from Land Registry data at its postcode.
-    PropertyData already filters by postcode, so all returned sales are at this postcode.
-    We use address matching to narrow to the specific property when possible."""
+    """Find the most recent sale of THIS specific property.
+    PropertyData returns radius-based results so we must match by address.
+    Returns None rather than a nearby property's sale if we can't confirm a match."""
     sales, _ = get_all_sold_at_postcode(postcode)
-    if not sales:
+    if not sales or not address:
         return None
 
-    if address:
-        matched = [s for s in sales if _sale_matches_address(s, address)]
-        if matched:
-            return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
-
-    return sorted(sales, key=lambda x: x.get("date", ""), reverse=True)[0]
+    matched = [s for s in sales if _sale_matches_address(s, address)]
+    if not matched:
+        return None
+    return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
 
 def calculate_hpi_adjustment(last_sale_price, sale_date_str, region):
     """Adjust a historical price to today's value using regional HPI."""
