@@ -155,15 +155,15 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     <div class="offer-trio">
       <div class="offer-trio-item">
         <div class="offer-trio-label">Open with</div>
-        <div class="offer-trio-value">{{ recommended_offer_formatted }}</div>
+        <div class="offer-trio-value">{{ open_offer_formatted or recommended_offer_formatted }}</div>
       </div>
       <div class="offer-trio-item">
         <div class="offer-trio-label">Target price</div>
-        <div class="offer-trio-value">{{ weighted_midpoint_formatted }}</div>
+        <div class="offer-trio-value">{{ target_price_formatted or weighted_midpoint_formatted }}</div>
       </div>
       <div class="offer-trio-item">
-        <div class="offer-trio-label">Walk away below</div>
-        <div class="offer-trio-value">{{ weighted_low_formatted }}</div>
+        <div class="offer-trio-label">Walk away above</div>
+        <div class="offer-trio-value">{{ walk_away_formatted or weighted_high_formatted }}</div>
       </div>
     </div>
   </div>
@@ -321,7 +321,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <tbody>
         {% for m in football_field %}
         <tr{% if not m.available %} style="opacity:0.45;"{% endif %}>
-          <td>{{ m.name }}{% if m.weight == 2 %} <span style="font-size:10px;color:var(--teal);font-weight:600;">x2</span>{% endif %}</td>
+          <td>{{ m.name }}{% if m.weight == 2 %} <span style="font-size:10px;color:var(--teal);font-weight:600;">x2</span>{% elif m.weight == 0 and m.available %} <span style="font-size:10px;color:var(--ink-light);font-weight:600;">context only</span>{% endif %}</td>
           <td class="price">{% if m.available %}{{ m.low_formatted }}{% else %}n/a{% endif %}</td>
           <td class="price">{% if m.available %}{{ m.midpoint_formatted }}{% else %}n/a{% endif %}</td>
           <td class="price">{% if m.available %}{{ m.high_formatted }}{% else %}n/a{% endif %}</td>

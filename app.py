@@ -863,17 +863,19 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             m7_high = round(asking_price * (1 - (discount_pct - 1) / 100))
         m7_mid = round((m7_low + m7_high) / 2)
         source_note = "National avg asking-to-sold discount" if is_national_fallback else "Local asking-to-sold discount"
+        # Weight 0 = shown in table as context but excluded from weighted range calculation
+        weight = 0 if is_national_fallback else 1
         methods.append(_method_dict(
             "Asking-to-sold discount", m7_low, m7_mid, m7_high,
-            source_note, True
+            source_note, True, weight=weight
         ))
     except Exception as e:
         print(f"Method 7 error: {e}")
-        methods.append(_method_dict("Asking-to-sold discount", 0, 0, 0, "Asking-to-sold discount", False))
+        methods.append(_method_dict("Asking-to-sold discount", 0, 0, 0, "Asking-to-sold discount", False, weight=0))
 
     # ── FOOTBALL FIELD WEIGHTED RANGE ─────────────────────────────────────────
 
-    available_methods = [m for m in methods if m["available"]]
+    available_methods = [m for m in methods if m["available"] and m["weight"] > 0]
     weighted_low = weighted_high = weighted_midpoint = None
     recommended_offer = None
 
@@ -882,7 +884,17 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         weighted_low = round(sum(m["low"] * m["weight"] for m in available_methods) / total_weight)
         weighted_high = round(sum(m["high"] * m["weight"] for m in available_methods) / total_weight)
         weighted_midpoint = round((weighted_low + weighted_high) / 2)
-        recommended_offer = round(weighted_low + 0.30 * (weighted_high - weighted_low))
+        # Open with = lower third of range (always lowest of the three)
+        # Target = midpoint
+        # Walk away = weighted_low (always highest of the three shown to buyer)
+        # Enforce ordering: open_offer < target < walk_away_ceiling
+        open_offer = round(weighted_low + 0.30 * (weighted_high - weighted_low))
+        target_price = weighted_midpoint
+        walk_away = weighted_high
+        # Safety check: ensure open < target < walk_away
+        open_offer = min(open_offer, target_price - 1)
+        walk_away = max(walk_away, target_price + 1)
+        recommended_offer = open_offer
 
     # Chart axis bounds: include all method ranges and asking price
     chart_price_min = chart_price_max = None
@@ -943,6 +955,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "weighted_midpoint_formatted": _fmt(weighted_midpoint),
         "recommended_offer": recommended_offer,
         "recommended_offer_formatted": _fmt(recommended_offer),
+        "open_offer": open_offer if available_methods else None,
+        "open_offer_formatted": _fmt(open_offer) if available_methods else None,
+        "target_price": target_price if available_methods else None,
+        "target_price_formatted": _fmt(target_price) if available_methods else None,
+        "walk_away": walk_away if available_methods else None,
+        "walk_away_formatted": _fmt(walk_away) if available_methods else None,
         "chart_price_min": chart_price_min,
         "chart_price_max": chart_price_max,
         "generated": datetime.now().strftime("%-d %B %Y"),
