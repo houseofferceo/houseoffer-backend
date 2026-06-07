@@ -1321,7 +1321,7 @@ def debug_epc():
 
 @app.route("/debug-scrape-dates")
 def debug_scrape_dates():
-    """Dump raw PAGE_MODEL date-related fields for diagnosing DOM extraction."""
+    """Dump raw PAGE_MODEL fields for diagnosing date and floor area extraction."""
     from property_scraper import _fetch_html, _parse_rightmove_page_model
     url = request.args.get("url", "")
     if not url:
@@ -1343,16 +1343,26 @@ def debug_scrape_dates():
         "listingHistory": prop.get("listingHistory"),
         "addedOn": prop.get("addedOn"),
         "reducedOn": prop.get("reducedOn"),
-        "staticMapUrl": None,
     }
-    # Also search HTML for date patterns
+    floor_fields = {
+        "floorAreaValue": prop.get("floorAreaValue"),
+        "floorArea": prop.get("floorArea"),
+        "floorAreaSqM": prop.get("floorAreaSqM"),
+        "floorAreaSqFt": prop.get("floorAreaSqFt"),
+        "totalFloorArea": prop.get("totalFloorArea"),
+        "sizings": prop.get("sizings"),
+        "propertySize": prop.get("propertySize"),
+        "keyFeatures_floor": [f for f in (prop.get("keyFeatures") or []) if "m²" in str(f) or "sqft" in str(f).lower() or "sq ft" in str(f).lower() or "sqm" in str(f).lower()],
+        "top_level_keys": list(prop.keys()) if isinstance(prop, dict) else [],
+    }
     import re
     html_dates = {
         "added_on_pattern": re.findall(r"(?:Added\s+on|First\s+listed)[:\s]+(\d{1,2}\s+\w+\s+\d{4})", html, re.IGNORECASE),
         "reduced_on_pattern": re.findall(r"Reduced\s+on\s+(\d{1,2}\s+\w+\s+\d{4})", html, re.IGNORECASE),
-        "was_price_pattern": re.findall(r"[Ww]as\s+£[\d,]+", html),
+        "floor_area_pattern": re.findall(r"(\d+(?:\.\d+)?)\s*(?:m²|sq\.?\s*m|sqm)", html, re.IGNORECASE),
+        "sqft_pattern": re.findall(r"(\d+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft)", html, re.IGNORECASE),
     }
-    return jsonify({"page_model_date_fields": date_fields, "html_patterns": html_dates})
+    return jsonify({"date_fields": date_fields, "floor_area_fields": floor_fields, "html_patterns": html_dates})
 
 @app.route("/debug-sold")
 def debug_sold():
