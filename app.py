@@ -692,40 +692,46 @@ LIMIT 50
         return []
 
 
+def _sale_matches_property(sale, address):
+    """Strict match: requires the house number to match AND street-name overlap.
+    Returns False when the subject address has no house number — we never guess a
+    neighbour's sale when we cannot identify the exact property."""
+    subj_num = _leading_house_number(address) if address else None
+    if not subj_num:
+        return False
+    sale_addr = sale.get("address") or ""
+    if _leading_house_number(sale_addr) != subj_num:
+        return False
+    subj_streets = _street_tokens(address)
+    if subj_streets and not (subj_streets & _street_tokens(sale_addr)):
+        return False
+    return True
+
 def find_last_sale(postcode, address=None):
-    """Find the most recent sale of this property from Land Registry data at its postcode.
+    """Find the most recent sale of THIS exact property from Land Registry data.
 
-    Strategy:
-    1. PropertyData radius results filtered to exact postcode match (most common case).
-    2. If no exact postcode match, try address-only matching from the same radius results.
-    3. If still nothing, query Land Registry SPARQL directly for this postcode.
-    """
+    We only return a sale when we can confidently identify the property by house
+    number and street. Rightmove often provides only a street name (no number),
+    in which case we return None and the HPI last-sale method shows n/a rather
+    than guessing a neighbour's price (which would badly skew the valuation)."""
+    if not _leading_house_number(address):
+        # No house number — cannot identify the exact property. Do not guess.
+        return None
+
     sales, _ = get_all_sold_at_postcode(postcode)
-
-    # Step 1: exact postcode match
     if sales:
-        postcode_sales = [s for s in sales if _sale_matches_postcode(s, postcode)]
-        if postcode_sales:
-            if address:
-                matched = [s for s in postcode_sales if _sale_matches_address(s, address)]
-                if matched:
-                    postcode_sales = matched
-            return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
+        matched = [s for s in sales if _sale_matches_property(s, address)]
+        if matched:
+            return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
 
-        # Step 2: address-only fallback within radius results
-        if address:
-            addr_matched = [s for s in sales if _sale_matches_address(s, address)]
-            if addr_matched:
-                return sorted(addr_matched, key=lambda x: x.get("date", ""), reverse=True)[0]
-
-    # Step 3: Land Registry SPARQL direct query
+    # Fallback: query Land Registry SPARQL directly for this postcode
     lr_sales = _fetch_land_registry_direct(postcode)
     if lr_sales:
-        if address:
-            matched = [s for s in lr_sales if _sale_matches_address(s, address)]
-            if matched:
-                return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
-        return sorted(lr_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
+        matched = [s for s in lr_sales if _sale_matches_property(s, address)]
+        if matched:
+            return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
+
+    return None
 
     return None
 
@@ -1065,6 +1071,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # Safety check: ensure open < target < walk_away
         open_offer = min(open_offer, target_price - 1000)
         walk_away = max(walk_away, target_price + 1000)
+        # Hard rule: never recommend an opening offer at or above the asking price —
+        # opening above asking destroys credibility. Applies on every verdict.
+        if asking_price:
+            open_offer = min(open_offer, asking_price - 1000)
         # On overpriced properties, cap walk_away at asking_price - £1k so we never
         # recommend paying above asking for something priced above comparables
         if verdict == "overpriced" and asking_price:
