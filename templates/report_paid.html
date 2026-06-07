@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Property Report — HouseOffer</title>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --sand: #f7f3ed; --sand-dark: #ece7de; --sand-border: #e0d9ce;
+  --ink: #1e1c18; --ink-mid: #5c5849; --ink-light: #9b9488;
+  --teal: #1a6b5a; --teal-mid: #238f77; --teal-light: #e3f4ef; --teal-border: #b8dfd5;
+  --amber: #c06a1a; --amber-light: #fdf0e3; --amber-border: #f0c98a;
+  --red: #b83232; --red-light: #fdf0f0; --white: #ffffff;
+  --shadow-sm: 0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);
+  --radius: 14px;
+}
+body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; min-height: 100vh; }
+nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--sand-border); padding: 0 24px; position: sticky; top: 0; z-index: 100; }
+.nav-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 58px; }
+.logo { font-family: 'Lora', serif; font-size: 20px; font-weight: 700; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+.logo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal-mid); display: inline-block; }
+.nav-tag { font-size: 12px; font-weight: 600; color: var(--white); background: var(--teal); border: 1px solid var(--teal); padding: 4px 10px; border-radius: 20px; }
+.wrapper { max-width: 720px; margin: 0 auto; padding: 36px 24px 80px; }
+
+.report-header { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 28px 28px 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.report-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; display: flex; align-items: center; gap: 7px; }
+.report-label-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal-mid); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.5;transform:scale(0.85);} }
+.report-address { font-family: 'Lora', serif; font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.25; margin-bottom: 6px; }
+.report-sub { font-size: 14px; color: var(--ink-mid); margin-bottom: 20px; }
+.report-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+.meta-pill { display: flex; align-items: center; gap: 5px; background: var(--sand); border: 1px solid var(--sand-border); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 500; color: var(--ink-mid); }
+.paid-badge { background: var(--teal); color: white; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 20px; }
+
+/* OFFER HEADLINE */
+.offer-headline { background: var(--teal); border-radius: var(--radius); padding: 28px 32px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(26,107,90,0.25); }
+.offer-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.7); margin-bottom: 8px; }
+.offer-amount { font-family: 'Lora', serif; font-size: 42px; font-weight: 700; color: white; line-height: 1.1; margin-bottom: 6px; }
+.offer-sub { font-size: 14px; color: rgba(255,255,255,0.8); margin-bottom: 20px; }
+.offer-trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.offer-trio-item { background: rgba(255,255,255,0.12); border-radius: 10px; padding: 14px 16px; }
+.offer-trio-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.6); margin-bottom: 4px; }
+.offer-trio-value { font-family: 'Lora', serif; font-size: 18px; font-weight: 700; color: white; }
+
+/* VERDICT */
+.verdict-card { border-radius: var(--radius); padding: 24px 28px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1.5px solid; }
+.verdict-card.overpriced { background: var(--red-light); border-color: #e8b4b4; }
+.verdict-card.fair { background: var(--amber-light); border-color: var(--amber-border); }
+.verdict-card.value { background: var(--teal-light); border-color: var(--teal-border); }
+.verdict-card.unknown { background: var(--sand-dark); border-color: var(--sand-border); }
+.verdict-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+.verdict-card.overpriced .verdict-eyebrow { color: var(--red); }
+.verdict-card.fair .verdict-eyebrow { color: var(--amber); }
+.verdict-card.value .verdict-eyebrow, .verdict-card.unknown .verdict-eyebrow { color: var(--teal); }
+.verdict-headline { font-family: 'Lora', serif; font-size: 22px; font-weight: 700; line-height: 1.2; margin-bottom: 10px; }
+.verdict-card.overpriced .verdict-headline { color: var(--red); }
+.verdict-card.fair .verdict-headline { color: var(--amber); }
+.verdict-card.value .verdict-headline, .verdict-card.unknown .verdict-headline { color: var(--teal); }
+.verdict-body { font-size: 14.5px; color: var(--ink-mid); line-height: 1.65; }
+
+.section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 12px; margin-top: 4px; }
+
+/* FOOTBALL FIELD CHART */
+.ff-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.ff-card-header { padding: 18px 24px 14px; border-bottom: 1px solid var(--sand-border); }
+.ff-card-title { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+.ff-card-sub { font-size: 12px; color: var(--ink-light); }
+.ff-chart-wrap { padding: 16px 20px 20px; overflow-x: auto; }
+.ff-legend { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--sand-border); }
+.ff-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-mid); }
+.ff-legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+/* DATA CARDS */
+.data-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 6px; }
+.data-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 20px 22px; box-shadow: var(--shadow-sm); position: relative; }
+.data-card.before { border-top: 3px solid #e8b4b4; }
+.data-card.after { border-top: 3px solid var(--teal-border); }
+.data-card-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 6px; }
+.data-card-value { font-family: 'Lora', serif; font-size: 24px; font-weight: 700; color: var(--ink); margin-bottom: 4px; line-height: 1.1; }
+.data-card-sub { font-size: 12.5px; color: var(--ink-mid); line-height: 1.5; }
+.data-card-sub strong { color: var(--ink); font-weight: 600; }
+.diff-badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; margin-top: 6px; }
+.diff-badge.over { background: var(--red-light); color: var(--red); }
+.diff-badge.under { background: var(--teal-light); color: var(--teal); }
+.diff-badge.fair { background: var(--amber-light); color: var(--amber); }
+
+.source-note { font-size: 12px; color: var(--ink-light); background: var(--sand-dark); border-radius: 8px; padding: 8px 14px; margin-bottom: 24px; display: flex; align-items: center; gap: 6px; }
+
+/* DOM & PRICE DROP CARDS */
+.dom-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 20px; box-shadow: var(--shadow-sm); display: flex; align-items: flex-start; gap: 16px; }
+.dom-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; background: var(--amber-light); }
+.dom-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.dom-body { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; }
+
+/* COMPARABLE TABLE */
+.comp-table-section { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.comp-table-header { padding: 16px 22px 12px; border-bottom: 1px solid var(--sand-border); }
+.comp-table-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.comp-table-sub { font-size: 12px; color: var(--ink-light); margin-top: 2px; }
+.comp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.comp-table th { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-light); padding: 8px 16px; text-align: left; background: var(--sand); border-bottom: 1px solid var(--sand-border); }
+.comp-table td { padding: 9px 16px; border-bottom: 1px solid var(--sand-border); color: var(--ink-mid); vertical-align: middle; }
+.comp-table tr:last-child td { border-bottom: none; }
+.comp-table td.price { font-family: 'Lora', serif; font-weight: 600; color: var(--ink); }
+.comp-table td.date { color: var(--ink-light); font-size: 12px; white-space: nowrap; }
+
+.attribution { text-align: center; font-size: 12px; color: var(--ink-light); padding-top: 8px; }
+.attribution a { color: var(--ink-light); }
+
+@media (max-width: 560px) {
+  .wrapper { padding: 20px 16px 60px; }
+  .data-row { grid-template-columns: 1fr; }
+  .report-address { font-size: 18px; }
+  .offer-amount { font-size: 32px; }
+  .offer-trio { grid-template-columns: 1fr; gap: 8px; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="https://houseoffer.netlify.app" class="logo"><span class="logo-dot"></span>HouseOffer</a>
+    <span class="nav-tag">Full Report</span>
+  </div>
+</nav>
+
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <div class="report-header">
+    <div class="report-label"><span class="report-label-dot"></span>Independent property analysis</div>
+    <div class="report-address">{{ postcode }}</div>
+    <div class="report-sub">{{ property_type|title }} · {{ postcode }} · Generated {{ generated }}</div>
+    <div class="report-meta">
+      <div class="meta-pill">🏷️ Asking price: <strong>&nbsp;{{ asking_price_formatted }}</strong></div>
+      <div class="meta-pill">🏠 {{ property_type|title }}</div>
+      <div class="meta-pill">🛏️ {{ bedrooms }} bedrooms</div>
+      <span class="paid-badge">Full Report</span>
+    </div>
+  </div>
+
+  <!-- OFFER HEADLINE -->
+  {% if recommended_offer %}
+  <div class="offer-headline">
+    <div class="offer-eyebrow">Recommended opening offer</div>
+    <div class="offer-amount">{{ recommended_offer_formatted }}</div>
+    <div class="offer-sub">
+      Asking price is {{ asking_price_formatted }} —
+      {% set gap_pct = ((asking_price - recommended_offer) / asking_price * 100) | round(1) %}
+      your opening offer is {{ gap_pct }}% below asking
+    </div>
+    <div class="offer-trio">
+      <div class="offer-trio-item">
+        <div class="offer-trio-label">Open with</div>
+        <div class="offer-trio-value">{{ recommended_offer_formatted }}</div>
+      </div>
+      <div class="offer-trio-item">
+        <div class="offer-trio-label">Target price</div>
+        <div class="offer-trio-value">{{ weighted_midpoint_formatted }}</div>
+      </div>
+      <div class="offer-trio-item">
+        <div class="offer-trio-label">Walk away below</div>
+        <div class="offer-trio-value">{{ weighted_low_formatted }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- VERDICT -->
+  <div class="verdict-card {{ verdict }}">
+    <div class="verdict-eyebrow">
+      {% if verdict == 'overpriced' %}Our verdict
+      {% elif verdict == 'value' %}Our verdict
+      {% elif verdict == 'fair' %}Our verdict
+      {% else %}Our verdict{% endif %}
+    </div>
+    <div class="verdict-headline">
+      {% if verdict == 'overpriced' %}This property is asking above what the market supports
+      {% elif verdict == 'value' %}This property is priced below comparable sold prices
+      {% elif verdict == 'fair' %}Fairly priced — but there is still room to negotiate
+      {% else %}Not enough local data for a firm verdict{% endif %}
+    </div>
+    <div class="verdict-body">
+      {% if local_avg_sold %}
+        Based on {{ comparables_count }} completed sales of similar {{ property_type }} homes
+        {% if search_broadened %}in the {{ postcode.split()[0] }} area{% else %}near {{ postcode }}{% endif %},
+        HPI-adjusted to today's value, this property is asking
+        <strong>
+          {% if sold_diff_pct > 0 %}{{ sold_diff_pct }}% more
+          {% elif sold_diff_pct < 0 %}{{ sold_diff_pct|abs }}% less
+          {% else %}in line with{% endif %}
+        </strong>
+        than what similar homes have sold for.
+      {% else %}
+        We could not find enough comparable sold prices for a verdict on comparable evidence alone.
+        The football field range below synthesises all available data sources.
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- FOOTBALL FIELD CHART -->
+  {% set ff_avail = football_field | selectattr('available') | list %}
+  {% if ff_avail and chart_price_min and chart_price_max %}
+  <div class="section-title">Valuation range — seven methods</div>
+  <div class="ff-card">
+    <div class="ff-card-header">
+      <div class="ff-card-title">Football field valuation — {{ ff_avail | length }} methods</div>
+      <div class="ff-card-sub">Each bar shows the low-to-high range for that method. The teal band is the weighted range. Weighted by data quality.</div>
+    </div>
+    <div class="ff-chart-wrap">
+      {% set ch_w = 460 %}
+      {% set ch_x0 = 175 %}
+      {% set row_h = 46 %}
+      {% set n = ff_avail | length %}
+      {% set chart_h = n * row_h + 70 %}
+      {% set price_range = chart_price_max - chart_price_min %}
+
+      <svg viewBox="0 0 680 {{ chart_h }}" style="width:100%;display:block;" role="img" aria-label="Football field valuation chart">
+
+        <!-- Weighted range band -->
+        {% if weighted_low and weighted_high %}
+        {% set wr_x1 = ch_x0 + ((weighted_low - chart_price_min) / price_range) * ch_w %}
+        {% set wr_x2 = ch_x0 + ((weighted_high - chart_price_min) / price_range) * ch_w %}
+        <rect x="{{ wr_x1 | round(1) }}" y="6" width="{{ (wr_x2 - wr_x1) | round(1) }}" height="{{ n * row_h }}" fill="rgba(26,107,90,0.08)" rx="3"/>
+        {% endif %}
+
+        <!-- Method bars -->
+        {% for m in ff_avail %}
+        {% set row_y = loop.index0 * row_h + 12 %}
+        {% set bar_x1 = ch_x0 + ((m.low - chart_price_min) / price_range) * ch_w %}
+        {% set bar_x2 = ch_x0 + ((m.high - chart_price_min) / price_range) * ch_w %}
+        {% set bar_mid = ch_x0 + ((m.midpoint - chart_price_min) / price_range) * ch_w %}
+        {% set bar_color = "#1a6b5a" if m.weight == 2 else "#9b9488" %}
+        {% set bar_opacity = "0.85" if m.weight == 2 else "0.65" %}
+
+        <!-- Label -->
+        <text x="{{ ch_x0 - 6 }}" y="{{ row_y + 11 }}" text-anchor="end" font-size="11.5"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">{{ m.name }}</text>
+
+        <!-- Bar track background -->
+        <rect x="{{ ch_x0 }}" y="{{ row_y }}" width="{{ ch_w }}" height="18" fill="#f7f3ed" rx="3"/>
+
+        <!-- Bar fill -->
+        <rect x="{{ bar_x1 | round(1) }}" y="{{ row_y }}" width="{{ (bar_x2 - bar_x1) | round(1) }}" height="18"
+              fill="{{ bar_color }}" opacity="{{ bar_opacity }}" rx="3"/>
+
+        <!-- Midpoint dot -->
+        <circle cx="{{ bar_mid | round(1) }}" cy="{{ row_y + 9 }}" r="4.5" fill="white"
+                stroke="{{ bar_color }}" stroke-width="2"/>
+
+        <!-- Weight indicator -->
+        {% if m.weight == 2 %}
+        <text x="{{ ch_x0 + ch_w + 6 }}" y="{{ row_y + 11 }}" font-size="9"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#1a6b5a" font-weight="600">x2</text>
+        {% endif %}
+
+        <!-- Low/High labels below bar -->
+        <text x="{{ bar_x1 | round(1) }}" y="{{ row_y + 31 }}" text-anchor="middle" font-size="9"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#9b9488">{{ (m.low // 1000) }}k</text>
+        <text x="{{ bar_x2 | round(1) }}" y="{{ row_y + 31 }}" text-anchor="middle" font-size="9"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#9b9488">{{ (m.high // 1000) }}k</text>
+        {% endfor %}
+
+        <!-- Asking price vertical line -->
+        {% set ask_x = ch_x0 + ((asking_price - chart_price_min) / price_range) * ch_w %}
+        <line x1="{{ ask_x | round(1) }}" y1="6" x2="{{ ask_x | round(1) }}" y2="{{ n * row_h + 16 }}"
+              stroke="#b83232" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="{{ ask_x | round(1) }}" y="{{ n * row_h + 28 }}" text-anchor="middle" font-size="10"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#b83232" font-weight="600">Asking</text>
+
+        <!-- Recommended offer vertical line -->
+        {% if recommended_offer %}
+        {% set offer_x = ch_x0 + ((recommended_offer - chart_price_min) / price_range) * ch_w %}
+        <line x1="{{ offer_x | round(1) }}" y1="6" x2="{{ offer_x | round(1) }}" y2="{{ n * row_h + 16 }}"
+              stroke="#1a6b5a" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="{{ offer_x | round(1) }}" y="{{ n * row_h + 28 }}" text-anchor="middle" font-size="10"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#1a6b5a" font-weight="600">Open with</text>
+        {% endif %}
+
+        <!-- Price axis line -->
+        <line x1="{{ ch_x0 }}" y1="{{ n * row_h + 16 }}" x2="{{ ch_x0 + ch_w }}" y2="{{ n * row_h + 16 }}"
+              stroke="#e0d9ce" stroke-width="1"/>
+
+        <!-- Left axis label £ -->
+        <text x="{{ ch_x0 }}" y="{{ n * row_h + 46 }}" text-anchor="middle" font-size="9"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#9b9488">£{{ (chart_price_min // 1000) }}k</text>
+        <text x="{{ ch_x0 + ch_w }}" y="{{ n * row_h + 46 }}" text-anchor="middle" font-size="9"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#9b9488">£{{ (chart_price_max // 1000) }}k</text>
+
+      </svg>
+
+      <div class="ff-legend">
+        <div class="ff-legend-item"><div class="ff-legend-dot" style="background:#1a6b5a;"></div>Higher-weight method (x2)</div>
+        <div class="ff-legend-item"><div class="ff-legend-dot" style="background:#9b9488;"></div>Standard method</div>
+        <div class="ff-legend-item"><div class="ff-legend-dot" style="background:rgba(26,107,90,0.15);border:1px solid #1a6b5a;"></div>Weighted range</div>
+        <div class="ff-legend-item"><div style="width:14px;height:2px;background:#b83232;border-top:2px dashed #b83232;"></div>&nbsp;Asking price</div>
+        <div class="ff-legend-item"><div style="width:14px;height:2px;background:#1a6b5a;border-top:2px dashed #1a6b5a;"></div>&nbsp;Recommended offer</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- METHOD TABLE -->
+  <div class="comp-table-section" style="margin-bottom:20px;">
+    <div class="comp-table-header">
+      <div class="comp-table-title">Valuation method breakdown</div>
+      <div class="comp-table-sub">All {{ ff_avail | length }} methods used to calculate your range</div>
+    </div>
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Low</th>
+          <th>Midpoint</th>
+          <th>High</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in football_field %}
+        <tr{% if not m.available %} style="opacity:0.45;"{% endif %}>
+          <td>{{ m.name }}{% if m.weight == 2 %} <span style="font-size:10px;color:var(--teal);font-weight:600;">x2</span>{% endif %}</td>
+          <td class="price">{% if m.available %}{{ m.low_formatted }}{% else %}n/a{% endif %}</td>
+          <td class="price">{% if m.available %}{{ m.midpoint_formatted }}{% else %}n/a{% endif %}</td>
+          <td class="price">{% if m.available %}{{ m.high_formatted }}{% else %}n/a{% endif %}</td>
+          <td style="font-size:11px;color:var(--ink-light);">{{ m.source }}</td>
+        </tr>
+        {% endfor %}
+        {% if weighted_low %}
+        <tr style="background:var(--teal-light);font-weight:600;">
+          <td style="color:var(--teal);">Weighted range</td>
+          <td class="price" style="color:var(--teal);">{{ weighted_low_formatted }}</td>
+          <td class="price" style="color:var(--teal);">{{ weighted_midpoint_formatted }}</td>
+          <td class="price" style="color:var(--teal);">{{ weighted_high_formatted }}</td>
+          <td style="font-size:11px;color:var(--teal);">All available methods</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {% endif %}
+
+  <!-- DATA POINT 1: SOLD PRICE COMPARISON -->
+  {% if local_avg_sold %}
+  <div class="section-title">Their number vs the market</div>
+  <div class="data-row">
+    <div class="data-card before">
+      <div class="data-card-label">Their asking price</div>
+      <div class="data-card-value">{{ asking_price_formatted }}</div>
+      <div class="data-card-sub">what the estate agent wants you to pay</div>
+      {% if sold_diff_pct is not none %}
+      <span class="diff-badge {% if sold_diff_pct > 0 %}over{% elif sold_diff_pct < 0 %}under{% else %}fair{% endif %}">
+        {% if sold_diff_pct > 0 %}{{ sold_diff_pct }}% above market
+        {% elif sold_diff_pct < 0 %}{{ sold_diff_pct|abs }}% below market
+        {% else %}In line with market{% endif %}
+      </span>
+      {% endif %}
+    </div>
+    <div class="data-card after">
+      <div class="data-card-label">What the market says</div>
+      <div class="data-card-value">{{ local_avg_sold_formatted }}</div>
+      <div class="data-card-sub">
+        avg of <strong>{{ comparables_count }} sold {{ property_type }}</strong>
+        {% if search_broadened %}in {{ postcode.split()[0] }}{% else %}near {{ postcode }}{% endif %}
+        · Land Registry
+      </div>
+    </div>
+  </div>
+  <div class="source-note">Source: HM Land Registry Price Paid Data · completed sales · HPI-adjusted to today's value · interquartile mean</div>
+  {% endif %}
+
+  <!-- DATA POINT 2: HPI-ADJUSTED LAST SALE -->
+  {% if hpi_adjustment %}
+  <div class="section-title">This property's history vs asking price</div>
+  <div class="data-row">
+    <div class="data-card before">
+      <div class="data-card-label">Last sold · {{ hpi_adjustment.sale_date[:7] }}</div>
+      <div class="data-card-value">{{ hpi_adjustment.sale_price_formatted }}</div>
+      <div class="data-card-sub">what this exact property sold for previously</div>
+    </div>
+    <div class="data-card after">
+      <div class="data-card-label">HPI-adjusted today</div>
+      <div class="data-card-value">{{ hpi_adjustment.adjusted_price_formatted }}</div>
+      <div class="data-card-sub">
+        {% set hpi_vs_asking = ((asking_price - hpi_adjustment.adjusted_price) / hpi_adjustment.adjusted_price * 100)|round(1) %}
+        adjusted for <strong>{{ hpi_adjustment.growth_pct }}% regional price growth</strong>
+        <br>
+        <span style="color: {% if hpi_vs_asking > 5 %}var(--red){% elif hpi_vs_asking < -5 %}var(--teal){% else %}var(--amber){% endif %}; font-weight:600; font-size:12px;">
+          Asking is {{ hpi_vs_asking|abs }}%
+          {% if hpi_vs_asking > 0 %}above{% else %}below{% endif %}
+          this HPI-adjusted value
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="source-note">HPI adjustment based on ONS/Land Registry regional House Price Index for {{ property_type }} homes</div>
+  {% endif %}
+
+  <!-- DATA POINT 3: PRICE PER SQM -->
+  {% if asking_psqm and local_avg_psqm %}
+  <div class="section-title">Price per m² comparison</div>
+  <div class="data-row">
+    <div class="data-card before">
+      <div class="data-card-label">This property / m²</div>
+      <div class="data-card-value">£{{ "{:,}".format(asking_psqm) }}</div>
+      <div class="data-card-sub">at asking price{% if floor_area_sqm %} · {{ floor_area_sqm|round|int }}m²{% endif %}</div>
+      {% if psqm_diff_pct is not none %}
+      <span class="diff-badge {% if psqm_diff_pct > 0 %}over{% elif psqm_diff_pct < 0 %}under{% else %}fair{% endif %}">
+        {% if psqm_diff_pct > 0 %}{{ psqm_diff_pct }}% above local avg
+        {% elif psqm_diff_pct < 0 %}{{ psqm_diff_pct|abs }}% below local avg
+        {% else %}In line{% endif %}
+      </span>
+      {% endif %}
+    </div>
+    <div class="data-card after">
+      <div class="data-card-label">Local average / m²</div>
+      <div class="data-card-value">£{{ "{:,}".format(local_avg_psqm) }}</div>
+      <div class="data-card-sub">for comparable <strong>{{ property_type }}</strong> nearby</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- DAYS ON MARKET -->
+  {% if days_on_market and local_avg_dom %}
+  <div class="dom-card">
+    <div class="dom-icon">⏱️</div>
+    <div>
+      <div class="dom-title">
+        Listed for {{ days_on_market }} days —
+        {% if dom_signal == 'high' %}a strong negotiation signal
+        {% elif dom_signal == 'medium' %}worth noting
+        {% else %}moving at normal pace{% endif %}
+      </div>
+      <div class="dom-body">
+        Properties in this area typically sell within <strong>{{ local_avg_dom }} days</strong>.
+        {% if dom_signal == 'high' %}Sellers waiting this long are usually open to offers below asking.
+        {% elif dom_signal == 'medium' %}It has not been on long enough to signal desperation, but it is not flying off the shelf either.
+        {% else %}This is moving at a normal pace. Competition may be real.{% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- PRICE DROP -->
+  {% if price_reduced and original_asking_price %}
+  <div class="dom-card" style="border-left: 3px solid var(--amber); background: var(--amber-light);">
+    <div class="dom-icon" style="background: var(--amber-light);">📉</div>
+    <div>
+      <div class="dom-title">Price reduced — the seller has already moved</div>
+      <div class="dom-body">
+        Originally listed at <strong>{{ original_asking_price_formatted }}</strong>, now asking <strong>{{ asking_price_formatted }}</strong>
+        {% if reduction_pct %} — a <strong>{{ reduction_pct }}% reduction</strong>{% endif %}
+        {% if reduction_date %} ({{ reduction_date }}){% endif %}.
+        A price reduction is evidence the seller's position has softened and strengthens your negotiating hand.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- FULL COMPARABLES TABLE -->
+  {% if comparables %}
+  <div class="section-title">Full comparable sales ({{ comparables_count }} properties)</div>
+  <div class="comp-table-section">
+    <div class="comp-table-header">
+      <div class="comp-table-title">All {{ comparables_count }} sold prices used in this analysis</div>
+      <div class="comp-table-sub">All prices adjusted to today's value using ONS regional House Price Index · HM Land Registry</div>
+    </div>
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>Address</th>
+          <th>Date</th>
+          <th>Original Price</th>
+          <th>HPI-adjusted</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for comp in comparables %}
+        <tr>
+          <td>{{ comp.address }}</td>
+          <td class="date">{{ comp.date[:7] }}</td>
+          <td class="price">{{ comp.price_formatted }}</td>
+          <td class="price">{{ comp.adjusted_price_formatted or comp.price_formatted }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="attribution">
+    Contains HM Land Registry data &copy; Crown copyright and database right 2026.
+    Licensed under the Open Government Licence v3.0 ·
+    <a href="https://houseoffer.netlify.app">HouseOffer.uk</a>
+    <br><br>
+    <em style="font-size: 11px; color: var(--ink-light); line-height: 1.5; display: block; max-width: 580px; margin: 0 auto;">
+      HouseOffer reports are informational only and based on publicly available data. They do not constitute financial advice, a formal RICS valuation, or a guarantee of price. Always consult a qualified surveyor before purchase.
+    </em>
+    <br>
+    <a href="https://houseoffer.uk/privacy.html" style="font-size: 11px;">Privacy</a> ·
+    <a href="https://houseoffer.uk/terms.html" style="font-size: 11px;">Terms</a>
+  </div>
+
+</div>
+
+{% if report_id %}
+<script>
+(function() {
+  var REPORT_ID = "{{ report_id }}";
+  var BACKEND = "https://houseoffer-backend.onrender.com";
+  var startTime = Date.now();
+  var maxScrollPct = 0;
+  var milestones = {25: false, 50: false, 75: false, 100: false};
+
+  function log(event, extra) {
+    try {
+      navigator.sendBeacon(
+        BACKEND + "/log",
+        new Blob([JSON.stringify({report_id: REPORT_ID, event: event, extra: extra || {}})], {type: "application/json"})
+      );
+    } catch(e) {}
+  }
+
+  window.addEventListener("scroll", function() {
+    var scrollTop = window.scrollY || document.documentElement.scrollTop;
+    var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    if (docHeight <= 0) return;
+    var pct = Math.min(100, Math.round((scrollTop / docHeight) * 100));
+    if (pct > maxScrollPct) maxScrollPct = pct;
+    [25, 50, 75, 100].forEach(function(m) {
+      if (!milestones[m] && pct >= m) { milestones[m] = true; log("scroll_depth", {pct: m}); }
+    });
+  }, {passive: true});
+
+  window.addEventListener("beforeunload", function() {
+    var seconds = Math.round((Date.now() - startTime) / 1000);
+    log("page_exit", {seconds: seconds, max_scroll_pct: maxScrollPct});
+  });
+})();
+</script>
+{% endif %}
+
+</body>
+</html>

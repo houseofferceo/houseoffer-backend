@@ -459,6 +459,59 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
+  <!-- PRICE DROP -->
+  {% if price_reduced and original_asking_price %}
+  <div class="dom-card" style="border-left: 3px solid var(--amber); background: var(--amber-light); border-color: var(--amber-border);">
+    <div class="dom-icon" style="background: rgba(192,106,26,0.12);">📉</div>
+    <div>
+      <div class="dom-title">Price reduced — the seller has already moved</div>
+      <div class="dom-body">
+        Originally listed at <strong>{{ original_asking_price_formatted }}</strong>, now asking <strong>{{ asking_price_formatted }}</strong>
+        {% if reduction_pct %} — a <strong>{{ reduction_pct }}% reduction</strong>{% endif %}
+        {% if reduction_date %} ({{ reduction_date }}){% endif %}.
+        A price reduction is evidence the seller's position has softened, which strengthens your negotiating hand.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ─── LOCKED: FOOTBALL FIELD PREVIEW ─── -->
+  <div class="locked-section" style="margin-bottom:16px;">
+    <div class="locked-header">
+      <div class="locked-header-left">
+        <div class="locked-header-label">Seven-method valuation range</div>
+        <div class="locked-header-title">Football field analysis across all data sources</div>
+      </div>
+      <div class="locked-price-badge">£29 Report</div>
+    </div>
+    <div class="locked-body" style="min-height:200px;">
+      <div class="ff-wrapper" style="padding:16px 20px;">
+        <div class="ff-labels"><span>Low</span><span>Market range</span><span>High</span></div>
+        {% for i in range(4) %}
+        <div class="ff-row">
+          <div class="ff-dot"></div>
+          <div class="ff-line" style="width:{{ [45, 62, 38, 55][i] }}%; opacity:{{ [1, 0.7, 0.85, 0.6][i] }};"></div>
+        </div>
+        {% endfor %}
+        <div class="ff-track" style="margin-top:14px;">
+          <div class="ff-fill"></div>
+          <div class="ff-pin"></div>
+        </div>
+        <div class="ff-values">
+          <div class="ff-val" style="filter:blur(5px);user-select:none;">£000,000</div>
+          <div class="ff-val center" style="filter:blur(5px);user-select:none;">£000,000</div>
+          <div class="ff-val" style="filter:blur(5px);user-select:none;">£000,000</div>
+        </div>
+      </div>
+      <div class="lock-overlay" data-lock-label="ff_preview">
+        <div class="lock-icon">🔒</div>
+        <div class="lock-text">Full valuation range locked</div>
+        <div class="lock-sub">Seven methods — comparable sales, HPI history, £/m², area trend, lender band, AVM, and asking-to-sold discount — synthesised into one weighted range</div>
+        <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}" class="lock-btn">Unlock for £29</a>
+      </div>
+    </div>
+  </div>
+
   <!-- ─── BRIDGE SECTION ─── -->
   <div class="bridge-section {{ verdict }}">
     <div class="bridge-eyebrow">
@@ -596,7 +649,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <div class="lock-icon">🔒</div>
         <div class="lock-text">Your numbers are ready</div>
         <div class="lock-sub">Unlock your specific opening offer, target price, and walk-away number</div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="lock-btn">Unlock for £29</a>
+        <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}" class="lock-btn">Unlock for £29</a>
       </div>
     </div>
   </div>
