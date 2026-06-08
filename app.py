@@ -694,11 +694,27 @@ LIMIT 50
 
 def find_last_sale(postcode, address=None):
     """Find the most recent sale of this specific property from Land Registry data.
-    Requires address to attempt a match — returns None rather than guess a neighbour's sale."""
-    sales, _ = get_all_sold_at_postcode(postcode)
-    if not sales or not address:
+
+    Requires a house number in the address to make a confident match. Street-name-only
+    addresses (common from Rightmove) would match every house on the street and return
+    a random neighbour's sale — which badly skews the HPI valuation. Without a number
+    we return None so the caller can show a 'select your property' dropdown instead."""
+    if not address or not _leading_house_number(address):
         return None
-    matched = [s for s in sales if _sale_matches_address(s, address)]
+    sales, _ = get_all_sold_at_postcode(postcode)
+    if not sales:
+        return None
+    # Match on house number AND street name tokens
+    subj_num = _leading_house_number(address)
+    subj_streets = _street_tokens(address)
+    matched = []
+    for s in sales:
+        sale_addr = s.get("address") or ""
+        if _leading_house_number(sale_addr) != subj_num:
+            continue
+        if subj_streets and not (subj_streets & _street_tokens(sale_addr)):
+            continue
+        matched.append(s)
     if not matched:
         return None
     return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
