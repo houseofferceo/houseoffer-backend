@@ -692,48 +692,32 @@ LIMIT 50
         return []
 
 
-def _sale_matches_property(sale, address):
-    """Strict match: requires the house number to match AND street-name overlap.
-    Returns False when the subject address has no house number — we never guess a
-    neighbour's sale when we cannot identify the exact property."""
-    subj_num = _leading_house_number(address) if address else None
-    if not subj_num:
-        return False
-    sale_addr = sale.get("address") or ""
-    if _leading_house_number(sale_addr) != subj_num:
-        return False
-    subj_streets = _street_tokens(address)
-    if subj_streets and not (subj_streets & _street_tokens(sale_addr)):
-        return False
-    return True
-
 def find_last_sale(postcode, address=None):
-    """Find the most recent sale of THIS exact property from Land Registry data.
-
-    We only return a sale when we can confidently identify the property by house
-    number and street. Rightmove often provides only a street name (no number),
-    in which case we return None and the HPI last-sale method shows n/a rather
-    than guessing a neighbour's price (which would badly skew the valuation)."""
-    if not _leading_house_number(address):
-        # No house number — cannot identify the exact property. Do not guess.
-        return None
-
+    """Find the most recent sale of this specific property from Land Registry data.
+    Requires address to attempt a match — returns None rather than guess a neighbour's sale."""
     sales, _ = get_all_sold_at_postcode(postcode)
-    if sales:
-        matched = [s for s in sales if _sale_matches_property(s, address)]
-        if matched:
-            return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
+    if not sales or not address:
+        return None
+    matched = [s for s in sales if _sale_matches_address(s, address)]
+    if not matched:
+        return None
+    return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
 
-    # Fallback: query Land Registry SPARQL directly for this postcode
-    lr_sales = _fetch_land_registry_direct(postcode)
-    if lr_sales:
-        matched = [s for s in lr_sales if _sale_matches_property(s, address)]
-        if matched:
-            return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
 
-    return None
-
-    return None
+def get_last_sale_candidates(postcode):
+    """Return all distinct sold properties at this postcode, deduplicated by address.
+    Used to build a 'select your property' dropdown when auto-match fails."""
+    sales, _ = get_all_sold_at_postcode(postcode)
+    if not sales:
+        return []
+    seen = set()
+    candidates = []
+    for s in sorted(sales, key=lambda x: x.get("date", ""), reverse=True):
+        addr = (s.get("address") or "").strip()
+        if addr and addr not in seen:
+            seen.add(addr)
+            candidates.append({"address": addr, "last_date": s.get("date"), "last_price": s.get("price")})
+    return candidates
 
 def calculate_hpi_adjustment(last_sale_price, sale_date_str, region):
     """Adjust a historical price to today's value using regional HPI."""
@@ -834,6 +818,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     # HPI-adjusted last sale
     hpi_adjustment = None
     hpi_adjusted_value = None
+    last_sale_candidates = []
     try:
         last_sale = find_last_sale(postcode, address=address)
         if last_sale:
@@ -842,6 +827,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             )
             if hpi_adjustment:
                 hpi_adjusted_value = hpi_adjustment["adjusted_price"]
+        else:
+            # No confident match — build candidates list for dropdown
+            try:
+                last_sale_candidates = get_last_sale_candidates(postcode)
+            except Exception:
+                pass
     except Exception as e:
         print(f"HPI section error: {e}")
 
@@ -1118,6 +1109,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "sold_diff_pct": sold_diff_pct,
         "sold_verdict": sold_verdict,
         "hpi_adjustment": hpi_adjustment,
+        "last_sale_candidates": last_sale_candidates,
         "asking_psqm": asking_psqm,
         "local_avg_psqm": local_avg_psqm,
         "size_matched_psqm": size_matched_psqm,
