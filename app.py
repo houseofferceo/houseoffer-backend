@@ -1398,6 +1398,16 @@ def log_engagement():
 def health():
     return jsonify({"status": "ok"})
 
+@app.route("/version")
+def version():
+    """Diagnostic: which commit is running and which routes are registered.
+    RENDER_GIT_COMMIT is set automatically by Render on every deploy."""
+    return jsonify({
+        "commit": os.environ.get("RENDER_GIT_COMMIT", "unknown")[:12],
+        "branch": os.environ.get("RENDER_GIT_BRANCH", "unknown"),
+        "routes": sorted(str(r) for r in app.url_map.iter_rules()),
+    })
+
 @app.route("/admin/events/<report_id>")
 def admin_events(report_id):
     """Inspect engagement events for a specific report (basic auth via query param)."""
