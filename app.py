@@ -1097,11 +1097,18 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # opening above asking destroys credibility. Applies on every verdict.
         if asking_price:
             open_offer = min(open_offer, asking_price - 1000)
+        # Hard rule: walk-away ceiling never exceeds 5% above the asking price.
+        # Wide comparable sets (mixed house sizes) can inflate the weighted high
+        # well past asking, which is poor advice for a buyer.
+        if asking_price:
+            walk_away = min(walk_away, round(asking_price * 1.05 / 1000) * 1000)
         # On overpriced properties, cap walk_away at asking_price - £1k so we never
         # recommend paying above asking for something priced above comparables
         if verdict == "overpriced" and asking_price:
             walk_away = min(walk_away, asking_price - 1000)
-            walk_away = max(walk_away, target_price + 1000)
+        # Re-enforce ordering after caps: open < target < walk_away
+        target_price = min(target_price, walk_away - 1000)
+        open_offer = min(open_offer, target_price - 1000)
         recommended_offer = open_offer
 
     # Confidence text: how far open offer is below asking vs below comparables
