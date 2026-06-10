@@ -6,7 +6,7 @@ import uuid
 import base64
 import hashlib
 import requests
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime
 from hpi_data import get_hpi_index as hpi_index, get_current_hpi
@@ -1317,6 +1317,49 @@ def view_report(report_id):
     return render_template(template, report_url=report_url, report_id=report_id, **report)
 
 
+@app.route("/r/<report_id>/select-address")
+def select_address(report_id):
+    """User picks their property from the last-sale candidates dropdown.
+    Rebuilds the report with the chosen address (which carries the house
+    number Rightmove withheld) so HPI last sale and EPC floor area can match,
+    then redirects back to the report."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return "Report not found", 404
+    stored = load_report(report_id)
+    if not stored:
+        return "Report not found", 404
+
+    chosen = (request.args.get("address") or "").strip()
+    report = stored.get("report", {})
+    candidates = report.get("last_sale_candidates") or []
+    if not chosen or chosen not in {c.get("address") for c in candidates}:
+        return redirect(f"/r/{report_id}")
+
+    try:
+        new_report = build_report_data(
+            property_url=stored.get("property_url", ""),
+            asking_price=report.get("asking_price"),
+            bedrooms=report.get("bedrooms", "3"),
+            property_type=report.get("property_type", "semi-detached"),
+            postcode=report.get("postcode", ""),
+            floor_area_sqm=report.get("floor_area_sqm"),
+            address=chosen,
+            scraper_days_on_market=report.get("days_on_market"),
+            price_reduced=report.get("price_reduced", False),
+            original_asking_price=report.get("original_asking_price"),
+            reduction_date=report.get("reduction_date"),
+            reduction_amount=report.get("reduction_amount"),
+            reduction_pct=report.get("reduction_pct"),
+        )
+        stored["report"] = new_report
+        stored["selected_address"] = chosen
+        save_report(report_id, stored)
+        log_event(report_id, "address_selected", {"address": chosen})
+    except Exception as e:
+        print(f"select_address rebuild error: {e}")
+    return redirect(f"/r/{report_id}")
+
+
 @app.route("/admin/unlock/<report_id>")
 def admin_unlock(report_id):
     """Set paid=True for a given report UUID (manual unlock until Stripe is live)."""
@@ -1619,6 +1662,10 @@ def preview_paid():
     )
     if not postcode:
         return "Could not determine postcode from that URL.", 400
+    # Optional &address= override: supply the full address (with house number)
+    # when Rightmove's displayAddress is street-only
+    if request.args.get("address"):
+        address = request.args.get("address").strip()
     report = build_report_data(
         property_url=property_url,
         asking_price=asking_price,
@@ -1648,6 +1695,10 @@ def preview_free():
     )
     if not postcode:
         return "Could not determine postcode from that URL.", 400
+    # Optional &address= override: supply the full address (with house number)
+    # when Rightmove's displayAddress is street-only
+    if request.args.get("address"):
+        address = request.args.get("address").strip()
     report = build_report_data(
         property_url=property_url,
         asking_price=asking_price,

@@ -41,24 +41,29 @@ UK English. All prices GBP.
 
 ---
 
-## Open issues (working in order)
-
-### 1. HPI-adjusted last sale shows n/a (IN PROGRESS)
+### HPI-adjusted last sale shows n/a when listing has no house number
+- Date: 2026-06-10
 - Symptom: WR2 5SG report shows HPI last sale n/a despite the property having
   sold in 2024 (£398,050) and 2025 (£485,000) per Rightmove history.
 - Root cause: Rightmove displayAddress is street-only (no house number) for
   this listing. find_last_sale step 3c correctly refuses to guess between
-  multiple sold properties at the postcode. This is the intended safe
-  behaviour after the neighbour-match fix; the gap is that we have no way to
-  identify which candidate is the subject property.
+  multiple sold properties at the postcode (intended safe behaviour after the
+  neighbour-match fix); the gap was no way to identify the subject property.
 - Note: Rightmove's own sold-history XHR is off limits (ToS prohibits
-  third-party use) and the data is not in PAGE_MODEL.
-- Candidate fixes:
-  a. Let the user supply the house number / full address (form field or
-     candidates dropdown built from last_sale_candidates, already returned
-     in report data).
-  b. Heuristic auto-match - rejected, this is what caused the neighbour bug.
-- Decision: pending discussion.
+  third-party use) and the data is not in PAGE_MODEL. Heuristic auto-match
+  rejected - that caused the neighbour bug.
+- Fix: candidates dropdown. When HPI fails and last_sale_candidates exist,
+  both report templates show "select your property" listing each sold address
+  at the postcode with date and price. Selection hits
+  GET /r/<report_id>/select-address?address=..., which validates the choice
+  against the stored candidates, rebuilds the report with the chosen address
+  (house number now present), saves and redirects back. The chosen address
+  also feeds the EPC floor-area lookup, so this can fix price per m2 too.
+  Preview routes accept &address= override for admin testing.
+
+---
+
+## Open issues (working in order)
 
 ### 2. Price per m2 shows n/a
 - Likely cause: EPC floor-area lookup failing for the subject (same

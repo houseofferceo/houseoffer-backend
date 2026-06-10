@@ -412,6 +412,25 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
   </div>
   <div class="source-note">📊 HPI adjustment based on ONS/Land Registry regional House Price Index for {{ property_type }} homes</div>
+  {% elif last_sale_candidates and report_id is defined and report_id %}
+  <div class="section-title">📈 This property's history vs asking price</div>
+  <div style="background:#f8f9fb; border:1px solid #e2e6ed; border-radius:10px; padding:18px 20px; margin-bottom:8px;">
+    <p style="margin:0 0 12px; font-size:14px;">
+      The listing doesn't include a house number, so we can't automatically match this
+      property to its sale history. We found these sold properties at the same postcode.
+      If one of them is this property, select it and we'll update the report.
+    </p>
+    <form method="get" action="/r/{{ report_id }}/select-address" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <select name="address" required style="flex:1; min-width:240px; padding:9px 12px; border:1px solid #cdd4de; border-radius:8px; font-size:14px;">
+        <option value="" disabled selected>Select your property…</option>
+        {% for c in last_sale_candidates %}
+        <option value="{{ c.address }}">{{ c.address }}{% if c.last_date %} · sold {{ c.last_date[:7] }}{% endif %}{% if c.last_price %} · £{{ "{:,}".format(c.last_price) }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" style="padding:9px 18px; border:none; border-radius:8px; background:var(--teal, #0d9488); color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Update report</button>
+    </form>
+  </div>
+  <div class="source-note">📊 Sold properties at this postcode · HM Land Registry Price Paid Data</div>
   {% endif %}
 
   <!-- DATA POINT 3: £/SQM -->
