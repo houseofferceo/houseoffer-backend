@@ -79,11 +79,20 @@ UK English. All prices GBP.
   candidate. Verified with mocked-source unit tests including the
   wrong-house-number case (returns None, never a neighbour).
 
+### HPI last sale: closure note
+- Date: 2026-06-10
+- Issue 1 closed. Verified on a live property (Wilmot Drive): the dropdown
+  now lists exactly the properties with Land Registry records at the
+  postcode (8 and 32 Wilmot Drive). The subject (number 10) has no
+  registered prior sale, so HPI last sale is a legitimate n/a there - the
+  other valuation methods carry the report. Not a data bug; the Land
+  Registry cannot return what was never submitted.
+
 ---
 
 ## Open issues (working in order)
 
-### 2. Price per m2 shows n/a
+### 2. Price per m2 shows n/a (IN PROGRESS)
 - Likely cause: EPC floor-area lookup failing for the subject (same
   street-only address problem, or no EPC record). Not yet diagnosed.
 
