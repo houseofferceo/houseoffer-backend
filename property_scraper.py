@@ -28,6 +28,10 @@ DEFAULT_RESULT = {
     "reduction_amount": None,
     "reduction_pct": None,
     "floor_area_sqm": None,
+    "delivery_point_id": None,
+    "latitude": None,
+    "longitude": None,
+    "epc_cert_url": None,
 }
 
 BROWSER_HEADERS = {
@@ -447,6 +451,27 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
         result["postcode"] = pc
     if isinstance(addr, dict) and addr.get("displayAddress"):
         result["address"] = addr["displayAddress"]
+
+    # deliveryPointId: 8-digit delivery point key (likely Royal Mail UDPRN) —
+    # uniquely identifies the exact property even when displayAddress has no number
+    dp_id = prop.get("deliveryPointId") or (addr.get("deliveryPointId") if isinstance(addr, dict) else None)
+    if dp_id:
+        result["delivery_point_id"] = dp_id
+
+    # Listing pin coordinates
+    loc = prop.get("location") or {}
+    if isinstance(loc, dict) and loc.get("latitude") and loc.get("longitude"):
+        result["latitude"] = loc["latitude"]
+        result["longitude"] = loc["longitude"]
+
+    # EPC certificate link if the agent attached the official gov.uk certificate
+    for entry in (prop.get("epcGraphs") or []):
+        if not isinstance(entry, dict):
+            continue
+        epc_url = entry.get("url") or ""
+        if "epc" in epc_url.lower() or "gov.uk" in epc_url.lower():
+            result["epc_cert_url"] = epc_url
+            break
 
     # Floor area from sizings array -- Rightmove format:
     # {"unit":"sqm","minimumSize":92,"maximumSize":92,"displayUnit":"sq. m."}
