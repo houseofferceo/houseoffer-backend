@@ -695,29 +695,44 @@ LIMIT 50
 def find_last_sale(postcode, address=None):
     """Find the most recent sale of this specific property from Land Registry data.
 
-    Requires a house number in the address to make a confident match. Street-name-only
-    addresses (common from Rightmove) would match every house on the street and return
-    a random neighbour's sale — which badly skews the HPI valuation. Without a number
-    we return None so the caller can show a 'select your property' dropdown instead."""
-    if not address or not _leading_house_number(address):
-        return None
+    Strategy:
+    1. Filter PropertyData radius results to the exact full postcode (cuts out neighbours).
+    2. Further filter by street-name tokens from the address.
+    3a. If the subject address has a house number, require it to match — confident match.
+    3b. If no house number but exactly one candidate survives steps 1+2, use it — still
+        confident (only one property of this type sold at this postcode on this street).
+    3c. If no house number and multiple candidates survive, return None — caller populates
+        the candidates dropdown rather than guessing a neighbour's sale."""
     sales, _ = get_all_sold_at_postcode(postcode)
     if not sales:
         return None
-    # Match on house number AND street name tokens
-    subj_num = _leading_house_number(address)
-    subj_streets = _street_tokens(address)
-    matched = []
-    for s in sales:
-        sale_addr = s.get("address") or ""
-        if _leading_house_number(sale_addr) != subj_num:
-            continue
-        if subj_streets and not (subj_streets & _street_tokens(sale_addr)):
-            continue
-        matched.append(s)
-    if not matched:
+
+    # Step 1: exact postcode filter
+    postcode_sales = [s for s in sales if _sale_matches_postcode(s, postcode)]
+    if not postcode_sales:
         return None
-    return sorted(matched, key=lambda x: x.get("date", ""), reverse=True)[0]
+
+    # Step 2: street-token filter (when address provided)
+    if address:
+        street_filtered = [s for s in postcode_sales if _sale_matches_address(s, address)]
+        if street_filtered:
+            postcode_sales = street_filtered
+
+    # Step 3a: house number available — require it to match
+    subj_num = _leading_house_number(address) if address else None
+    if subj_num:
+        num_matched = [s for s in postcode_sales
+                       if _leading_house_number(s.get("address") or "") == subj_num]
+        if num_matched:
+            return sorted(num_matched, key=lambda x: x.get("date", ""), reverse=True)[0]
+        return None
+
+    # Step 3b: no house number but only one candidate — confident enough
+    if len(postcode_sales) == 1:
+        return postcode_sales[0]
+
+    # Step 3c: multiple candidates, no house number — cannot identify property
+    return None
 
 
 def get_last_sale_candidates(postcode):
