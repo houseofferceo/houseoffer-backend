@@ -683,7 +683,7 @@ LIMIT 50
         for b in bindings:
             price = int(float(b["amount"]["value"])) if b.get("amount") else None
             date = b["date"]["value"][:10] if b.get("date") else None
-            addr = b["address"]["value"].strip() if b.get("address") else pc
+            addr = re.sub(r"\s+", " ", b["address"]["value"]).strip() if b.get("address") else pc
             if price and price < 2_000_000:
                 results.append({"address": addr, "price": price, "date": date})
         return results
@@ -696,19 +696,20 @@ def find_last_sale(postcode, address=None):
     """Find the most recent sale of this specific property from Land Registry data.
 
     Strategy:
-    1. Filter PropertyData radius results to the exact full postcode (cuts out neighbours).
+    1. Filter PropertyData radius results to the exact full postcode (cuts out neighbours),
+       then merge in Land Registry SPARQL results — PropertyData is radius-based and capped
+       at ~20 recent sales, so older sales at the postcode are missing from it.
     2. Further filter by street-name tokens from the address.
     3a. If the subject address has a house number, require it to match — confident match.
-    3b. If no house number but exactly one candidate survives steps 1+2, use it — still
-        confident (only one property of this type sold at this postcode on this street).
-    3c. If no house number and multiple candidates survive, return None — caller populates
-        the candidates dropdown rather than guessing a neighbour's sale."""
+    3b. If no house number but all surviving candidates are the same property, use the
+        most recent sale — still confident.
+    3c. If no house number and multiple distinct properties survive, return None — caller
+        populates the candidates dropdown rather than guessing a neighbour's sale."""
     sales, _ = get_all_sold_at_postcode(postcode)
-    if not sales:
-        return None
 
-    # Step 1: exact postcode filter
-    postcode_sales = [s for s in sales if _sale_matches_postcode(s, postcode)]
+    # Step 1: exact postcode filter, plus complete postcode history from Land Registry
+    postcode_sales = [s for s in (sales or []) if _sale_matches_postcode(s, postcode)]
+    postcode_sales += _fetch_land_registry_direct(postcode)
     if not postcode_sales:
         return None
 
@@ -727,18 +728,29 @@ def find_last_sale(postcode, address=None):
             return sorted(num_matched, key=lambda x: x.get("date", ""), reverse=True)[0]
         return None
 
-    # Step 3b: no house number but only one candidate — confident enough
-    if len(postcode_sales) == 1:
-        return postcode_sales[0]
+    # Step 3b: no house number but all candidates are the same property (the two data
+    # sources can return the same sale in different address formats) — confident enough
+    distinct = {
+        _leading_house_number(s.get("address") or "") or (s.get("address") or "").upper()
+        for s in postcode_sales
+    }
+    if len(distinct) == 1:
+        return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
 
-    # Step 3c: multiple candidates, no house number — cannot identify property
+    # Step 3c: multiple distinct properties, no house number — cannot identify property
     return None
 
 
 def get_last_sale_candidates(postcode):
     """Return all distinct sold properties at this postcode, deduplicated by address.
-    Used to build a 'select your property' dropdown when auto-match fails."""
-    sales, _ = get_all_sold_at_postcode(postcode)
+    Used to build a 'select your property' dropdown when auto-match fails.
+    Primary source is the Land Registry SPARQL endpoint (complete history for the
+    exact postcode); falls back to PropertyData radius results filtered to the
+    exact postcode if SPARQL is unavailable."""
+    sales = _fetch_land_registry_direct(postcode)
+    if not sales:
+        pd_sales, _ = get_all_sold_at_postcode(postcode)
+        sales = [s for s in (pd_sales or []) if _sale_matches_postcode(s, postcode)]
     if not sales:
         return []
     seen = set()

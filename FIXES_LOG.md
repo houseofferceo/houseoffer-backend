@@ -61,6 +61,24 @@ UK English. All prices GBP.
   also feeds the EPC floor-area lookup, so this can fix price per m2 too.
   Preview routes accept &address= override for admin testing.
 
+### Candidates dropdown missing the subject property (10 Wilmot Drive case)
+- Date: 2026-06-10
+- Symptom: the property-selection dropdown did not list the subject property.
+- Root cause: candidates were built from PropertyData /sold-prices, which is
+  radius-based and capped at ~20 recent sales - older sales at the postcode
+  get crowded out by newer sales on neighbouring streets. The list was also
+  not filtered to the exact postcode, so it showed neighbouring streets.
+- Fix: _fetch_land_registry_direct (Land Registry SPARQL, complete history
+  for the exact postcode) is now the primary source for the dropdown, with
+  PropertyData (exact-postcode filtered) as fallback. find_last_sale also
+  merges SPARQL results into its candidate pool before the tiered matching,
+  so selecting an address from the dropdown finds sales PropertyData lacks.
+  Safety preserved: SPARQL results are exact-postcode by construction and the
+  house-number-required matching still applies. Step 3b now treats records of
+  the same property from both sources (different address formats) as one
+  candidate. Verified with mocked-source unit tests including the
+  wrong-house-number case (returns None, never a neighbour).
+
 ---
 
 ## Open issues (working in order)
