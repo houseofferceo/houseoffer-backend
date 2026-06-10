@@ -88,11 +88,50 @@ UK English. All prices GBP.
   other valuation methods carry the report. Not a data bug; the Land
   Registry cannot return what was never submitted.
 
+### Address resolution from a Rightmove URL (no user input)
+- Date: 2026-06-10
+- Goal: identify the full address (house number) automatically when Rightmove
+  gives only a street-level displayAddress. The full address unlocks HPI last
+  sale, EPC floor area and price per m2.
+- Options researched and recorded:
+  a. deliveryPointId -> Royal Mail PAF lookup (likely UDPRN; 8-digit key in
+     PAGE_MODEL). Deterministic if confirmed; ~3p per lookup via an address
+     API (e.g. Ideal Postcodes). VERIFICATION PENDING - user to test a few
+     known-address listings against free test credits.
+  b. EPC register cross-match (free, built - see below).
+  c. lat/long reverse geocoding: OS Places is paid (excluded from the OS free
+     allowance due to PAF licensing); OS Open UPRN is free but means hosting
+     a 1.4GB dataset; OSM/Nominatim coverage too patchy. Parked.
+  d. PropertyData address-match-uprn: needs an address as INPUT, wrong
+     direction. Not useful for discovery.
+  e. Rightmove transactionHistory XHR: prohibited by ToS. Rejected.
+- Step 1 shipped: scraper now extracts delivery_point_id, latitude/longitude
+  and epc_cert_url from PAGE_MODEL (commit a0eefef). Visible via
+  /debug-scrape.
+
+### EPC cross-matching built (option b)
+- Date: 2026-06-10
+- epc_cross_match(postcode, address, property_type, floor_area_sqm):
+  street-token filter on the postcode's EPC certificates, then full-cert
+  verification on built form / property type, and floor area within 10% when
+  the listing supplied one. Only acts on a UNIQUE survivor. If more
+  candidates than the cert-fetch cap (10), gives up entirely rather than risk
+  a false unique match among a partial subset.
+- Wired into build_report_data: runs only when the listing address has no
+  house number. A match resolves the address (driving HPI last sale and EPC
+  floor area downstream) and supplies floor area if missing. Report carries
+  resolved_address and address_resolution (accurate/approx) for transparency.
+- Safety: ambiguity always returns None - the candidates dropdown remains the
+  fallback. Verified with 8 mocked scenarios including the two-identical-
+  detached-houses case (returns None) and flat addresses.
+- Debug: /debug-epc-match?postcode=..&address=..&type=..&sqm=..&key=ADMIN
+
 ---
 
 ## Open issues (working in order)
 
-### 2. Price per m2 shows n/a (IN PROGRESS)
+### 2. Price per m2 shows n/a (IN PROGRESS - EPC cross-match may resolve;
+    retest after deploy)
 - Likely cause: EPC floor-area lookup failing for the subject (same
   street-only address problem, or no EPC record). Not yet diagnosed.
 

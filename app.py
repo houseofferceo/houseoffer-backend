@@ -287,6 +287,93 @@ def get_floor_area_from_epc(postcode, address=None):
         print(f"EPC lookup exception: {e}")
         return None
 
+def _epc_built_form_matches(cert, property_type):
+    """Compare our property type against the certificate's built form / property type.
+    Returns True when the certificate is compatible OR when the certificate carries
+    no type information (absence of data must not exclude the true property)."""
+    pt = (property_type or "").lower()
+    built = ""
+    for f in ("built_form", "built-form", "builtForm"):
+        if cert.get(f):
+            built = str(cert[f]).lower()
+            break
+    prop_kind = ""
+    for f in ("property_type", "property-type", "propertyType"):
+        if cert.get(f):
+            prop_kind = str(cert[f]).lower()
+            break
+    if not built and not prop_kind:
+        return True
+    if "flat" in pt or "apartment" in pt or "maisonette" in pt:
+        if prop_kind:
+            return "flat" in prop_kind or "maisonette" in prop_kind
+        return True
+    # Houses/bungalows: if the cert says it's a flat, exclude
+    if prop_kind and ("flat" in prop_kind or "maisonette" in prop_kind):
+        return False
+    if not built:
+        return True
+    if "semi" in pt:
+        return "semi" in built
+    if "detached" in pt:
+        return built.startswith("detached")
+    if "terrace" in pt:
+        return "terrace" in built
+    return True
+
+def epc_cross_match(postcode, address=None, property_type=None, floor_area_sqm=None,
+                    max_cert_fetches=10):
+    """Identify the subject property's EPC certificate WITHOUT a house number, by
+    cross-matching listing attributes against the postcode's certificates:
+    1. Street-token filter using the (street-only) listing address.
+    2. Fetch full certificates for the survivors (capped) and require built form /
+       property type compatibility, plus floor area within 10% when the listing
+       supplied one.
+    3. Only act on a UNIQUE survivor - multiple plausible matches means None.
+    If more distinct addresses survive step 1 than we are willing to verify, give up
+    rather than risk declaring a false unique match among a partial subset.
+    Returns {address, floor_area_sqm, confidence, certificate_number} or None."""
+    results = _epc_search(postcode)
+    if not results:
+        return None
+    subj_streets = _street_tokens(address) if address else set()
+    candidates = []
+    seen_addr = set()
+    for r in results:
+        line1 = (r.get("addressLine1") or "").strip()
+        if not line1 or line1.upper() in seen_addr:
+            continue
+        seen_addr.add(line1.upper())
+        # Tokenise the whole certificate address (not just the first segment) so
+        # flat-style addresses like "Flat 1, Wilmot Court" still match their street
+        line1_tokens = {t for t in _normalise_text(line1) if len(t) > 3}
+        if subj_streets and not (subj_streets & line1_tokens):
+            continue
+        candidates.append(r)
+    if not candidates or len(candidates) > max_cert_fetches:
+        return None
+
+    matches = []
+    for r in candidates:
+        cert = _epc_fetch_certificate(r.get("certificateNumber") or "") or {}
+        if property_type and not _epc_built_form_matches(cert, property_type):
+            continue
+        area = _extract_floor_area(cert)
+        if floor_area_sqm and area:
+            if abs(area - floor_area_sqm) / floor_area_sqm > 0.10:
+                continue
+        matches.append({"summary": r, "floor_area_sqm": area})
+    if len(matches) != 1:
+        return None
+    m = matches[0]
+    confidence = "accurate" if (floor_area_sqm and m["floor_area_sqm"]) else "approx"
+    return {
+        "address": (m["summary"].get("addressLine1") or "").strip(),
+        "floor_area_sqm": m["floor_area_sqm"],
+        "confidence": confidence,
+        "certificate_number": m["summary"].get("certificateNumber"),
+    }
+
 def fetch_sold_prices(postcode):
     try:
         r = requests.get(
@@ -821,6 +908,25 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
 
     if not floor_area_sqm and scraper_floor_area_sqm:
         floor_area_sqm = scraper_floor_area_sqm
+
+    # EPC cross-match: when the listing address has no house number, try to identify
+    # the property from its attributes (street, type, floor area). A unique confident
+    # match resolves the full address, which then drives the HPI last sale matcher
+    # and the floor-area lookup. Ambiguity means we leave the address as-is.
+    resolved_address = None
+    address_resolution = None
+    if EPC_API_KEY and address and not _leading_house_number(address):
+        try:
+            xm = epc_cross_match(postcode, address, property_type, floor_area_sqm)
+            if xm and xm.get("address"):
+                resolved_address = xm["address"]
+                address = resolved_address
+                address_resolution = xm["confidence"]
+                if not floor_area_sqm and xm.get("floor_area_sqm"):
+                    floor_area_sqm = xm["floor_area_sqm"]
+        except Exception as e:
+            print(f"EPC cross-match error: {e}")
+
     if not floor_area_sqm and EPC_API_KEY:
         floor_area_sqm = get_floor_area_from_epc(postcode, address)
 
@@ -1160,6 +1266,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "sold_verdict": sold_verdict,
         "hpi_adjustment": hpi_adjustment,
         "last_sale_candidates": last_sale_candidates,
+        "resolved_address": resolved_address,
+        "address_resolution": address_resolution,
         "asking_psqm": asking_psqm,
         "local_avg_psqm": local_avg_psqm,
         "size_matched_psqm": size_matched_psqm,
@@ -1526,6 +1634,28 @@ def debug_epc():
         "floor_area_sqm": floor_area,
     })
 
+
+@app.route("/debug-epc-match")
+def debug_epc_match():
+    """Test EPC cross-matching without a house number.
+    Usage: /debug-epc-match?postcode=WR2+5SG&address=Wilmot+Drive&type=detached&sqm=92&key=ADMIN"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    postcode = request.args.get("postcode", "")
+    if not postcode:
+        return jsonify({"error": "Pass ?postcode= at minimum"}), 400
+    address = request.args.get("address", "") or None
+    property_type = request.args.get("type", "") or None
+    sqm = float(request.args.get("sqm", 0) or 0) or None
+    match = epc_cross_match(postcode, address, property_type, sqm)
+    return jsonify({
+        "postcode": format_postcode(postcode),
+        "address": address,
+        "property_type": property_type,
+        "floor_area_sqm": sqm,
+        "match": match,
+    })
 
 @app.route("/debug-scrape-dates")
 def debug_scrape_dates():
