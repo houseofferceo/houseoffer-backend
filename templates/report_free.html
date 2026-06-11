@@ -329,7 +329,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div class="data-card-label">Their asking price</div>
       <div class="data-card-value">{{ asking_price_formatted }}</div>
       <div class="data-card-sub">what the estate agent wants you to pay</div>
-      {% if sold_diff_pct is not none %}
+      {% if sold_diff_pct is not none and sold_diff_pct|abs <= 50 %}
       <span class="diff-badge {% if sold_diff_pct > 0 %}over{% elif sold_diff_pct < 0 %}under{% else %}fair{% endif %}">
         {% if sold_diff_pct > 0 %}↑ {{ sold_diff_pct }}% above market
         {% elif sold_diff_pct < 0 %}↓ {{ sold_diff_pct|abs }}% below market
@@ -337,6 +337,14 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </span>
       {% endif %}
     </div>
+    {% if sold_diff_pct is not none and sold_diff_pct|abs > 50 %}
+    <div class="data-card after" style="display:flex;flex-direction:column;justify-content:center;">
+      <div class="data-card-label" style="color:var(--amber);">Comparables unreliable</div>
+      <div style="font-size:14px;color:var(--ink-mid);line-height:1.6;margin-top:4px;">
+        The sold prices nearby cover a wide mix of property sizes and types. The gap is too large to be meaningful — the full report uses price per m&#178; and an automated valuation model for a like-for-like view.
+      </div>
+    </div>
+    {% else %}
     <div class="data-card after">
       <div class="data-card-label">What the market says</div>
       <div class="data-card-value">{{ local_avg_sold_formatted }}</div>
@@ -346,10 +354,11 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         · Land Registry
       </div>
     </div>
+    {% endif %}
   </div>
   <div class="source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales · HPI-adjusted to today's value · interquartile mean</div>
 
-  {% if sold_diff_pct is not none and sold_diff_pct|abs > 20 %}
+  {% if sold_diff_pct is not none and sold_diff_pct|abs > 20 and sold_diff_pct|abs <= 50 %}
   <div style="background:#fdf0e3;border:1px solid #f0c98a;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13.5px;color:#5c5849;line-height:1.6;">
     <strong style="color:#c06a1a;">Note on comparable accuracy</strong><br>
     The comparable set used here covers all {{ property_type }} sales in the area — without filtering by size or number of bedrooms — which means larger or smaller homes may be included. That can widen the gap you see above. For a tighter like-for-like comparison, the paid report also uses price per m&#178; (where floor area is available) and an automated valuation model, both of which give a size-adjusted view of value.
