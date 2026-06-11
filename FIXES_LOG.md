@@ -184,9 +184,29 @@ UK English. All prices GBP.
 - Likely cause: EPC floor-area lookup failing for the subject (same
   street-only address problem, or no EPC record). Not yet diagnosed.
 
-### 3. Rental yield shows n/a
-- Likely cause: PropertyData /rents returning no data for this
-  postcode/type/bedrooms combination. Not yet diagnosed.
+### 3. Rental yield shows n/a (FIX SHIPPED - awaiting live test)
+- Root cause (two bugs): PropertyData /rents returns rents PER WEEK (docs:
+  "multiply by 4.333" for monthly) but our code treated the value as
+  monthly; and the average is nested under data.long_let.average while our
+  code read data.average, found nothing and returned None.
+- Fix: parse data.long_let.average (with fallbacks for other shapes),
+  convert weekly to monthly. Debug: /debug-rents?postcode=..&bedrooms=..
+
+### 3b. AVM shows n/a (FIX SHIPPED - awaiting live test)
+- Root cause: we called /valuation, but PropertyData's endpoint is
+  /valuation-sale, and it requires internal_area (sq ft), construction_date,
+  bathrooms, finish_quality, outdoor_space, off_street_parking.
+- Fix: switched to /valuation-sale. Requires a floor area, so the method
+  stays n/a without one (another reason for the parked floor-plan vision
+  idea). Unknown fields sent as honest defaults: construction_date
+  1914_2000, bathrooms 1, finish_quality average, outdoor_space garden
+  (none for flats), off_street_parking true. Response parsed from estimate
+  plus margin_of_error, with fallbacks.
+- CAUTION: parameter values for construction_date etc. are best guesses -
+  PropertyData docs block automated reading. First live test via
+  /debug-avm?postcode=..&type=..&bedrooms=..&sqm=..&key=ADMIN shows the raw
+  response; their errors list valid values, iterate from there. Also check
+  the credit cost of /valuation-sale on the PropertyData dashboard.
 
 ### 4. Days on market missing from report
 - Previously worked. Likely lost in a merge/overwrite. Not yet diagnosed.

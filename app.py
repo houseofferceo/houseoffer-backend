@@ -579,7 +579,9 @@ def fetch_avg_dom(postcode):
 
 
 def fetch_avg_rents(postcode, property_type, bedrooms=None):
-    """Fetch average monthly rent from PropertyData. Returns float (monthly rent) or None."""
+    """Fetch average monthly rent from PropertyData. Returns float (monthly rent) or None.
+    The /rents endpoint returns rents PER WEEK ("for monthly values, multiply by
+    4.333" per the docs), with the average nested under data.long_let."""
     try:
         params = {"key": PROPERTYDATA_API_KEY, "postcode": postcode}
         if bedrooms:
@@ -592,42 +594,93 @@ def fetch_avg_rents(postcode, property_type, bedrooms=None):
         if r.status_code == 200:
             data = r.json()
             inner = data.get("data") or {}
-            # Try bedroom-specific first, then overall average
-            beds_key = str(bedrooms) if bedrooms else None
             avg = None
-            if beds_key and isinstance(inner, dict):
-                beds_data = inner.get(beds_key) or {}
-                avg = beds_data.get("average") or beds_data.get("mean") or beds_data.get("avg")
-            if not avg and isinstance(inner, dict):
-                avg = inner.get("average") or inner.get("mean") or inner.get("avg")
+            if isinstance(inner, dict):
+                long_let = inner.get("long_let") or {}
+                if isinstance(long_let, dict):
+                    avg = long_let.get("average") or long_let.get("mean")
+                # Older/other response shapes
+                if not avg:
+                    beds_key = str(bedrooms) if bedrooms else None
+                    if beds_key:
+                        beds_data = inner.get(beds_key) or {}
+                        if isinstance(beds_data, dict):
+                            avg = beds_data.get("average") or beds_data.get("mean") or beds_data.get("avg")
+                if not avg:
+                    avg = inner.get("average") or inner.get("mean") or inner.get("avg")
             if avg:
-                return float(avg)
+                weekly = float(avg)
+                return weekly * 4.333
     except Exception as e:
         print(f"fetch_avg_rents error: {e}")
     return None
 
 
-def fetch_propertydata_avm(postcode, property_type, bedrooms=None):
-    """Attempt PropertyData AVM/valuation endpoint. Returns dict or None."""
+def _avm_property_type(property_type):
+    """Map our property type to PropertyData /valuation-sale values."""
+    pt = (property_type or "").lower()
+    if "flat" in pt or "apartment" in pt or "maisonette" in pt:
+        return "flat"
+    if "semi" in pt:
+        return "semi-detached_house"
+    if "terrace" in pt:
+        return "terraced_house"
+    if "detached" in pt:
+        return "detached_house"
+    if "bungalow" in pt:
+        return "detached_bungalow"
+    return "semi-detached_house"
+
+def fetch_propertydata_avm(postcode, property_type, bedrooms=None, floor_area_sqm=None):
+    """PropertyData /valuation-sale AVM. Requires internal_area (sq ft), so this
+    method is unavailable without a floor area. Fields we cannot know from the
+    listing are sent as honest middle-of-the-road defaults (bathrooms 1, average
+    finish), which adds noise - the method carries standard weight only.
+    Returns {low, mid, high} or None."""
+    if not floor_area_sqm or floor_area_sqm <= 0:
+        return None
     try:
-        params = {"key": PROPERTYDATA_API_KEY, "postcode": postcode, "property_type": property_type}
-        if bedrooms:
-            params["bedrooms"] = bedrooms
+        params = {
+            "key": PROPERTYDATA_API_KEY,
+            "postcode": postcode,
+            "internal_area": round(float(floor_area_sqm) * 10.764),
+            "property_type": _avm_property_type(property_type),
+            "construction_date": "1914_2000",
+            "bedrooms": int(bedrooms) if bedrooms else 3,
+            "bathrooms": 1,
+            "finish_quality": "average",
+            "outdoor_space": "none" if "flat" in (property_type or "").lower() else "garden",
+            "off_street_parking": "true",
+        }
         r = requests.get(
-            "https://api.propertydata.co.uk/valuation",
+            "https://api.propertydata.co.uk/valuation-sale",
             params=params,
-            timeout=10
+            timeout=15
         )
-        if r.status_code == 200:
-            data = r.json()
-            inner = data.get("data") or {}
-            low = inner.get("lower_estimate") or inner.get("low") or inner.get("min")
-            high = inner.get("upper_estimate") or inner.get("high") or inner.get("max")
-            mid = inner.get("estimate") or inner.get("mid") or inner.get("value")
-            if low and high:
-                low, high = int(low), int(high)
-                mid = int(mid) if mid else (low + high) // 2
-                return {"low": low, "high": high, "mid": mid}
+        if r.status_code != 200:
+            print(f"AVM error: {r.status_code} — {r.text[:200]}")
+            return None
+        data = r.json()
+        inner = data.get("result") or data.get("data") or {}
+        if not isinstance(inner, dict):
+            return None
+        mid = inner.get("estimate") or inner.get("valuation") or inner.get("value") or inner.get("mid")
+        low = inner.get("lower_estimate") or inner.get("low") or inner.get("min")
+        high = inner.get("upper_estimate") or inner.get("high") or inner.get("max")
+        # Some responses give an estimate plus a percentage margin of error
+        if mid and not (low and high):
+            margin = inner.get("margin_of_error") or inner.get("margin")
+            if margin:
+                try:
+                    pct = float(str(margin).replace("%", "").strip()) / 100
+                    low = float(mid) * (1 - pct)
+                    high = float(mid) * (1 + pct)
+                except (ValueError, TypeError):
+                    pass
+        if low and high:
+            low, high = int(float(low)), int(float(high))
+            mid = int(float(mid)) if mid else (low + high) // 2
+            return {"low": low, "high": high, "mid": mid}
     except Exception as e:
         print(f"AVM error: {e}")
     return None
@@ -1136,7 +1189,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
 
     # Method 5: Online estimate (AVM via PropertyData)
     try:
-        avm = fetch_propertydata_avm(postcode_used, property_type, bedrooms)
+        avm = fetch_propertydata_avm(postcode_used, property_type, bedrooms, floor_area_sqm)
         if avm:
             methods.append(_method_dict(
                 "Automated valuation", avm["low"], avm["high"], avm["mid"],
@@ -1673,6 +1726,75 @@ def debug_epc_match():
         "property_type": property_type,
         "floor_area_sqm": sqm,
         "match": match,
+    })
+
+@app.route("/debug-rents")
+def debug_rents():
+    """Raw PropertyData /rents response plus our parsed monthly value.
+    Usage: /debug-rents?postcode=B23+7DY&bedrooms=3&key=ADMIN"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    postcode = request.args.get("postcode", "")
+    bedrooms = request.args.get("bedrooms", "")
+    if not postcode:
+        return jsonify({"error": "Pass ?postcode="}), 400
+    params = {"key": PROPERTYDATA_API_KEY, "postcode": format_postcode(postcode)}
+    if bedrooms:
+        params["bedrooms"] = bedrooms
+    raw_status = raw_body = None
+    try:
+        r = requests.get("https://api.propertydata.co.uk/rents", params=params, timeout=10)
+        raw_status = r.status_code
+        raw_body = r.json() if r.status_code == 200 else r.text[:500]
+    except Exception as e:
+        raw_body = str(e)
+    monthly = fetch_avg_rents(format_postcode(postcode), "", bedrooms or None)
+    return jsonify({
+        "postcode": format_postcode(postcode),
+        "raw_status": raw_status,
+        "raw_response": raw_body,
+        "parsed_monthly_rent": monthly,
+    })
+
+@app.route("/debug-avm")
+def debug_avm():
+    """Raw PropertyData /valuation-sale response plus our parsed result.
+    Usage: /debug-avm?postcode=B23+7DY&type=semi-detached&bedrooms=3&sqm=85&key=ADMIN"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    postcode = request.args.get("postcode", "")
+    property_type = request.args.get("type", "semi-detached")
+    bedrooms = request.args.get("bedrooms", "3")
+    sqm = float(request.args.get("sqm", 0) or 0) or None
+    if not postcode:
+        return jsonify({"error": "Pass ?postcode= and ?sqm="}), 400
+    params = {
+        "key": PROPERTYDATA_API_KEY,
+        "postcode": format_postcode(postcode),
+        "internal_area": round(sqm * 10.764) if sqm else None,
+        "property_type": _avm_property_type(property_type),
+        "construction_date": "1914_2000",
+        "bedrooms": bedrooms,
+        "bathrooms": 1,
+        "finish_quality": "average",
+        "outdoor_space": "none" if "flat" in property_type.lower() else "garden",
+        "off_street_parking": "true",
+    }
+    raw_status = raw_body = None
+    try:
+        r = requests.get("https://api.propertydata.co.uk/valuation-sale", params=params, timeout=15)
+        raw_status = r.status_code
+        raw_body = r.json() if r.status_code == 200 else r.text[:500]
+    except Exception as e:
+        raw_body = str(e)
+    parsed = fetch_propertydata_avm(format_postcode(postcode), property_type, bedrooms, sqm)
+    return jsonify({
+        "params_sent": {k: v for k, v in params.items() if k != "key"},
+        "raw_status": raw_status,
+        "raw_response": raw_body,
+        "parsed": parsed,
     })
 
 @app.route("/debug-scrape-dates")
