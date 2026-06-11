@@ -322,7 +322,7 @@ def _epc_built_form_matches(cert, property_type):
     return True
 
 def epc_cross_match(postcode, address=None, property_type=None, floor_area_sqm=None,
-                    max_cert_fetches=10):
+                    max_cert_fetches=10, trace=None):
     """Identify the subject property's EPC certificate WITHOUT a house number, by
     cross-matching listing attributes against the postcode's certificates:
     1. Street-token filter using the (street-only) listing address.
@@ -333,10 +333,15 @@ def epc_cross_match(postcode, address=None, property_type=None, floor_area_sqm=N
     If more distinct addresses survive step 1 than we are willing to verify, give up
     rather than risk declaring a false unique match among a partial subset.
     Returns {address, floor_area_sqm, confidence, certificate_number} or None."""
+    if trace is None:
+        trace = {}
     results = _epc_search(postcode)
+    trace["certificates_at_postcode"] = len(results or [])
     if not results:
+        trace["outcome"] = "no EPC certificates found at this postcode"
         return None
     subj_streets = _street_tokens(address) if address else set()
+    trace["street_tokens"] = sorted(subj_streets)
     candidates = []
     seen_addr = set()
     for r in results:
@@ -350,21 +355,43 @@ def epc_cross_match(postcode, address=None, property_type=None, floor_area_sqm=N
         if subj_streets and not (subj_streets & line1_tokens):
             continue
         candidates.append(r)
-    if not candidates or len(candidates) > max_cert_fetches:
+    trace["street_filter_survivors"] = [
+        (c.get("addressLine1") or "").strip() for c in candidates
+    ]
+    if not candidates:
+        trace["outcome"] = "no certificates matched the street tokens"
+        return None
+    if len(candidates) > max_cert_fetches:
+        trace["outcome"] = (
+            f"{len(candidates)} candidates exceeds the cert-fetch cap of "
+            f"{max_cert_fetches}; refusing to risk a false unique match"
+        )
         return None
 
     matches = []
+    rejected = []
     for r in candidates:
+        cand_addr = (r.get("addressLine1") or "").strip()
         cert = _epc_fetch_certificate(r.get("certificateNumber") or "") or {}
         if property_type and not _epc_built_form_matches(cert, property_type):
+            rejected.append(f"{cand_addr}: built form mismatch")
             continue
         area = _extract_floor_area(cert)
         if floor_area_sqm and area:
             if abs(area - floor_area_sqm) / floor_area_sqm > 0.10:
+                rejected.append(f"{cand_addr}: floor area {area} sqm outside 10% of {floor_area_sqm}")
                 continue
         matches.append({"summary": r, "floor_area_sqm": area})
+    trace["rejected"] = rejected
+    trace["verified_matches"] = [
+        (m["summary"].get("addressLine1") or "").strip() for m in matches
+    ]
     if len(matches) != 1:
+        trace["outcome"] = (
+            f"{len(matches)} verified matches; need exactly 1 to act"
+        )
         return None
+    trace["outcome"] = "unique match"
     m = matches[0]
     confidence = "accurate" if (floor_area_sqm and m["floor_area_sqm"]) else "approx"
     return {
@@ -1226,7 +1253,11 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     # Implied value = annual_rent / target_yield
     TARGET_GROSS_YIELD = 0.05
     try:
-        monthly_rent = fetch_avg_rents(postcode_used, property_type, bedrooms)
+        # Use the FULL postcode, not postcode_used: comparables may have
+        # broadened to the district (e.g. "MK13"), which format_postcode
+        # mangles and /rents rejects. The rents endpoint radiuses out from
+        # a point, so the full postcode always gives the best answer.
+        monthly_rent = fetch_avg_rents(format_postcode(postcode), property_type, bedrooms)
         if monthly_rent and monthly_rent > 100:
             annual_rent = monthly_rent * 12
             # Range: 4% yield (higher value) to 6% yield (lower value)
@@ -1725,13 +1756,15 @@ def debug_epc_match():
     address = request.args.get("address", "") or None
     property_type = request.args.get("type", "") or None
     sqm = float(request.args.get("sqm", 0) or 0) or None
-    match = epc_cross_match(postcode, address, property_type, sqm)
+    trace = {}
+    match = epc_cross_match(postcode, address, property_type, sqm, trace=trace)
     return jsonify({
         "postcode": format_postcode(postcode),
         "address": address,
         "property_type": property_type,
         "floor_area_sqm": sqm,
         "match": match,
+        "trace": trace,
     })
 
 @app.route("/debug-rents")
