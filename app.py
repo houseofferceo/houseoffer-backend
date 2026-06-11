@@ -650,7 +650,7 @@ def fetch_propertydata_avm(postcode, property_type, bedrooms=None, floor_area_sq
             "bathrooms": 1,
             "finish_quality": "average",
             "outdoor_space": "none" if "flat" in (property_type or "").lower() else "garden",
-            "off_street_parking": "true",
+            "off_street_parking": "1",
         }
         r = requests.get(
             "https://api.propertydata.co.uk/valuation-sale",
@@ -1780,7 +1780,7 @@ def debug_avm():
         "bathrooms": 1,
         "finish_quality": "average",
         "outdoor_space": "none" if "flat" in property_type.lower() else "garden",
-        "off_street_parking": "true",
+        "off_street_parking": "1",
     }
     raw_status = raw_body = None
     try:
