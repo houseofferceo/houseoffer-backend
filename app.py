@@ -1757,7 +1757,11 @@ def debug_epc_match():
     property_type = request.args.get("type", "") or None
     sqm = float(request.args.get("sqm", 0) or 0) or None
     trace = {}
-    match = epc_cross_match(postcode, address, property_type, sqm, trace=trace)
+    try:
+        match = epc_cross_match(postcode, address, property_type, sqm, trace=trace)
+    except Exception as e:
+        match = None
+        trace["error"] = f"{type(e).__name__}: {e}"
     return jsonify({
         "postcode": format_postcode(postcode),
         "address": address,
