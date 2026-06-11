@@ -2448,82 +2448,111 @@ def submit():
     if not asking_price:
         return jsonify({"error": "Could not determine asking price from that link. Use a for-sale listing (not to-rent)."}), 400
 
-    try:
-        report = build_report_data(
-            property_url=property_url,
-            asking_price=asking_price,
-            bedrooms=bedrooms,
-            property_type=property_type,
-            postcode=postcode,
-            floor_area_sqm=floor_area_sqm,
-            address=address,
-            tier="free",
-            **extra,
-        )
+    # Assign the report ID now so we can return it immediately; the actual
+    # build runs in a background thread to avoid Render's 30-second HTTP timeout.
+    report_id = uuid.uuid4().hex[:12]
+    report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
+    created_at = datetime.utcnow().isoformat() + "Z"
 
-        # Generate a UUID for this report so the user can access it online
-        report_id = uuid.uuid4().hex[:12]
-        report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
+    save_report(report_id, {
+        "status": "building",
+        "build_started_at": created_at,
+        "created_at": created_at,
+        "email": to_email,
+        "property_url": property_url,
+        "buyer_estimate": buyer_estimate,
+        "paid": False,
+    })
 
-        # Calculate anchor bias before storing (it goes into the persistence payload)
-        anchor_bias = None
-        if buyer_estimate and report.get("local_avg_sold"):
+    # Capture loop variables for the thread closure
+    _url = property_url
+    _ap = asking_price
+    _br = bedrooms
+    _pt = property_type
+    _pc = postcode
+    _fa = floor_area_sqm
+    _ad = address
+    _ex = dict(extra)
+    _be = buyer_estimate
+    _rid = report_id
+    _ru = report_url
+    _email = to_email
+
+    def _build():
+        try:
+            report = build_report_data(
+                property_url=_url,
+                asking_price=_ap,
+                bedrooms=_br,
+                property_type=_pt,
+                postcode=_pc,
+                floor_area_sqm=_fa,
+                address=_ad,
+                tier="free",
+                **_ex,
+            )
+
+            anchor_bias = None
+            if _be and report.get("local_avg_sold"):
+                try:
+                    est = int(str(_be).replace(",", "").replace("£", "").replace(" ", ""))
+                    local = report["local_avg_sold"]
+                    anchor_bias = round(((est - local) / local) * 100, 1)
+                except Exception:
+                    pass
+
+            stored = load_report(_rid) or {}
+            stored.update({
+                "status": "ready",
+                "report": report,
+                "buyer_estimate": _be,
+                "anchor_bias": anchor_bias,
+            })
+            save_report(_rid, stored)
+
+            post_to_sheets({
+                "type": "submission",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "uuid": _rid,
+                "email": _email,
+                "postcode": report["postcode"],
+                "property_type": report["property_type"],
+                "asking_price": _ap,
+                "verdict": report["verdict"],
+                "buyer_estimate": _be or "",
+                "anchor_bias": anchor_bias,
+                "property_url": _url,
+                "report_url": _ru,
+            })
+
+            log_event(_rid, "submission_created", {
+                "email": _email,
+                "postcode": report["postcode"],
+                "verdict": report["verdict"],
+                "asking_price": _ap,
+                "anchor_bias": anchor_bias,
+            })
+
             try:
-                est = int(str(buyer_estimate).replace(",","").replace("£","").replace(" ",""))
-                local = report["local_avg_sold"]
-                anchor_bias = round(((est - local) / local) * 100, 1)
-            except Exception:
-                pass
+                email_html = render_template("report_email.html", report_url=_ru, **report)
+                send_report_email(_email, email_html, report["postcode"], report["verdict"], report_url=_ru)
+                notify_owner(_email, _url, report["postcode"], report["verdict"], _be, anchor_bias)
+            except Exception as e:
+                print(f"Email error in background build ({_rid}): {e}")
+        except Exception as exc:
+            print(f"Background submit build error ({_rid}): {exc}")
+            stored = load_report(_rid) or {}
+            stored["status"] = "failed"
+            stored["error"] = str(exc)
+            save_report(_rid, stored)
 
-        # Persist the report so /r/<uuid> can serve it later
-        save_report(report_id, {
-            "report": report,
-            "email": to_email,
-            "property_url": property_url,
-            "buyer_estimate": buyer_estimate,
-            "anchor_bias": anchor_bias,
-            "created_at": datetime.utcnow().isoformat() + "Z",
-        })
+    threading.Thread(target=_build, daemon=True).start()
 
-        # Write the submission row to Google Sheets (Submissions tab)
-        post_to_sheets({
-            "type": "submission",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "uuid": report_id,
-            "email": to_email,
-            "postcode": report["postcode"],
-            "property_type": report["property_type"],
-            "asking_price": asking_price,
-            "verdict": report["verdict"],
-            "buyer_estimate": buyer_estimate or "",
-            "anchor_bias": anchor_bias,
-            "property_url": property_url,
-            "report_url": report_url,
-        })
-
-        # Log the initial submission as an event
-        log_event(report_id, "submission_created", {
-            "email": to_email,
-            "postcode": report["postcode"],
-            "verdict": report["verdict"],
-            "asking_price": asking_price,
-            "anchor_bias": anchor_bias,
-        })
-
-        # Render the email-safe (Gmail-friendly) version for delivery
-        email_html = render_template("report_email.html", report_url=report_url, **report)
-        send_report_email(to_email, email_html, report["postcode"], report["verdict"], report_url=report_url)
-        notify_owner(to_email, property_url, report["postcode"], report["verdict"], buyer_estimate, anchor_bias)
-
-        return jsonify({
-            "status": "sent",
-            "postcode": report["postcode"],
-            "report_id": report_id,
-            "report_url": report_url,
-        })
-    except Exception as exc:
-        print(f"Submit error: {exc}")
-        return jsonify({"error": "Could not build report. Please try again."}), 500
+    return jsonify({
+        "status": "building",
+        "report_id": report_id,
+        "report_url": report_url,
+    })
 
 
 if __name__ == "__main__":
