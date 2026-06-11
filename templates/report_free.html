@@ -518,17 +518,60 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div style="background:var(--forest);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;">£29 Report</div>
     </div>
 
-    <!-- Football field bars (partially visible) -->
-    <div style="padding:16px 20px 4px;">
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-light);font-weight:600;margin-bottom:8px;"><span>Low estimate</span><span>Valuation range</span><span>High estimate</span></div>
-      {% for i in range(5) %}
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-        <div style="width:8px;height:8px;border-radius:50%;background:var(--forest);flex-shrink:0;opacity:{{ [1,0.7,0.85,0.6,0.5][i] }};"></div>
-        <div style="flex:1;height:8px;border-radius:4px;background:var(--sand-border);overflow:hidden;">
-          <div style="height:100%;border-radius:4px;background:var(--forest);width:{{ [52,68,41,59,47][i] }}%;opacity:{{ [1,0.7,0.85,0.6,0.5][i] }};"></div>
-        </div>
+    <!-- Football field chart: real method labels, blurred bars (template preview) -->
+    <div style="padding:16px 20px 4px;overflow-x:auto;">
+      <svg viewBox="0 0 680 330" style="width:100%;display:block;" role="img" aria-label="Football field valuation preview (unlock to see your numbers)">
+        <defs><filter id="ffblur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="4.5"/></filter></defs>
+
+        <!-- Method labels (crisp - this is what the buyer is paying for) -->
+        <text x="169" y="35" text-anchor="end" font-size="11.5" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Comparable sales (HPI-adjusted)</text>
+        <text x="169" y="75" text-anchor="end" font-size="11.5" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Comparable sales (unadjusted)</text>
+        <text x="169" y="115" text-anchor="end" font-size="11.5" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">HPI-adjusted last sale</text>
+        <text x="169" y="155" text-anchor="end" font-size="11.5" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Price per m&#178;</text>
+        <text x="169" y="195" text-anchor="end" font-size="11.5" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Area price trend</text>
+        <text x="169" y="235" text-anchor="end" font-size="11.5" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Automated valuation</text>
+        <text x="169" y="275" text-anchor="end" font-size="11.5" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Rental yield implied value</text>
+
+        <!-- Bar track backgrounds (crisp) -->
+        <rect x="175" y="24" width="460" height="18" fill="#f7f3ed" rx="3"/>
+        <rect x="175" y="64" width="460" height="18" fill="#f7f3ed" rx="3"/>
+        <rect x="175" y="104" width="460" height="18" fill="#f7f3ed" rx="3"/>
+        <rect x="175" y="144" width="460" height="18" fill="#f7f3ed" rx="3"/>
+        <rect x="175" y="184" width="460" height="18" fill="#f7f3ed" rx="3"/>
+        <rect x="175" y="224" width="460" height="18" fill="#f7f3ed" rx="3"/>
+        <rect x="175" y="264" width="460" height="18" fill="#f7f3ed" rx="3"/>
+
+        <!-- Everything that carries the actual numbers is blurred -->
+        <g filter="url(#ffblur)">
+          <rect x="300" y="18" width="110" height="270" fill="rgba(26,107,90,0.08)" rx="3"/>
+          <rect x="285" y="24" width="130" height="18" fill="#1a6b5a" opacity="0.85" rx="3"/>
+          <circle cx="350" cy="33" r="4.5" fill="white" stroke="#1a6b5a" stroke-width="2"/>
+          <rect x="250" y="64" width="150" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
+          <circle cx="325" cy="73" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
+          <rect x="305" y="104" width="95" height="18" fill="#1a6b5a" opacity="0.85" rx="3"/>
+          <circle cx="352" cy="113" r="4.5" fill="white" stroke="#1a6b5a" stroke-width="2"/>
+          <rect x="270" y="144" width="160" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
+          <circle cx="350" cy="153" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
+          <rect x="235" y="184" width="140" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
+          <circle cx="305" cy="193" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
+          <rect x="295" y="224" width="120" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
+          <circle cx="355" cy="233" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
+          <rect x="210" y="264" width="170" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
+          <circle cx="295" cy="273" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
+          <line x1="430" y1="18" x2="430" y2="290" stroke="#b83232" stroke-width="1.5" stroke-dasharray="5,3"/>
+          <line x1="318" y1="18" x2="318" y2="290" stroke="#1a6b5a" stroke-width="1.5" stroke-dasharray="5,3"/>
+        </g>
+
+        <!-- Price axis (crisp, no values) -->
+        <line x1="175" y1="292" x2="635" y2="292" stroke="#e0d9ce" stroke-width="1"/>
+        <text x="405" y="318" text-anchor="middle" font-size="10" font-family="Plus Jakarta Sans,sans-serif" fill="#9b9488">Your valuation range, asking price and recommended offer, revealed in the full report</text>
+      </svg>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--sand-border);">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mid);"><div style="width:10px;height:10px;border-radius:2px;background:#1a6b5a;"></div>Higher-weight method (x2)</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mid);"><div style="width:10px;height:10px;border-radius:2px;background:#9b9488;"></div>Standard method</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mid);"><div style="width:14px;height:2px;border-top:2px dashed #b83232;"></div>&nbsp;Asking price</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mid);"><div style="width:14px;height:2px;border-top:2px dashed #1a6b5a;"></div>&nbsp;Recommended offer</div>
       </div>
-      {% endfor %}
     </div>
 
     <!-- Offer trio (blurred) -->

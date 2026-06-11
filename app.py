@@ -1030,9 +1030,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       reduction_date=None, reduction_amount=None, reduction_pct=None,
                       tier="paid"):
     """Build the full report payload.
-    tier="free": cheap, fast calls only - comparables, HPI maths, days on market,
-      asking-to-sold. EPC, SPARQL last sale, £/sqf, rents and AVM are skipped,
-      so those methods show n/a.
+    tier="free": cheap calls only - comparables, HPI maths, days on market,
+      asking-to-sold, plus the SPARQL last sale (free, so the previous sold
+      price, HPI-adjusted value and address dropdown appear on both tiers).
+      EPC, £/sqf, rents and AVM are skipped, so those methods show n/a.
     tier="paid": everything, with independent external calls run in parallel."""
     paid_tier = tier != "free"
     formatted = format_postcode(postcode)
@@ -1082,11 +1083,13 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             except Exception as e:
                 print(f"EPC resolution error: {e}")
 
-        fut_avm = fut_last = None
+        fut_avm = None
         if paid_tier:
             fut_avm = pool.submit(fetch_propertydata_avm, postcode_used,
                                   property_type, bedrooms, floor_area_sqm)
-            fut_last = pool.submit(find_last_sale, postcode, address)
+        # Last sale uses Land Registry SPARQL (free, no PropertyData credits),
+        # so both tiers get the previous sold price and HPI-adjusted value.
+        fut_last = pool.submit(find_last_sale, postcode, address)
 
         if fut_psqf is not None:
             try:
@@ -1176,8 +1179,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             )
             if hpi_adjustment:
                 hpi_adjusted_value = hpi_adjustment["adjusted_price"]
-        elif paid_tier:
-            # No confident match — build candidates list for dropdown
+        else:
+            # No confident match - build candidates list for the dropdown
+            # on both tiers so the user can pick their address
             try:
                 last_sale_candidates = get_last_sale_candidates(postcode)
             except Exception:
@@ -1604,24 +1608,27 @@ def _building_page(report_id):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <noscript><meta http-equiv="refresh" content="5"></noscript>
 <title>Generating your report…</title>
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-        padding:64px 24px;text-align:center;color:#1a2b3c;background:#f7f9fb;}
-  h1 {font-size:1.5rem;margin-bottom:8px;}
-  .sub {color:#51606f;max-width:30rem;margin:0 auto 32px;}
+  body {font-family:'Plus Jakarta Sans',-apple-system,sans-serif;
+        padding:64px 24px;text-align:center;color:#1e1c18;background:#f7f3ed;}
+  h1 {font-family:'Lora',serif;font-size:1.5rem;margin-bottom:8px;color:#1e1c18;}
+  .sub {color:#5c5849;max-width:30rem;margin:0 auto 32px;}
   .spinner {width:44px;height:44px;margin:0 auto 28px;border-radius:50%;
-            border:4px solid #dbe4ec;border-top-color:#1a73e8;
+            border:4px solid #e0d9ce;border-top-color:#1a6b5a;
             animation:spin 0.9s linear infinite;}
   @keyframes spin {to {transform:rotate(360deg);}}
-  ul.steps {list-style:none;padding:0;max-width:22rem;margin:0 auto;text-align:left;}
-  ul.steps li {padding:7px 0;color:#b0bac4;font-size:0.95rem;transition:color 0.4s;}
-  ul.steps li::before {content:"○";display:inline-block;width:1.5em;color:#cdd6de;}
-  ul.steps li.active {color:#1a2b3c;font-weight:600;}
-  ul.steps li.active::before {content:"●";color:#1a73e8;animation:pulse 1.2s ease-in-out infinite;}
-  ul.steps li.done {color:#51606f;}
-  ul.steps li.done::before {content:"✓";color:#1e9e5a;}
+  ul.steps {list-style:none;padding:20px 24px;max-width:24rem;margin:0 auto;text-align:left;
+            background:#ffffff;border:1px solid #e0d9ce;border-radius:14px;
+            box-shadow:0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);}
+  ul.steps li {padding:7px 0;color:#9b9488;font-size:0.95rem;transition:color 0.4s;}
+  ul.steps li::before {content:"○";display:inline-block;width:1.5em;color:#e0d9ce;}
+  ul.steps li.active {color:#1e1c18;font-weight:600;}
+  ul.steps li.active::before {content:"●";color:#1a6b5a;animation:pulse 1.2s ease-in-out infinite;}
+  ul.steps li.done {color:#5c5849;}
+  ul.steps li.done::before {content:"✓";color:#238f77;}
   @keyframes pulse {50% {opacity:0.35;}}
-  .hint {color:#8a97a3;font-size:0.85rem;margin-top:32px;}
+  .hint {color:#9b9488;font-size:0.85rem;margin-top:32px;}
 </style></head>
 <body>
 <div class="spinner"></div>
