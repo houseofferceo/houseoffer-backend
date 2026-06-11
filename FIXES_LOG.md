@@ -128,6 +128,39 @@ UK English. All prices GBP.
 
 ---
 
+## Parked ideas (come back to these)
+
+### Floor area from the floor plan image (Claude vision)
+- Date parked: 2026-06-10
+- Observation (user): Rightmove floor plan images nearly always print the
+  total sq m, even when the listing's sizings field says "Ask agent".
+- Proposed pipeline (build as one piece of work):
+  1. Extract floorplan image URLs from PAGE_MODEL (floorplans array - not
+     currently read by the scraper).
+  2. Send the image to the Claude API (plain requests call, no new pip
+     packages) with a prompt like: "return the total floor area in sq m
+     printed on this plan, or null if absent". Use Claude Haiku - roughly a
+     third of a penny per report.
+  3. Feed the result into floor_area_sqm. This powers price per m2 directly
+     AND sharpens the EPC cross-match (the 10% floor-area filter becomes
+     available on nearly every listing instead of only those with sizings).
+- Requirements: ANTHROPIC_API_KEY env var added in Render (user action -
+  assistant does not touch Render config).
+- Rejected alternative: pytesseract OCR - new pip dependency and less
+  reliable on floor plan layouts than a vision model.
+- Status: parked while user tests how the EPC cross-match performs on real
+  properties without it.
+
+### deliveryPointId = UDPRN verification (option 1 of address resolution)
+- Date parked: 2026-06-10
+- The scraper now captures delivery_point_id (visible in /debug-scrape).
+- User action: sign up to Ideal Postcodes (free test credits), look up a few
+  deliveryPointIds from listings with known addresses, compare. If confirmed,
+  build a UDPRN resolver (~3p per report) as the primary address source,
+  with EPC cross-match demoted to fallback/corroboration.
+
+---
+
 ## Open issues (working in order)
 
 ### 2. Price per m2 shows n/a (IN PROGRESS - EPC cross-match may resolve;
