@@ -218,5 +218,9 @@ UK English. All prices GBP.
   response; their errors list valid values, iterate from there. Also check
   the credit cost of /valuation-sale on the PropertyData dashboard.
 
-### 4. Days on market missing from report
-- Previously worked. Likely lost in a merge/overwrite. Not yet diagnosed.
+### 4. Days on market missing from report (CLOSED - verified working)
+- Verified 2026-06-11 on B23 7DY: listing added 4 March 2026, report showed
+  99 days, and 4 Mar to 11 Jun is exactly 99 days. Pipeline traced and
+  intact: scraper parses the "added on" date from PAGE_MODEL, app compares
+  against PropertyData local average, templates render it with the
+  dom_signal commentary. No code change needed.
