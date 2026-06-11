@@ -265,6 +265,16 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
   </div>
 
+  <!-- ─── SHARE BAR (top) ─── -->
+  <div style="background:var(--white);border:1px solid var(--sand-border);border-radius:12px;padding:12px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;box-shadow:var(--shadow-sm);">
+    <div style="font-size:13px;font-weight:600;color:var(--ink);">Know someone buying a home? Share this free report tool.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <a href="https://wa.me/?text=I%20used%20HouseOffer%20to%20check%20if%20a%20property%20was%20fairly%20priced%20%E2%80%94%20it%27s%20free%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#25D366;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;text-decoration:none;">WhatsApp</a>
+      <a href="https://twitter.com/intent/tweet?text=Free%20tool%20to%20check%20if%20a%20property%20is%20overpriced%20before%20you%20make%20an%20offer%20%E2%80%94%20uses%20real%20Land%20Registry%20data%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#000;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;text-decoration:none;">X / Twitter</a>
+      <button onclick="navigator.clipboard.writeText('https://houseoffer.uk');this.textContent='Copied!';" style="display:inline-flex;align-items:center;gap:5px;background:var(--sand-border);color:var(--ink);font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;border:none;cursor:pointer;">Copy link</button>
+    </div>
+  </div>
+
   <!-- ─── VERDICT ─── -->
   <div class="verdict-card {{ verdict }}">
     <div class="verdict-eyebrow">
@@ -330,6 +340,13 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
   </div>
   <div class="source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales · HPI-adjusted to today's value · interquartile mean</div>
+
+  {% if sold_diff_pct is not none and sold_diff_pct|abs > 20 %}
+  <div style="background:#fdf0e3;border:1px solid #f0c98a;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13.5px;color:#5c5849;line-height:1.6;">
+    <strong style="color:#c06a1a;">Note on comparable accuracy</strong><br>
+    The comparable set used here covers all {{ property_type }} sales in the area — without filtering by size or number of bedrooms — which means larger or smaller homes may be included. That can widen the gap you see above. For a tighter like-for-like comparison, the paid report also uses price per m&#178; (where floor area is available) and an automated valuation model, both of which give a size-adjusted view of value.
+  </div>
+  {% endif %}
 
   {% if comparables %}
   <div class="comp-table-section">
@@ -483,7 +500,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           The full report calculates exactly how many pounds this adds to your negotiating position.
         </div>
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
-          <a href="#unlock-cta" style="background:var(--forest);color:#fff;font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px;text-decoration:none;white-space:nowrap;">Unlock negotiation analysis &rarr;</a>
+          <a href="#unlock-cta" style="background:var(--teal);color:#fff;font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px;text-decoration:none;white-space:nowrap;">Unlock negotiation analysis &rarr;</a>
         </div>
       </div>
     </div>
@@ -515,12 +532,12 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-light);margin-bottom:3px;">Seven-method valuation range</div>
         <div style="font-size:15px;font-weight:700;color:var(--ink);">Football field analysis + your offer strategy</div>
       </div>
-      <div style="background:var(--forest);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;">£29 Report</div>
+      <div style="background:var(--teal);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;">£29 Report</div>
     </div>
 
     <!-- Football field chart: real method labels, blurred bars (template preview) -->
     <div style="padding:16px 20px 4px;overflow-x:auto;">
-      <svg viewBox="0 0 680 330" style="width:100%;display:block;" role="img" aria-label="Football field valuation preview (unlock to see your numbers)">
+      <svg viewBox="0 0 680 320" style="width:100%;display:block;" role="img" aria-label="Football field valuation preview (unlock to see your numbers)">
         <defs><filter id="ffblur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="4.5"/></filter></defs>
 
         <!-- Method labels (crisp - this is what the buyer is paying for) -->
@@ -541,7 +558,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <rect x="175" y="224" width="460" height="18" fill="#f7f3ed" rx="3"/>
         <rect x="175" y="264" width="460" height="18" fill="#f7f3ed" rx="3"/>
 
-        <!-- Everything that carries the actual numbers is blurred -->
+        <!-- Bars and weighted band: blurred so values are hidden -->
         <g filter="url(#ffblur)">
           <rect x="300" y="18" width="110" height="270" fill="rgba(26,107,90,0.08)" rx="3"/>
           <rect x="285" y="24" width="130" height="18" fill="#1a6b5a" opacity="0.85" rx="3"/>
@@ -558,13 +575,20 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           <circle cx="355" cy="233" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
           <rect x="210" y="264" width="170" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
           <circle cx="295" cy="273" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
-          <line x1="430" y1="18" x2="430" y2="290" stroke="#b83232" stroke-width="1.5" stroke-dasharray="5,3"/>
-          <line x1="318" y1="18" x2="318" y2="290" stroke="#1a6b5a" stroke-width="1.5" stroke-dasharray="5,3"/>
         </g>
 
-        <!-- Price axis (crisp, no values) -->
+        <!-- Asking price and recommended offer lines: crisp so they read clearly -->
+        <line x1="430" y1="14" x2="430" y2="290" stroke="#b83232" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <line x1="318" y1="14" x2="318" y2="290" stroke="#1a6b5a" stroke-width="1.5" stroke-dasharray="5,3"/>
+
+        <!-- Price axis -->
         <line x1="175" y1="292" x2="635" y2="292" stroke="#e0d9ce" stroke-width="1"/>
-        <text x="405" y="318" text-anchor="middle" font-size="10" font-family="Plus Jakarta Sans,sans-serif" fill="#9b9488">Your valuation range, asking price and recommended offer, revealed in the full report</text>
+
+        <!-- Label tags with white pill backgrounds so they sit above the blur -->
+        <rect x="370" y="294" width="120" height="18" rx="4" fill="white" stroke="#e0d9ce" stroke-width="1"/>
+        <text x="430" y="307" text-anchor="middle" font-size="9.5" font-family="Plus Jakarta Sans,sans-serif" fill="#b83232" font-weight="600">Asking price</text>
+        <rect x="256" y="294" width="124" height="18" rx="4" fill="white" stroke="#e0d9ce" stroke-width="1"/>
+        <text x="318" y="307" text-anchor="middle" font-size="9.5" font-family="Plus Jakarta Sans,sans-serif" fill="#1a6b5a" font-weight="600">Recommended offer</text>
       </svg>
       <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--sand-border);">
         <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-mid);"><div style="width:10px;height:10px;border-radius:2px;background:#1a6b5a;"></div>Higher-weight method (x2)</div>
@@ -580,11 +604,11 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--sand-border);border-top:1px solid var(--sand-border);">
         <div style="background:var(--white);padding:14px 16px;text-align:center;">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Open with</div>
-          <div style="font-size:22px;font-weight:800;color:var(--forest);filter:blur(6px);user-select:none;">£385,000</div>
+          <div style="font-size:22px;font-weight:800;color:var(--teal);filter:blur(6px);user-select:none;">£385,000</div>
         </div>
         <div style="background:#f7faf8;padding:14px 16px;text-align:center;border-left:1px solid var(--sand-border);border-right:1px solid var(--sand-border);">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Target price</div>
-          <div style="font-size:22px;font-weight:800;color:var(--forest);filter:blur(6px);user-select:none;">£397,500</div>
+          <div style="font-size:22px;font-weight:800;color:var(--teal);filter:blur(6px);user-select:none;">£397,500</div>
         </div>
         <div style="background:var(--white);padding:14px 16px;text-align:center;">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Walk away above</div>
@@ -595,7 +619,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(255,255,255,0.5);backdrop-filter:blur(1px);">
         <div style="font-size:13px;font-weight:700;color:var(--ink);text-align:center;">Your numbers are ready</div>
         <div style="font-size:12px;color:var(--ink-mid);text-align:center;max-width:240px;">Opening offer, target, and walk-away price — calculated from 7 valuation methods</div>
-        <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}" style="background:var(--forest);color:#fff;font-size:13px;font-weight:700;padding:9px 20px;border-radius:24px;text-decoration:none;margin-top:4px;">Unlock for £29</a>
+        <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}" style="background:var(--teal);color:#fff;font-size:13px;font-weight:700;padding:9px 20px;border-radius:24px;text-decoration:none;margin-top:4px;">Unlock for £29</a>
       </div>
     </div>
 
@@ -839,6 +863,17 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="btn-upgrade playbook">Get the playbook — £49</a>
         <div class="upgrade-note">One-time · Instant delivery</div>
       </div>
+    </div>
+  </div>
+
+  <!-- ─── SHARE BAR (bottom) ─── -->
+  <div style="background:var(--teal-light);border:1px solid var(--teal-border);border-radius:12px;padding:18px 20px;margin-bottom:24px;text-align:center;">
+    <div style="font-family:'Lora',serif;font-size:16px;font-weight:700;color:var(--teal);margin-bottom:4px;">Help a friend buy smarter</div>
+    <div style="font-size:13px;color:var(--ink-mid);margin-bottom:14px;">Share this free analysis tool with anyone viewing a property</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+      <a href="https://wa.me/?text=I%20used%20HouseOffer%20to%20check%20if%20a%20property%20was%20fairly%20priced%20%E2%80%94%20it%27s%20free%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#25D366;color:#fff;font-size:13px;font-weight:700;padding:9px 18px;border-radius:20px;text-decoration:none;">WhatsApp</a>
+      <a href="https://twitter.com/intent/tweet?text=Free%20tool%20to%20check%20if%20a%20property%20is%20overpriced%20before%20you%20make%20an%20offer%20%E2%80%94%20uses%20real%20Land%20Registry%20data%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#000;color:#fff;font-size:13px;font-weight:700;padding:9px 18px;border-radius:20px;text-decoration:none;">X / Twitter</a>
+      <button onclick="navigator.clipboard.writeText('https://houseoffer.uk');this.textContent='Copied!';" style="display:inline-flex;align-items:center;gap:5px;background:var(--teal);color:#fff;font-size:13px;font-weight:700;padding:9px 18px;border-radius:20px;border:none;cursor:pointer;">Copy link</button>
     </div>
   </div>
 
