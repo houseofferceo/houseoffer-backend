@@ -667,14 +667,20 @@ def fetch_propertydata_avm(postcode, property_type, bedrooms=None, floor_area_sq
         mid = inner.get("estimate") or inner.get("valuation") or inner.get("value") or inner.get("mid")
         low = inner.get("lower_estimate") or inner.get("low") or inner.get("min")
         high = inner.get("upper_estimate") or inner.get("high") or inner.get("max")
-        # Some responses give an estimate plus a percentage margin of error
+        # PropertyData returns an estimate plus a margin. The margin is an
+        # absolute GBP figure (e.g. 10000) unless it carries a % sign.
         if mid and not (low and high):
             margin = inner.get("margin_of_error") or inner.get("margin")
-            if margin:
+            if margin is not None:
                 try:
-                    pct = float(str(margin).replace("%", "").strip()) / 100
-                    low = float(mid) * (1 - pct)
-                    high = float(mid) * (1 + pct)
+                    if "%" in str(margin):
+                        pct = float(str(margin).replace("%", "").strip()) / 100
+                        low = float(mid) * (1 - pct)
+                        high = float(mid) * (1 + pct)
+                    else:
+                        m = float(margin)
+                        low = float(mid) - m
+                        high = float(mid) + m
                 except (ValueError, TypeError):
                     pass
         if low and high:

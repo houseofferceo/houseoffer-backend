@@ -192,7 +192,14 @@ UK English. All prices GBP.
 - Fix: parse data.long_let.average (with fallbacks for other shapes),
   convert weekly to monthly. Debug: /debug-rents?postcode=..&bedrooms=..
 
-### 3b. AVM shows n/a (FIX SHIPPED - awaiting live test)
+### 3b. AVM shows n/a (WORKING - live test passed on B23 7DY)
+- Live test 2026-06-11: /valuation-sale returned estimate £220,000, margin
+  £10,000, confidence high. Two parameter fixes from the live errors:
+  off_street_parking must be "1"/"0" not "true"; the margin field is an
+  ABSOLUTE GBP figure, not a percentage (the percent assumption produced a
+  -£21.78M low). Parsing now treats margin as absolute unless it carries a
+  % sign. construction_date "1914_2000" was accepted (echoed as 1914-2000).
+- Commits: 5b78e3c (parking value), plus the margin fix.
 - Root cause: we called /valuation, but PropertyData's endpoint is
   /valuation-sale, and it requires internal_area (sq ft), construction_date,
   bathrooms, finish_quality, outdoor_space, off_street_parking.
