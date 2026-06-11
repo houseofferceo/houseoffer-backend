@@ -234,7 +234,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .comp-table tr:last-child td { border-bottom: none; }
 .comp-table td.price { font-family: 'Lora', serif; font-weight: 600; color: var(--ink); }
 .comp-table td.date { color: var(--ink-light); font-size: 12px; white-space: nowrap; }
-.comp-table tr.blurred td { filter: blur(4px); user-select: none; pointer-events: none; }
+.comp-table tr.blurred td { filter: blur(2.5px); user-select: none; pointer-events: none; }
 .comp-table-footer { padding: 14px 22px 16px; border-top: 1px solid var(--sand-border); text-align: center; }
 .comp-table-cta { display: inline-block; background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 10px 22px; border-radius: 20px; text-decoration: none; margin-bottom: 8px; }
 .comp-table-cta:hover { background: var(--teal); }
@@ -405,7 +405,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div class="comp-table-footer" style="filter:blur(4px);user-select:none;pointer-events:none;">
         <div class="comp-table-hint">{{ comparables_count }} comparable sales used · all HPI-adjusted</div>
       </div>
-      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(247,243,237,0.78);backdrop-filter:blur(2px);padding:20px 16px;text-align:center;">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(247,243,237,0.62);backdrop-filter:blur(1px);padding:20px 16px;text-align:center;">
         <div style="font-size:22px;line-height:1;">&#128274;</div>
         <div style="font-family:'Lora',serif;font-size:15px;font-weight:700;color:var(--ink);">Your numbers are ready</div>
         <div style="font-size:13px;color:var(--ink-mid);max-width:300px;line-height:1.5;">All {{ comparables_count }} comparable sales plus your personalised offer range, calculated from 7 valuation methods</div>
@@ -584,7 +584,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div style="padding:16px 20px 0;overflow-x:auto;">
         <div style="min-width:500px;">
         <svg viewBox="0 0 680 288" style="width:100%;display:block;" role="img" aria-label="Football field valuation preview">
-          <defs><filter id="ffblur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="4.5"/></filter></defs>
+          <defs><filter id="ffblur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="2.5"/></filter></defs>
 
           <!-- Method labels (crisp) -->
           <text x="172" y="35" text-anchor="end" font-size="11" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Comparable sales (adj.)</text>
@@ -647,20 +647,20 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--sand-border);border-top:1px solid var(--sand-border);">
         <div style="background:var(--white);padding:14px 16px;text-align:center;">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Open with</div>
-          <div style="font-size:22px;font-weight:800;color:var(--teal);filter:blur(6px);user-select:none;">£385,000</div>
+          <div style="font-size:22px;font-weight:800;color:var(--teal);filter:blur(3px);user-select:none;">£385,000</div>
         </div>
         <div style="background:#f7faf8;padding:14px 16px;text-align:center;border-left:1px solid var(--sand-border);border-right:1px solid var(--sand-border);">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Target price</div>
-          <div style="font-size:22px;font-weight:800;color:var(--teal);filter:blur(6px);user-select:none;">£397,500</div>
+          <div style="font-size:22px;font-weight:800;color:var(--teal);filter:blur(3px);user-select:none;">£397,500</div>
         </div>
         <div style="background:var(--white);padding:14px 16px;text-align:center;">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Walk away above</div>
-          <div style="font-size:22px;font-weight:800;color:var(--red);filter:blur(6px);user-select:none;">£412,000</div>
+          <div style="font-size:22px;font-weight:800;color:var(--red);filter:blur(3px);user-select:none;">£412,000</div>
         </div>
       </div>
 
       <!-- Single overlay covering the entire chart + offer trio -->
-      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(247,243,237,0.72);backdrop-filter:blur(2px);">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(247,243,237,0.60);backdrop-filter:blur(1px);">
         <div style="font-size:22px;">🔒</div>
         <div style="font-size:15px;font-weight:700;color:var(--ink);text-align:center;">Your numbers are ready</div>
         <div style="font-size:13px;color:var(--ink-mid);text-align:center;max-width:260px;line-height:1.5;">Opening offer, target, and walk-away price calculated from 7 valuation methods</div>
