@@ -7,6 +7,22 @@ UK English. All prices GBP.
 
 ## Fixed
 
+### Front-end polish: buyer estimate in thousands, live progress page
+- Date: 2026-06-11
+- Buyer estimate ("what do you think it's worth"): users now type a simple
+  number. normalise_buyer_estimate in /submit treats anything under 10,000
+  as thousands (285 becomes 285,000; 285k, £285,000 and 285000 all accepted).
+  Stored with comma separators; anchor bias, the Google Sheet row and the
+  owner notification all use the full figure.
+- Generating page: the bare meta-refresh page is replaced by a CSS spinner
+  plus an animated checklist (listing, Land Registry, EPC, rents, valuation
+  models, writing report) so the build never looks frozen. JavaScript polls
+  the new /r/<id>/status JSON endpoint every 3 seconds and reloads the moment
+  the report is ready; a noscript meta refresh remains as a fallback.
+- Tested locally with the Flask test client: status endpoint (building, ready,
+  404 on missing id), building page served mid-build, and /submit storing
+  285 as 285,000 with anchor bias computed on the full figure.
+
 ### Walk-away price exceeded asking by £100k+ (WR2 5SG test)
 - Date: 2026-06-10
 - Symptom: Walk-away £528,000 vs asking £420,000 on a fairly-priced property.

@@ -1594,19 +1594,76 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
     threading.Thread(target=work, daemon=True).start()
 
 
-_BUILDING_PAGE = """<!doctype html>
-<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="4">
+def _building_page(report_id):
+    """Progress page shown while a report builds in the background. A spinner
+    and a step-by-step checklist reassure the user the page is not frozen;
+    JavaScript polls /r/<id>/status and reloads the moment the report is ready.
+    A <noscript> meta refresh covers browsers with JavaScript disabled."""
+    return """<!doctype html>
+<html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Generating your report…</title></head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-padding:80px 24px;text-align:center;color:#1a2b3c;">
-<h1 style="font-size:1.6rem;">Generating your report…</h1>
-<p style="color:#51606f;max-width:34rem;margin:16px auto;">We are gathering Land
-Registry sales, EPC records and live market data for this property. This page
-refreshes automatically and reports usually take under a minute.</p>
-<p style="color:#8a97a3;font-size:0.85rem;">Stuck for more than a couple of
-minutes? Refresh manually or re-submit the property link.</p>
-</body></html>"""
+<noscript><meta http-equiv="refresh" content="5"></noscript>
+<title>Generating your report…</title>
+<style>
+  body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+        padding:64px 24px;text-align:center;color:#1a2b3c;background:#f7f9fb;}
+  h1 {font-size:1.5rem;margin-bottom:8px;}
+  .sub {color:#51606f;max-width:30rem;margin:0 auto 32px;}
+  .spinner {width:44px;height:44px;margin:0 auto 28px;border-radius:50%;
+            border:4px solid #dbe4ec;border-top-color:#1a73e8;
+            animation:spin 0.9s linear infinite;}
+  @keyframes spin {to {transform:rotate(360deg);}}
+  ul.steps {list-style:none;padding:0;max-width:22rem;margin:0 auto;text-align:left;}
+  ul.steps li {padding:7px 0;color:#b0bac4;font-size:0.95rem;transition:color 0.4s;}
+  ul.steps li::before {content:"○";display:inline-block;width:1.5em;color:#cdd6de;}
+  ul.steps li.active {color:#1a2b3c;font-weight:600;}
+  ul.steps li.active::before {content:"●";color:#1a73e8;animation:pulse 1.2s ease-in-out infinite;}
+  ul.steps li.done {color:#51606f;}
+  ul.steps li.done::before {content:"✓";color:#1e9e5a;}
+  @keyframes pulse {50% {opacity:0.35;}}
+  .hint {color:#8a97a3;font-size:0.85rem;margin-top:32px;}
+</style></head>
+<body>
+<div class="spinner"></div>
+<h1>Generating your report…</h1>
+<p class="sub">We are pulling live data from several sources. This usually takes
+under a minute and the page will update by itself.</p>
+<ul class="steps" id="steps">
+  <li>Reading the property listing</li>
+  <li>Pulling Land Registry sold prices</li>
+  <li>Checking EPC records and floor area</li>
+  <li>Fetching local rents and market data</li>
+  <li>Running the valuation models</li>
+  <li>Writing your report</li>
+</ul>
+<p class="hint">Stuck for more than a couple of minutes? Refresh manually or
+re-submit the property link.</p>
+<script>
+(function () {
+  var steps = document.querySelectorAll("#steps li");
+  var i = 0;
+  steps[0].className = "active";
+  // Advance the checklist on a timer that roughly tracks the real build,
+  // holding on the last step until the report actually arrives.
+  var stepTimer = setInterval(function () {
+    if (i >= steps.length - 1) { clearInterval(stepTimer); return; }
+    steps[i].className = "done";
+    i += 1;
+    steps[i].className = "active";
+  }, 6000);
+  function poll() {
+    fetch("/r/__REPORT_ID__/status", {cache: "no-store"})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.status && d.status !== "building") { location.reload(); }
+        else { setTimeout(poll, 3000); }
+      })
+      .catch(function () { setTimeout(poll, 5000); });
+  }
+  setTimeout(poll, 3000);
+})();
+</script>
+</body></html>""".replace("__REPORT_ID__", report_id)
 
 
 def send_report_email(to_email, report_html, postcode, verdict, report_url=None):
@@ -1734,7 +1791,7 @@ def view_report(report_id):
         except Exception:
             pass
         if not stale:
-            return _BUILDING_PAGE
+            return _building_page(report_id)
         if stored.get("report"):
             stored["status"] = "ready"
         else:
@@ -1759,6 +1816,17 @@ def view_report(report_id):
     paid = stored.get("paid", False)
     template = "report_paid.html" if paid else "report_free.html"
     return render_template(template, report_url=report_url, report_id=report_id, **report)
+
+
+@app.route("/r/<report_id>/status")
+def report_status(report_id):
+    """Lightweight build-status poll used by the generating page."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"status": "not_found"}), 404
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"status": "not_found"}), 404
+    return jsonify({"status": stored.get("status", "ready")})
 
 
 @app.route("/r/<report_id>/select-address")
@@ -2323,12 +2391,33 @@ def report_data_json():
     )
     return jsonify(report)
 
+def normalise_buyer_estimate(raw):
+    """Buyers usually type shorthand like "285" or "285k" meaning £285,000.
+    Returns the estimate in pounds with thousands separators ("285,000"),
+    or "" if the input is not a number. Anything under 10,000 is treated
+    as thousands - no UK property sells for less than £10,000."""
+    s = str(raw or "").strip().lower().replace(",", "").replace("£", "").replace(" ", "")
+    if not s:
+        return ""
+    multiplier = 1
+    if s.endswith("k"):
+        s = s[:-1]
+        multiplier = 1000
+    try:
+        value = float(s) * multiplier
+    except ValueError:
+        return ""
+    if 0 < value < 10000:
+        value *= 1000
+    return f"{int(round(value)):,}"
+
+
 @app.route("/submit", methods=["POST"])
 def submit():
     data = request.get_json(silent=True) or request.form
     to_email      = data.get("email", "")
     property_url  = data.get("property-url", "") or data.get("property_url", "")
-    buyer_estimate = data.get("buyer_estimate", "")
+    buyer_estimate = normalise_buyer_estimate(data.get("buyer_estimate", ""))
     asking_price  = int(str(data.get("asking_price", 0) or 0).replace(",", "").replace("£", "")) or 0
     bedrooms      = data.get("bedrooms", "3")
     property_type = data.get("property_type", "semi-detached")
