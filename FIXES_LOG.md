@@ -126,6 +126,22 @@ UK English. All prices GBP.
   detached-houses case (returns None) and flat addresses.
 - Debug: /debug-epc-match?postcode=..&address=..&type=..&sqm=..&key=ADMIN
 
+### Non-market sales polluting the comparable set (B23 7DY case)
+- Date: 2026-06-11
+- Symptom: a £46,597 "sale" (69 Bleak Hill Road) appeared among 14
+  comparables averaging ~£243k, dragging the average and the verdict maths.
+  Land Registry includes partial transfers, right-to-buy and inter-family
+  transactions recorded at non-market values.
+- Fix: median band in _filter_sold - comparables outside 50%-200% of the
+  set's median price are excluded. Median chosen over mean because the
+  outlier cannot drag it. Band kept loose so it removes junk data without
+  shaping the genuine distribution (the legitimate £400k Marsh Hill sale
+  survives). Only applied to sets of 5+ comparables. The property's own
+  sale history (find_last_sale) is deliberately NOT filtered - a genuine
+  £46k right-to-buy purchase is still the property's real history.
+- Decision: absolute price floor (layer 1 of the proposal) not adopted -
+  user chose median band only.
+
 ---
 
 ## Parked ideas (come back to these)

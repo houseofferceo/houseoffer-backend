@@ -424,7 +424,18 @@ def _filter_sold(data, type_keys):
         return []
     try:
         transactions = data.get("data", {}).get("raw_data", [])
-        return [t for t in transactions if t.get("type") in type_keys and t.get("price") and t.get("price") < 2_000_000]
+        comps = [t for t in transactions if t.get("type") in type_keys and t.get("price") and t.get("price") < 2_000_000]
+        # Median band: exclude non-market transactions (partial transfers,
+        # right-to-buy, inter-family sales) that Land Registry records at
+        # far-from-market values. Anchored on the median, which an outlier
+        # cannot drag the way it drags the mean. Kept loose (50%-200%) so it
+        # removes junk data without shaping the genuine distribution.
+        if len(comps) >= 5:
+            prices = sorted(c["price"] for c in comps)
+            n = len(prices)
+            median = prices[n // 2] if n % 2 else (prices[n // 2 - 1] + prices[n // 2]) / 2
+            comps = [c for c in comps if 0.5 * median <= c["price"] <= 2.0 * median]
+        return comps
     except Exception:
         return []
 
