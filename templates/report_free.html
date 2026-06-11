@@ -18,10 +18,15 @@
 }
 body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; min-height: 100vh; }
 nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--sand-border); padding: 0 24px; position: sticky; top: 0; z-index: 100; }
-.nav-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 58px; }
+.nav-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 58px; gap: 12px; }
 .logo { font-family: 'Lora', serif; font-size: 20px; font-weight: 700; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 8px; }
-.logo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal-mid); display: inline-block; }
-.nav-tag { font-size: 12px; font-weight: 600; color: var(--teal); background: var(--teal-light); border: 1px solid var(--teal-border); padding: 4px 10px; border-radius: 20px; }
+.logo-mark { width: 28px; height: 28px; flex-shrink: 0; }
+.nav-tag { font-size: 12px; font-weight: 600; color: var(--teal); background: var(--teal-light); border: 1px solid var(--teal-border); padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
+.nav-share { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.nav-share-label { font-size: 11.5px; color: var(--ink-light); white-space: nowrap; }
+.nav-share-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; text-decoration: none; border: 1px solid var(--sand-border); background: var(--white); color: var(--ink-mid); cursor: pointer; white-space: nowrap; }
+.nav-share-btn:hover { border-color: var(--teal-border); color: var(--teal); }
+@media (max-width: 480px) { .nav-share-label { display: none; } }
 .wrapper { max-width: 720px; margin: 0 auto; padding: 36px 24px 80px; }
 
 .report-header { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 28px 28px 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
@@ -246,8 +251,21 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 
 <nav>
   <div class="nav-inner">
-    <a href="https://houseoffer.netlify.app" class="logo"><span class="logo-dot"></span>HouseOffer</a>
+    <a href="https://houseoffer.netlify.app" class="logo">
+      <!-- HouseOffer logo mark: house silhouette with teal roof -->
+      <svg class="logo-mark" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect width="28" height="28" rx="7" fill="#1a6b5a"/>
+        <path d="M14 6L5 13.5V22h5.5v-5h7v5H23V13.5L14 6Z" fill="white"/>
+        <rect x="11.5" y="17" width="5" height="5" rx="1" fill="#1a6b5a"/>
+      </svg>
+      HouseOffer
+    </a>
     <span class="nav-tag">Free Report</span>
+    <div class="nav-share">
+      <span class="nav-share-label">Share this tool</span>
+      <a href="https://wa.me/?text=Free%20tool%20to%20check%20if%20a%20property%20is%20overpriced%20%E2%80%94%20uses%20real%20Land%20Registry%20data%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" class="nav-share-btn">WhatsApp</a>
+      <button onclick="navigator.clipboard.writeText('https://houseoffer.uk');this.textContent='Copied!';" class="nav-share-btn">Copy link</button>
+    </div>
   </div>
 </nav>
 
@@ -262,16 +280,6 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div class="meta-pill">🏷️ Asking price: <strong>&nbsp;{{ asking_price_formatted }}</strong></div>
       <div class="meta-pill">🏠 {{ property_type|title }}</div>
       <div class="meta-pill">🛏️ {{ bedrooms }} bedrooms</div>
-    </div>
-  </div>
-
-  <!-- ─── SHARE BAR (top) ─── -->
-  <div style="background:var(--white);border:1px solid var(--sand-border);border-radius:12px;padding:12px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;box-shadow:var(--shadow-sm);">
-    <div style="font-size:13px;font-weight:600;color:var(--ink);">Know someone buying a home? Share this free report tool.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <a href="https://wa.me/?text=I%20used%20HouseOffer%20to%20check%20if%20a%20property%20was%20fairly%20priced%20%E2%80%94%20it%27s%20free%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#25D366;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;text-decoration:none;">WhatsApp</a>
-      <a href="https://twitter.com/intent/tweet?text=Free%20tool%20to%20check%20if%20a%20property%20is%20overpriced%20before%20you%20make%20an%20offer%20%E2%80%94%20uses%20real%20Land%20Registry%20data%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#000;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;text-decoration:none;">X / Twitter</a>
-      <button onclick="navigator.clipboard.writeText('https://houseoffer.uk');this.textContent='Copied!';" style="display:inline-flex;align-items:center;gap:5px;background:var(--sand-border);color:var(--ink);font-size:12px;font-weight:700;padding:6px 12px;border-radius:20px;border:none;cursor:pointer;">Copy link</button>
     </div>
   </div>
 
