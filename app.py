@@ -2415,42 +2415,33 @@ def normalise_buyer_estimate(raw):
 @app.route("/submit", methods=["POST"])
 def submit():
     data = request.get_json(silent=True) or request.form
-    to_email      = data.get("email", "")
-    property_url  = data.get("property-url", "") or data.get("property_url", "")
+    to_email       = data.get("email", "")
+    property_url   = data.get("property-url", "") or data.get("property_url", "")
     buyer_estimate = normalise_buyer_estimate(data.get("buyer_estimate", ""))
-    asking_price  = int(str(data.get("asking_price", 0) or 0).replace(",", "").replace("£", "")) or 0
-    bedrooms      = data.get("bedrooms", "3")
-    property_type = data.get("property_type", "semi-detached")
-    postcode      = data.get("postcode", "")
-    address       = data.get("address", "")
+    # These may be pre-filled by the frontend; the scraper will override with
+    # live values if it finds better data.
+    asking_price   = int(str(data.get("asking_price", 0) or 0).replace(",", "").replace("£", "")) or 0
+    bedrooms       = data.get("bedrooms", "3")
+    property_type  = data.get("property_type", "semi-detached")
+    postcode       = data.get("postcode", "")
+    address        = data.get("address", "")
     floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None
 
     if not to_email:
         return jsonify({"error": "Email address required"}), 400
-
     if not property_url:
         return jsonify({"error": "Property link required"}), 400
-
     if "rightmove.co.uk" not in property_url.lower():
         return jsonify({"error": "We currently support Rightmove links only. Zoopla support coming soon."}), 400
 
-    # Dedup: silently ignore duplicate submissions within 60s window
+    # Dedup on email + URL before we do any slow work
     if _is_duplicate_submission(to_email, property_url):
         print(f"DUPLICATE submission blocked: {to_email} | {property_url[:80]}")
         return jsonify({"status": "sent", "deduped": True})
 
-    postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
-        property_url, postcode, asking_price, bedrooms, property_type, address
-    )
-
-    if not postcode:
-        return jsonify({"error": "Could not determine postcode from that link. Try a UK sale listing on Rightmove or Zoopla."}), 400
-    if not asking_price:
-        return jsonify({"error": "Could not determine asking price from that link. Use a for-sale listing (not to-rent)."}), 400
-
-    # Assign the report ID now so we can return it immediately; the actual
-    # build runs in a background thread to avoid Render's 30-second HTTP timeout.
-    report_id = uuid.uuid4().hex[:12]
+    # Return immediately so Render's 30-second proxy timeout is never reached.
+    # Everything else (scraping, report build, email, Sheets) runs in a daemon thread.
+    report_id  = uuid.uuid4().hex[:12]
     report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
     created_at = datetime.utcnow().isoformat() + "Z"
 
@@ -2464,83 +2455,77 @@ def submit():
         "paid": False,
     })
 
-    # Capture loop variables for the thread closure
     _url = property_url
-    _ap = asking_price
-    _br = bedrooms
-    _pt = property_type
-    _pc = postcode
-    _fa = floor_area_sqm
-    _ad = address
-    _ex = dict(extra)
-    _be = buyer_estimate
+    _ap  = asking_price
+    _br  = bedrooms
+    _pt  = property_type
+    _pc  = postcode
+    _fa  = floor_area_sqm
+    _ad  = address
+    _be  = buyer_estimate
     _rid = report_id
-    _ru = report_url
-    _email = to_email
+    _ru  = report_url
+    _em  = to_email
 
     def _build():
         try:
+            pc, ap, br, pt, ad, extra = merge_scraped_listing(
+                _url, _pc, _ap, _br, _pt, _ad
+            )
+            if not pc:
+                raise ValueError("Could not determine postcode from that link.")
+            if not ap:
+                raise ValueError("Could not determine asking price from that link.")
+
             report = build_report_data(
                 property_url=_url,
-                asking_price=_ap,
-                bedrooms=_br,
-                property_type=_pt,
-                postcode=_pc,
+                asking_price=ap,
+                bedrooms=br,
+                property_type=pt,
+                postcode=pc,
                 floor_area_sqm=_fa,
-                address=_ad,
+                address=ad,
                 tier="free",
-                **_ex,
+                **extra,
             )
 
             anchor_bias = None
             if _be and report.get("local_avg_sold"):
                 try:
-                    est = int(str(_be).replace(",", "").replace("£", "").replace(" ", ""))
+                    est   = int(str(_be).replace(",", "").replace("£", "").replace(" ", ""))
                     local = report["local_avg_sold"]
                     anchor_bias = round(((est - local) / local) * 100, 1)
                 except Exception:
                     pass
 
             stored = load_report(_rid) or {}
-            stored.update({
-                "status": "ready",
-                "report": report,
-                "buyer_estimate": _be,
-                "anchor_bias": anchor_bias,
-            })
+            stored.update({"status": "ready", "report": report,
+                           "buyer_estimate": _be, "anchor_bias": anchor_bias})
             save_report(_rid, stored)
 
             post_to_sheets({
                 "type": "submission",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
-                "uuid": _rid,
-                "email": _email,
+                "uuid": _rid, "email": _em,
                 "postcode": report["postcode"],
                 "property_type": report["property_type"],
-                "asking_price": _ap,
-                "verdict": report["verdict"],
-                "buyer_estimate": _be or "",
-                "anchor_bias": anchor_bias,
-                "property_url": _url,
-                "report_url": _ru,
+                "asking_price": ap, "verdict": report["verdict"],
+                "buyer_estimate": _be or "", "anchor_bias": anchor_bias,
+                "property_url": _url, "report_url": _ru,
             })
-
             log_event(_rid, "submission_created", {
-                "email": _email,
-                "postcode": report["postcode"],
-                "verdict": report["verdict"],
-                "asking_price": _ap,
+                "email": _em, "postcode": report["postcode"],
+                "verdict": report["verdict"], "asking_price": ap,
                 "anchor_bias": anchor_bias,
             })
-
             try:
                 email_html = render_template("report_email.html", report_url=_ru, **report)
-                send_report_email(_email, email_html, report["postcode"], report["verdict"], report_url=_ru)
-                notify_owner(_email, _url, report["postcode"], report["verdict"], _be, anchor_bias)
+                send_report_email(_em, email_html, report["postcode"], report["verdict"], report_url=_ru)
+                notify_owner(_em, _url, report["postcode"], report["verdict"], _be, anchor_bias)
             except Exception as e:
                 print(f"Email error in background build ({_rid}): {e}")
         except Exception as exc:
-            print(f"Background submit build error ({_rid}): {exc}")
+            print(f"Background submit error ({_rid}): {exc}")
             stored = load_report(_rid) or {}
             stored["status"] = "failed"
             stored["error"] = str(exc)
@@ -2548,11 +2533,10 @@ def submit():
 
     threading.Thread(target=_build, daemon=True).start()
 
-    return jsonify({
-        "status": "building",
-        "report_id": report_id,
-        "report_url": report_url,
-    })
+    # Return "sent" so existing frontend code that checks status === "sent" keeps working.
+    # The report is still building; the user is redirected to report_url which shows
+    # the generating page until the background thread marks status="ready".
+    return jsonify({"status": "sent", "report_id": report_id, "report_url": report_url})
 
 
 if __name__ == "__main__":
