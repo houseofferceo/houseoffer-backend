@@ -2207,6 +2207,8 @@ def debug_scrape_dates():
 
 @app.route("/debug-sold")
 def debug_sold():
+    if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
     postcode = request.args.get("postcode", "WD4 9EW")
     address = request.args.get("address", "")
     property_type = request.args.get("type", "semi-detached")
@@ -2217,16 +2219,26 @@ def debug_sold():
     district_data = fetch_sold_prices(district)
     full_raw = full_data.get("data", {}).get("raw_data", []) if full_data else []
     district_raw = district_data.get("data", {}).get("raw_data", []) if district_data else []
+    sparql_raw = _fetch_land_registry_direct(postcode)
     last_sale = find_last_sale(postcode, address=address or None)
+    candidates = get_last_sale_candidates(postcode)
+    hpi = None
+    if last_sale:
+        region = postcode_to_region(postcode)
+        hpi = calculate_hpi_adjustment(last_sale["price"], last_sale["date"], region)
     return jsonify({
         "postcode": formatted,
         "district": district,
         "address_used": address or None,
+        "sparql_count": len(sparql_raw),
+        "sparql_sample": sparql_raw[:5],
         "full_postcode_total": len(full_raw),
         "full_matching_type": len([t for t in full_raw if t.get("type") in type_keys]),
         "district_matching_type": len([t for t in district_raw if t.get("type") in type_keys]),
         "last_sale_found": last_sale,
-        "all_sales_at_postcode": full_raw[:5],
+        "candidates_count": len(candidates),
+        "candidates": candidates[:10],
+        "hpi_adjustment": hpi,
     })
 
 @app.route("/debug-psqf")
