@@ -1047,7 +1047,14 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                 n_raw = len(raw_prices)
                 q1_raw = max(0, n_raw // 4)
                 q3_raw = min(n_raw - 1, n_raw - n_raw // 4)
-                raw_avg_sold = round(sum(raw_prices) / n_raw)
+                # Interquartile mean, matching the HPI-adjusted row's midpoint
+                # method, so the difference between the two rows is purely the
+                # HPI adjustment rather than a change of averaging method
+                if n_raw >= 5:
+                    trimmed = raw_prices[q1_raw:n_raw - q1_raw]
+                    raw_avg_sold = round(sum(trimmed) / len(trimmed))
+                else:
+                    raw_avg_sold = round(sum(raw_prices) / n_raw)
                 methods.append(_method_dict(
                     "Comparable sales (unadjusted)", raw_prices[q1_raw], raw_prices[q3_raw], raw_avg_sold,
                     "HM Land Registry (no HPI adjustment)", True, weight=1
