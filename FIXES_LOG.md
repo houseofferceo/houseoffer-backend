@@ -184,7 +184,10 @@ UK English. All prices GBP.
 - Likely cause: EPC floor-area lookup failing for the subject (same
   street-only address problem, or no EPC record). Not yet diagnosed.
 
-### 3. Rental yield shows n/a (FIX SHIPPED - awaiting live test)
+### 3. Rental yield shows n/a (WORKING - live test passed on B23 7DY)
+- Live test 2026-06-11: raw response confirms unit "gbp_per_week" and the
+  average at data.long_let.average (£286/week). Parsed monthly rent
+  £1,239 - realistic for a 3-bed semi in Erdington. Closed.
 - Root cause (two bugs): PropertyData /rents returns rents PER WEEK (docs:
   "multiply by 4.333" for monthly) but our code treated the value as
   monthly; and the average is nested under data.long_let.average while our
