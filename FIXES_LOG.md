@@ -142,6 +142,45 @@ UK English. All prices GBP.
 - Decision: absolute price floor (layer 1 of the proposal) not adopted -
   user chose median band only.
 
+### Report tiering + background paid builds + parallel fetching
+- Date: 2026-06-11
+- Why: paid report builds grew past gunicorn's default 30-second request
+  timeout (Procfile had no --timeout flag), killing the worker mid-request -
+  this was the "NetworkError when attempting to fetch resource". Free reports
+  were also burning paid-tier PropertyData credits on every submission.
+- build_report_data now takes tier="free"|"paid":
+  - free: scrape, sold comparables + HPI maths, days on market,
+    asking-to-sold. Roughly 4-5 external calls. EPC, SPARQL last sale,
+    £/sqf, rents and AVM are skipped, so those methods show n/a and the
+    candidates dropdown does not appear on free reports.
+  - paid: everything. Independent calls run in parallel via
+    ThreadPoolExecutor (stdlib, no new packages) in two phases: phase 1
+    (comparables, EPC resolution, £/sqf, rents), phase 2 after those resolve
+    (avg DOM, asking-to-sold, AVM, last sale). Wall time is roughly the
+    slowest call per phase instead of the sum; mocked timing test shows
+    8 x 0.5s calls completing in 1.0s.
+- Paid builds run in a background thread: /preview-paid returns a redirect to
+  /r/<id> immediately, which serves a self-refreshing "generating" page until
+  the stored status flips to ready (or shows the error if the build failed).
+  Builds stuck over 5 minutes fall back to the previous report data when
+  rebuilding, or a failure page for fresh builds.
+- /r/<id>/select-address and /admin/unlock now rebuild in the background too.
+  Unlocking a free-tier report triggers a paid-tier rebuild automatically.
+- Rental yield method now uses the prefetched full-postcode rent (the
+  district-postcode bug fix carried over into the parallel phase).
+- /api/report-data defaults to free tier; paid tier requires the admin key
+  (the endpoint is public and paid tier burns credits). /debug-report is now
+  admin-key protected for the same reason and accepts &tier=.
+- Procfile: gunicorn --timeout 120 --threads 4 (threads let the generating
+  page polls be served while a build request is in flight; this is repo
+  config, not Render dashboard config).
+- EPC register calls are wrapped so a network failure there can no longer
+  500 a report build (previously get_floor_area_from_epc could propagate).
+- Verified with 48 mocked tests: tier separation (free makes zero paid-only
+  calls), parallel timing, preview-paid end to end, failed-build page,
+  select-address rebuild, unlock rebuild, stale-build fallback, both
+  templates rendering free-tier data.
+
 ---
 
 ## Parked ideas (come back to these)

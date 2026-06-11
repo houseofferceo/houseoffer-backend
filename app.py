@@ -5,7 +5,9 @@ import time
 import uuid
 import base64
 import hashlib
+import threading
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime
@@ -401,6 +403,32 @@ def epc_cross_match(postcode, address=None, property_type=None, floor_area_sqm=N
         "certificate_number": m["summary"].get("certificateNumber"),
     }
 
+def _epc_resolution(postcode, address, property_type, floor_area_sqm):
+    """Resolve the full address (EPC cross-match, when the listing address has no
+    house number) and the floor area from the EPC register, as one unit of work
+    so it can run in parallel with other fetches.
+    Returns (resolved_address, confidence, floor_area_sqm); any element may be
+    None. EPC data is best-effort - network errors never propagate."""
+    resolved = None
+    confidence = None
+    try:
+        if address and not _leading_house_number(address):
+            xm = epc_cross_match(postcode, address, property_type, floor_area_sqm)
+            if xm and xm.get("address"):
+                resolved = xm["address"]
+                confidence = xm["confidence"]
+                if not floor_area_sqm and xm.get("floor_area_sqm"):
+                    floor_area_sqm = xm["floor_area_sqm"]
+    except Exception as e:
+        print(f"EPC cross-match error: {e}")
+    if not floor_area_sqm:
+        try:
+            floor_area_sqm = get_floor_area_from_epc(postcode, resolved or address)
+        except Exception as e:
+            print(f"EPC floor-area error: {e}")
+    return resolved, confidence, floor_area_sqm
+
+
 def fetch_sold_prices(postcode):
     try:
         r = requests.get(
@@ -750,16 +778,24 @@ def _hpi_month_offset(year_month: str, months: int) -> str:
         return year_month
 
 
-def get_psqm_benchmarks(postcode, property_type, floor_area_sqm=None):
+def fetch_psqf_points(postcode, property_type):
+    """Fetch and parse sold £/sqf records for the area: full postcode first,
+    district fallback. Returns a list of points (possibly empty)."""
+    type_keys = normalise_type_listings(property_type)
+    points = _psqf_points(fetch_sold_psqf(format_postcode(postcode)), type_keys)
+    if not points:
+        points = _psqf_points(fetch_sold_psqf(district_postcode(postcode)), type_keys)
+    return points
+
+
+def get_psqm_benchmarks(postcode, property_type, floor_area_sqm=None, points=None):
     """Return both sold £/sqm benchmarks:
       - area_wide_psqm: all comparable-type homes
       - size_matched_psqm: homes within ±20% of subject floor area (only if >=3, else None)
-    Size-matched is the accurate like-for-like; area-wide is broad market context."""
-    type_keys = normalise_type_listings(property_type)
-    formatted = format_postcode(postcode)
-    points = _psqf_points(fetch_sold_psqf(formatted), type_keys)
-    if not points:
-        points = _psqf_points(fetch_sold_psqf(district_postcode(postcode)), type_keys)
+    Size-matched is the accurate like-for-like; area-wide is broad market context.
+    Pass prefetched `points` (from fetch_psqf_points) to avoid refetching."""
+    if points is None:
+        points = fetch_psqf_points(postcode, property_type)
     if not points:
         return {"area_wide_psqm": None, "size_matched_psqm": None, "size_matched_count": 0}
 
@@ -991,10 +1027,103 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       postcode, floor_area_sqm=None, address=None,
                       scraper_days_on_market=None, scraper_floor_area_sqm=None,
                       price_reduced=False, original_asking_price=None,
-                      reduction_date=None, reduction_amount=None, reduction_pct=None):
+                      reduction_date=None, reduction_amount=None, reduction_pct=None,
+                      tier="paid"):
+    """Build the full report payload.
+    tier="free": cheap, fast calls only - comparables, HPI maths, days on market,
+      asking-to-sold. EPC, SPARQL last sale, £/sqf, rents and AVM are skipped,
+      so those methods show n/a.
+    tier="paid": everything, with independent external calls run in parallel."""
+    paid_tier = tier != "free"
     formatted = format_postcode(postcode)
     region = postcode_to_region(postcode)
-    comparables, postcode_used, broadened = get_sold_comparables(postcode, property_type)
+
+    if not floor_area_sqm and scraper_floor_area_sqm:
+        floor_area_sqm = scraper_floor_area_sqm
+
+    # ── DATA GATHERING ──────────────────────────────────────────────────────────
+    # Independent external calls run in parallel: wall time becomes roughly the
+    # slowest call rather than the sum of all of them. Phase 1 needs only the
+    # raw listing inputs; phase 2 needs phase 1 outputs (postcode_used from the
+    # comparables broadening, address/floor area from the EPC resolution).
+    monthly_rent = None
+    avm = None
+    discount_pct = None
+    local_avg_dom = None
+    resolved_address = None
+    address_resolution = None
+    last_sale = None
+    psqf_points = []
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        fut_comps = pool.submit(get_sold_comparables, postcode, property_type)
+        fut_epc = fut_psqf = fut_rents = None
+        if paid_tier:
+            if EPC_API_KEY:
+                fut_epc = pool.submit(_epc_resolution, postcode, address,
+                                      property_type, floor_area_sqm)
+            fut_psqf = pool.submit(fetch_psqf_points, postcode, property_type)
+            fut_rents = pool.submit(fetch_avg_rents, formatted, property_type, bedrooms)
+
+        comparables, postcode_used, broadened = fut_comps.result()
+
+        fut_dom = pool.submit(fetch_avg_dom, postcode_used)
+        fut_ratio = pool.submit(fetch_asking_sold_ratio, postcode_used, property_type)
+
+        if fut_epc is not None:
+            try:
+                epc_resolved, epc_confidence, epc_area = fut_epc.result()
+                if epc_resolved:
+                    resolved_address = epc_resolved
+                    address = epc_resolved
+                    address_resolution = epc_confidence
+                if not floor_area_sqm and epc_area:
+                    floor_area_sqm = epc_area
+            except Exception as e:
+                print(f"EPC resolution error: {e}")
+
+        fut_avm = fut_last = None
+        if paid_tier:
+            fut_avm = pool.submit(fetch_propertydata_avm, postcode_used,
+                                  property_type, bedrooms, floor_area_sqm)
+            fut_last = pool.submit(find_last_sale, postcode, address)
+
+        if fut_psqf is not None:
+            try:
+                psqf_points = fut_psqf.result() or []
+            except Exception as e:
+                print(f"psqf fetch error: {e}")
+
+        if fut_rents is not None:
+            try:
+                monthly_rent = fut_rents.result()
+            except Exception as e:
+                print(f"rents fetch error: {e}")
+
+        if fut_avm is not None:
+            try:
+                avm = fut_avm.result()
+            except Exception as e:
+                print(f"AVM fetch error: {e}")
+
+        if fut_last is not None:
+            try:
+                last_sale = fut_last.result()
+            except Exception as e:
+                print(f"last sale lookup error: {e}")
+
+        try:
+            local_avg_dom = fut_dom.result()
+        except Exception as e:
+            print(f"avg dom fetch error: {e}")
+
+        try:
+            discount_pct = fut_ratio.result()
+        except Exception as e:
+            print(f"asking-sold ratio fetch error: {e}")
+
+    # ── DERIVED VALUES (all local computation from here) ────────────────────────
+
     local_avg_sold = avg_sold_price(comparables)
 
     sold_diff_pct = None
@@ -1003,42 +1132,17 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         sold_diff_pct = round(((asking_price - local_avg_sold) / local_avg_sold) * 100, 1)
         sold_verdict = "overpriced" if sold_diff_pct > 8 else ("value" if sold_diff_pct < -5 else "fair")
 
-    if not floor_area_sqm and scraper_floor_area_sqm:
-        floor_area_sqm = scraper_floor_area_sqm
-
-    # EPC cross-match: when the listing address has no house number, try to identify
-    # the property from its attributes (street, type, floor area). A unique confident
-    # match resolves the full address, which then drives the HPI last sale matcher
-    # and the floor-area lookup. Ambiguity means we leave the address as-is.
-    resolved_address = None
-    address_resolution = None
-    if EPC_API_KEY and address and not _leading_house_number(address):
-        try:
-            xm = epc_cross_match(postcode, address, property_type, floor_area_sqm)
-            if xm and xm.get("address"):
-                resolved_address = xm["address"]
-                address = resolved_address
-                address_resolution = xm["confidence"]
-                if not floor_area_sqm and xm.get("floor_area_sqm"):
-                    floor_area_sqm = xm["floor_area_sqm"]
-        except Exception as e:
-            print(f"EPC cross-match error: {e}")
-
-    if not floor_area_sqm and EPC_API_KEY:
-        floor_area_sqm = get_floor_area_from_epc(postcode, address)
-
     asking_psqm = local_avg_psqm = psqm_diff_pct = psqm_verdict = None
     size_matched_psqm = area_wide_psqm = None
     size_matched_count = 0
     psqm_basis = None
     psqm_implied_value = None
 
-    # Always fetch psqf data — needed for comparables enrichment even without subject floor area
-    benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm)
+    benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm,
+                                     points=psqf_points)
     size_matched_psqm = benchmarks["size_matched_psqm"]
     area_wide_psqm = benchmarks["area_wide_psqm"]
     size_matched_count = benchmarks["size_matched_count"]
-    psqf_points = benchmarks.get("psqf_points", [])
 
     # Build address lookup from psqf records for comparables enrichment
     psqf_lookup = {}
@@ -1061,19 +1165,18 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             psqm_diff_pct = round(((asking_psqm - local_avg_psqm) / local_avg_psqm) * 100, 1)
             psqm_verdict = "overpriced" if psqm_diff_pct > 8 else ("value" if psqm_diff_pct < -5 else "fair")
 
-    # HPI-adjusted last sale
+    # HPI-adjusted last sale (last_sale fetched in the parallel phase, paid only)
     hpi_adjustment = None
     hpi_adjusted_value = None
     last_sale_candidates = []
     try:
-        last_sale = find_last_sale(postcode, address=address)
         if last_sale:
             hpi_adjustment = calculate_hpi_adjustment(
                 last_sale["price"], last_sale["date"], region
             )
             if hpi_adjustment:
                 hpi_adjusted_value = hpi_adjustment["adjusted_price"]
-        else:
+        elif paid_tier:
             # No confident match — build candidates list for dropdown
             try:
                 last_sale_candidates = get_last_sale_candidates(postcode)
@@ -1082,8 +1185,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     except Exception as e:
         print(f"HPI section error: {e}")
 
-    # Days on market: try PropertyData first, fall back to scraper
-    local_avg_dom = fetch_avg_dom(postcode_used)
+    # Days on market: local average fetched in the parallel phase
     days_on_market = scraper_days_on_market
     dom_signal = None
     if days_on_market and local_avg_dom:
@@ -1220,18 +1322,13 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     else:
         methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index", False))
 
-    # Method 5: Online estimate (AVM via PropertyData)
-    try:
-        avm = fetch_propertydata_avm(postcode_used, property_type, bedrooms, floor_area_sqm)
-        if avm:
-            methods.append(_method_dict(
-                "Automated valuation", avm["low"], avm["high"], avm["mid"],
-                "Automated valuation model", True
-            ))
-        else:
-            methods.append(_method_dict("Automated valuation", 0, 0, 0, "Automated valuation model", False))
-    except Exception as e:
-        print(f"Method 5 error: {e}")
+    # Method 5: Online estimate (AVM, fetched in the parallel phase, paid only)
+    if avm:
+        methods.append(_method_dict(
+            "Automated valuation", avm["low"], avm["high"], avm["mid"],
+            "Automated valuation model", True
+        ))
+    else:
         methods.append(_method_dict("Automated valuation", 0, 0, 0, "Automated valuation model", False))
 
     # Method 6: Lender valuation band
@@ -1248,16 +1345,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     else:
         methods.append(_method_dict("Lender valuation band", 0, 0, 0, "Estimated lender valuation", False))
 
-    # Method 6b: Rental yield implied value
-    # Gross yield for UK residential typically 4-6%; we use 5% as target yield
+    # Method 6b: Rental yield implied value (rent fetched in the parallel phase
+    # using the FULL postcode - the broadened district postcode breaks /rents).
+    # Gross yield for UK residential typically 4-6%; we use 5% as target yield.
     # Implied value = annual_rent / target_yield
     TARGET_GROSS_YIELD = 0.05
     try:
-        # Use the FULL postcode, not postcode_used: comparables may have
-        # broadened to the district (e.g. "MK13"), which format_postcode
-        # mangles and /rents rejects. The rents endpoint radiuses out from
-        # a point, so the full postcode always gives the best answer.
-        monthly_rent = fetch_avg_rents(format_postcode(postcode), property_type, bedrooms)
         if monthly_rent and monthly_rent > 100:
             annual_rent = monthly_rent * 12
             # Range: 4% yield (higher value) to 6% yield (lower value)
@@ -1274,9 +1367,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         print(f"Method 6b error: {e}")
         methods.append(_method_dict("Rental yield implied value", 0, 0, 0, "PropertyData avg rents", False, weight=1))
 
-    # Method 7: Asking-to-sold discount
+    # Method 7: Asking-to-sold discount (ratio fetched in the parallel phase)
     try:
-        discount_pct = fetch_asking_sold_ratio(postcode_used, property_type)
         is_national_fallback = False
         if discount_pct is None:
             discount_pct = 4.5
@@ -1419,7 +1511,103 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "chart_price_max": chart_price_max,
         "generated": datetime.now().strftime("%-d %B %Y"),
         "property_url": property_url,
+        "tier": tier,
     }
+
+# ── BACKGROUND REPORT BUILDS ──────────────────────────────────────────────────
+# Paid-tier builds make many external calls and can exceed the request timeout,
+# so they run in a daemon thread and store the result; /r/<id> serves a
+# self-refreshing "generating" page until the stored status flips to ready.
+
+def _now_iso():
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _start_paid_build_from_url(report_id, property_url, address_override=None):
+    """Spawn a background thread: scrape the listing, build the paid-tier report
+    and store it under report_id. Failures are recorded on the stored report."""
+    def work():
+        try:
+            postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
+                property_url, "", 0, "3", "semi-detached", ""
+            )
+            if not postcode:
+                raise ValueError("Could not determine the postcode from that listing")
+            if address_override:
+                address = address_override
+            report = build_report_data(
+                property_url=property_url,
+                asking_price=asking_price,
+                bedrooms=bedrooms,
+                property_type=property_type,
+                postcode=postcode,
+                floor_area_sqm=None,
+                address=address,
+                tier="paid",
+                **extra,
+            )
+            stored = load_report(report_id) or {}
+            stored.update({"report": report, "status": "ready", "paid": True})
+            save_report(report_id, stored)
+        except Exception as e:
+            print(f"Background build error ({report_id}): {e}")
+            stored = load_report(report_id) or {}
+            stored.update({"status": "failed", "error": str(e)})
+            save_report(report_id, stored)
+    threading.Thread(target=work, daemon=True).start()
+
+
+def _start_rebuild(report_id, stored, address=None, tier="paid"):
+    """Spawn a background thread that rebuilds an existing stored report (after
+    an address selection or a paid unlock). On failure the previous report data
+    is kept and served rather than a dead page."""
+    report = stored.get("report", {})
+    def work():
+        try:
+            new_report = build_report_data(
+                property_url=stored.get("property_url", "") or report.get("property_url", ""),
+                asking_price=report.get("asking_price"),
+                bedrooms=report.get("bedrooms", "3"),
+                property_type=report.get("property_type", "semi-detached"),
+                postcode=report.get("postcode", ""),
+                floor_area_sqm=report.get("floor_area_sqm"),
+                address=address or stored.get("selected_address"),
+                scraper_days_on_market=report.get("days_on_market"),
+                price_reduced=report.get("price_reduced", False),
+                original_asking_price=report.get("original_asking_price"),
+                reduction_date=report.get("reduction_date"),
+                reduction_amount=report.get("reduction_amount"),
+                reduction_pct=report.get("reduction_pct"),
+                tier=tier,
+            )
+            latest = load_report(report_id) or {}
+            latest["report"] = new_report
+            latest["status"] = "ready"
+            if address:
+                latest["selected_address"] = address
+            save_report(report_id, latest)
+        except Exception as e:
+            print(f"Report rebuild error ({report_id}): {e}")
+            latest = load_report(report_id) or {}
+            latest["status"] = "ready"
+            save_report(report_id, latest)
+    threading.Thread(target=work, daemon=True).start()
+
+
+_BUILDING_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="4">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generating your report…</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+padding:80px 24px;text-align:center;color:#1a2b3c;">
+<h1 style="font-size:1.6rem;">Generating your report…</h1>
+<p style="color:#51606f;max-width:34rem;margin:16px auto;">We are gathering Land
+Registry sales, EPC records and live market data for this property. This page
+refreshes automatically and reports usually take under a minute.</p>
+<p style="color:#8a97a3;font-size:0.85rem;">Stuck for more than a couple of
+minutes? Refresh manually or re-submit the property link.</p>
+</body></html>"""
+
 
 def send_report_email(to_email, report_html, postcode, verdict, report_url=None):
     """Send the user their report. The HTML should already be email-safe (report_email.html)."""
@@ -1533,6 +1721,34 @@ def view_report(report_id):
                 "<p><a href='https://houseoffer.netlify.app'>Generate a new report →</a></p>"
                 "</body></html>", 404)
 
+    # Background builds: serve the self-refreshing page until ready. Builds older
+    # than 5 minutes are presumed dead (worker restart) - fall back to the previous
+    # report data if there is any, otherwise mark failed.
+    status = stored.get("status", "ready")
+    if status == "building":
+        started = stored.get("build_started_at") or stored.get("created_at") or ""
+        stale = False
+        try:
+            t0 = datetime.fromisoformat(started.replace("Z", ""))
+            stale = (datetime.utcnow() - t0).total_seconds() > 300
+        except Exception:
+            pass
+        if not stale:
+            return _BUILDING_PAGE
+        if stored.get("report"):
+            stored["status"] = "ready"
+        else:
+            stored["status"] = "failed"
+            stored.setdefault("error", "Report build timed out")
+        save_report(report_id, stored)
+        status = stored["status"]
+    if status == "failed":
+        return ("<html><body style='font-family:sans-serif;padding:60px;text-align:center;'>"
+                "<h1>Sorry, we could not build this report</h1>"
+                f"<p style='color:#51606f;'>{stored.get('error', 'Unknown error')}</p>"
+                "<p><a href='https://houseoffer.netlify.app'>Try again →</a></p>"
+                "</body></html>", 500)
+
     log_event(report_id, "report_viewed", {
         "user_agent": request.headers.get("User-Agent", "")[:200],
         "referer": request.headers.get("Referer", "")[:200],
@@ -1563,28 +1779,14 @@ def select_address(report_id):
     if not chosen or chosen not in {c.get("address") for c in candidates}:
         return redirect(f"/r/{report_id}")
 
-    try:
-        new_report = build_report_data(
-            property_url=stored.get("property_url", ""),
-            asking_price=report.get("asking_price"),
-            bedrooms=report.get("bedrooms", "3"),
-            property_type=report.get("property_type", "semi-detached"),
-            postcode=report.get("postcode", ""),
-            floor_area_sqm=report.get("floor_area_sqm"),
-            address=chosen,
-            scraper_days_on_market=report.get("days_on_market"),
-            price_reduced=report.get("price_reduced", False),
-            original_asking_price=report.get("original_asking_price"),
-            reduction_date=report.get("reduction_date"),
-            reduction_amount=report.get("reduction_amount"),
-            reduction_pct=report.get("reduction_pct"),
-        )
-        stored["report"] = new_report
-        stored["selected_address"] = chosen
-        save_report(report_id, stored)
-        log_event(report_id, "address_selected", {"address": chosen})
-    except Exception as e:
-        print(f"select_address rebuild error: {e}")
+    # Rebuild in the background at the report's own tier: the chosen address
+    # carries the house number, unlocking HPI last sale and EPC floor area.
+    stored["status"] = "building"
+    stored["build_started_at"] = _now_iso()
+    save_report(report_id, stored)
+    log_event(report_id, "address_selected", {"address": chosen})
+    _start_rebuild(report_id, stored, address=chosen,
+                   tier="paid" if stored.get("paid") else "free")
     return redirect(f"/r/{report_id}")
 
 
@@ -1600,9 +1802,18 @@ def admin_unlock(report_id):
     if not stored:
         return jsonify({"error": "report not found"}), 404
     stored["paid"] = True
-    save_report(report_id, stored)
+    # Free-tier reports lack the paid-only data (EPC, last sale, rents, AVM,
+    # per-sqf), so unlocking triggers a paid-tier rebuild in the background.
+    rebuilding = (stored.get("report") or {}).get("tier") != "paid"
+    if rebuilding:
+        stored["status"] = "building"
+        stored["build_started_at"] = _now_iso()
+        save_report(report_id, stored)
+        _start_rebuild(report_id, stored, tier="paid")
+    else:
+        save_report(report_id, stored)
     log_event(report_id, "report_unlocked", {})
-    return jsonify({"status": "unlocked", "report_id": report_id})
+    return jsonify({"status": "unlocked", "report_id": report_id, "rebuilding": rebuilding})
 
 @app.route("/log", methods=["POST"])
 def log_engagement():
@@ -1974,16 +2185,26 @@ def debug_psqf():
 
 @app.route("/debug-report")
 def debug_report():
+    """Raw report JSON. Admin-key protected (paid tier burns API credits).
+    Usage: /debug-report?postcode=..&price=..&type=..&tier=free|paid&key=ADMIN"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
     postcode = request.args.get("postcode", "WD4 9EW")
     asking_price = int(request.args.get("price", "675000"))
     property_type = request.args.get("type", "semi-detached")
     address = request.args.get("address", "")
-    report = build_report_data("", asking_price, "3", property_type, postcode, address=address)
+    tier = request.args.get("tier", "paid")
+    report = build_report_data("", asking_price, "3", property_type, postcode,
+                               address=address, tier=tier)
     return jsonify(report)
 
 @app.route("/preview-paid")
 def preview_paid():
-    """Render paid report for any Rightmove URL without payment. Admin-key protected.
+    """Build the paid report for any Rightmove URL without payment. Admin-key
+    protected. The build runs in the background: this returns immediately with a
+    redirect to /r/<id>, which shows a self-refreshing page until the report is
+    ready. Optional &address= override for street-only listings.
     Usage: /preview-paid?url=https://www.rightmove.co.uk/properties/XXX&key=YOUR_ADMIN_KEY
     """
     auth = request.args.get("key", "")
@@ -1992,26 +2213,18 @@ def preview_paid():
     property_url = request.args.get("url", "")
     if not property_url:
         return "Pass ?url= with a Rightmove URL and ?key= with your admin key", 400
-    postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
-        property_url, "", 0, "3", "semi-detached", ""
-    )
-    if not postcode:
-        return "Could not determine postcode from that URL.", 400
-    # Optional &address= override: supply the full address (with house number)
-    # when Rightmove's displayAddress is street-only
-    if request.args.get("address"):
-        address = request.args.get("address").strip()
-    report = build_report_data(
-        property_url=property_url,
-        asking_price=asking_price,
-        bedrooms=bedrooms,
-        property_type=property_type,
-        postcode=postcode,
-        floor_area_sqm=None,
-        address=address,
-        **extra,
-    )
-    return render_template("report_paid.html", **report)
+    address_override = (request.args.get("address") or "").strip() or None
+    report_id = uuid.uuid4().hex[:12]
+    save_report(report_id, {
+        "status": "building",
+        "paid": True,
+        "preview": True,
+        "property_url": property_url,
+        "created_at": _now_iso(),
+        "build_started_at": _now_iso(),
+    })
+    _start_paid_build_from_url(report_id, property_url, address_override)
+    return redirect(f"/r/{report_id}")
 
 
 @app.route("/preview-free")
@@ -2042,6 +2255,7 @@ def preview_free():
         postcode=postcode,
         floor_area_sqm=None,
         address=address,
+        tier="free",
         **extra,
     )
     return render_template("report_free.html", **report)
@@ -2071,6 +2285,7 @@ def generate_report():
         postcode=postcode,
         floor_area_sqm=float(data.get("floor_area_sqm", 0) or 0) or None,
         address=address,
+        tier="free",
         **extra,
     )
     return render_template("report_free.html", **report)
@@ -2091,6 +2306,10 @@ def report_data_json():
     )
     if not postcode:
         return jsonify({"error": "Could not determine postcode"}), 400
+    # Paid tier on this public JSON endpoint requires the admin key (credits)
+    tier = "free"
+    if data.get("tier") == "paid" and data.get("key") == os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        tier = "paid"
     report = build_report_data(
         property_url=property_url,
         asking_price=asking_price,
@@ -2099,6 +2318,7 @@ def report_data_json():
         postcode=postcode,
         floor_area_sqm=float(data.get("floor_area_sqm", 0) or 0) or None,
         address=address,
+        tier=tier,
         **extra,
     )
     return jsonify(report)
@@ -2148,6 +2368,7 @@ def submit():
             postcode=postcode,
             floor_area_sqm=floor_area_sqm,
             address=address,
+            tier="free",
             **extra,
         )
 
