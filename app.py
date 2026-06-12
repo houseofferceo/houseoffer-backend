@@ -1629,6 +1629,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
+        "address": address,
         "comparables_count": len(comparables),
         "comparables": comparables_list,
         "search_broadened": broadened,
