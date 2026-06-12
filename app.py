@@ -1064,8 +1064,9 @@ def resolve_full_address(scraped):
                 nearby = []
             ranked = []
             for rec in nearby:
-                rec_addr = rec.get("address") or ""
-                if not _leading_house_number(rec_addr):
+                # Numbered or named ("Overdale, Warminster Road") — a sold
+                # record always identifies a single property either way
+                if not (rec.get("address") or "").strip():
                     continue
                 if rec.get("latitude") is None or rec.get("longitude") is None:
                     continue
@@ -1098,12 +1099,16 @@ def resolve_full_address(scraped):
             if street_filtered:
                 postcode_sales = street_filtered
 
-        # Dedup to distinct properties (one sale record per house number)
+        # Dedup to distinct properties: by house number when there is one,
+        # otherwise by the property/building name (named houses have no number)
         distinct = {}
         for s in sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True):
-            num = _leading_house_number(s.get("address") or "")
-            if num and num not in distinct:
-                distinct[num] = s
+            addr = (s.get("address") or "").strip()
+            if not addr:
+                continue
+            key = _leading_house_number(addr) or addr.split(",")[0].upper().strip()
+            if key and key not in distinct:
+                distinct[key] = s
         candidates = list(distinct.values())
         if not candidates:
             return {"address": coord_candidate, "confidence": "medium" if coord_candidate else None}
