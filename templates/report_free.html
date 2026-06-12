@@ -274,7 +274,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   <!-- HEADER -->
   <div class="report-header">
     <div class="report-label"><span class="report-label-dot"></span>Independent property analysis</div>
-    <div class="report-address">{{ postcode }}</div>
+    <div class="report-address">{{ address or postcode }}</div>
     <div class="report-sub">{{ property_type|title }} · {{ postcode }} · Generated {{ generated }}</div>
     <div class="report-meta">
       <div class="meta-pill">🏷️ Asking price: <strong>&nbsp;{{ asking_price_formatted }}</strong></div>
