@@ -2161,6 +2161,38 @@ def debug_scrape():
         return jsonify({"error": "Pass ?url= with a Rightmove or Zoopla listing URL"}), 400
     return jsonify(scrape_property_url(url))
 
+@app.route("/debug-resolve")
+def debug_resolve():
+    """Trace full-address resolution for a listing: scraped fields, the sold
+    records found near the pin (with distances), and the final decision.
+    Admin-key protected (may burn one PropertyData call).
+    Usage: /debug-resolve?url=https://www.rightmove.co.uk/properties/XXX&key=ADMIN"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"error": "Pass ?url= with a Rightmove listing URL"}), 400
+    scraped = scrape_property_url(url)
+    nearby = []
+    nearby_error = None
+    try:
+        nearby = fetch_sold_nearby(scraped.get("postcode") or "")
+    except Exception as e:
+        nearby_error = str(e)
+    lat, lng = scraped.get("latitude"), scraped.get("longitude")
+    for rec in nearby:
+        if lat and lng and rec.get("latitude") is not None and rec.get("longitude") is not None:
+            rec["distance_m"] = round(_haversine_m(lat, lng, rec["latitude"], rec["longitude"]), 1)
+    resolution = resolve_full_address(scraped)
+    return jsonify({
+        "scraped": scraped,
+        "sold_nearby_count": len(nearby),
+        "sold_nearby_error": nearby_error,
+        "sold_nearby": sorted(nearby, key=lambda r: r.get("distance_m", 1e9))[:20],
+        "resolution": resolution,
+    })
+
 @app.route("/debug-epc")
 def debug_epc():
     """Test EPC floor area lookup. Usage: /debug-epc?postcode=WD4+9EW&address=9+Chantry+Close&key=ADMIN"""
