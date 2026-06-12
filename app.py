@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import math
 import time
 import uuid
 import base64
@@ -12,7 +13,7 @@ from flask import Flask, request, jsonify, render_template, redirect
 from flask_cors import CORS
 from datetime import datetime
 from hpi_data import get_hpi_index as hpi_index, get_current_hpi
-from property_scraper import scrape_property_url
+from property_scraper import scrape_property_url, fetch_sold_nearby, normalise_property_type
 
 app = Flask(__name__)
 CORS(app, origins=["https://houseoffer.uk", "https://www.houseoffer.uk", "https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
@@ -185,6 +186,21 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "reduction_pct": scraped.get("reduction_pct"),
         "scraper_floor_area_sqm": scraped.get("floor_area_sqm"),
     }
+
+    # Full-address resolution (sold-record coordinate match). Enhancement only:
+    # the address is swapped in solely on a high-confidence match, so every
+    # report that works today keeps working unchanged when resolution fails.
+    try:
+        resolution = resolve_full_address(scraped)
+    except Exception as e:
+        print(f"merge_scraped_listing: address resolution error: {e}")
+        resolution = {"address": None, "confidence": None}
+    extra["resolved_address"] = resolution.get("address")
+    extra["address_resolution"] = resolution.get("confidence")
+    if (resolution.get("confidence") == "high" and resolution.get("address")
+            and not _leading_house_number(address or "")):
+        address = resolution["address"]
+
     return postcode, asking_price, bedrooms, property_type, address, extra
 
 EPC_API_BASE = "https://api.get-energy-performance-data.communities.gov.uk"
@@ -961,6 +977,161 @@ def find_last_sale(postcode, address=None):
     return None
 
 
+def _haversine_m(lat1, lon1, lat2, lon2):
+    """Distance in metres between two WGS84 points."""
+    rlat1, rlon1, rlat2, rlon2 = map(math.radians, (float(lat1), float(lon1), float(lat2), float(lon2)))
+    h = (math.sin((rlat2 - rlat1) / 2) ** 2
+         + math.cos(rlat1) * math.cos(rlat2) * math.sin((rlon2 - rlon1) / 2) ** 2)
+    return 6371000 * 2 * math.asin(math.sqrt(h))
+
+
+# Coordinate-match thresholds: Rightmove pins sit on the delivery point, so the
+# true property's sold record is normally within a few metres of the listing pin.
+COORD_MATCH_MAX_M = 15       # winner must be at most this far from the pin
+COORD_RUNNERUP_MIN_M = 25    # ...and the runner-up at least this far (else ambiguous)
+COORD_PLAUSIBLE_MAX_M = 40   # beyond this the nearest record is not this property
+EPC_CORROBORATION_MAX_CERTS = 5
+
+
+def _sold_type_compatible(record_type, property_type):
+    """Does a sold record's type label fit the listing's property type?
+    Records with no type information are never excluded."""
+    if not record_type or not property_type:
+        return True
+    rt = str(record_type)
+    if rt in normalise_type_sold(property_type):
+        return True
+    return normalise_property_type(rt) == normalise_property_type(property_type)
+
+
+def _epc_corroborates(postcode, candidate_address, floor_area_sqm, epc_results=None):
+    """Cross-check a candidate full address against the EPC register: the house
+    number and street must match a certificate, and when the listing supplied a
+    floor area the certificate's must agree within 10%. Returns True only on
+    positive corroboration; any failure or missing data returns False."""
+    if not EPC_API_KEY:
+        return False
+    try:
+        results = epc_results if epc_results is not None else _epc_search(postcode)
+        match = _select_epc_match(results, candidate_address)
+        if not match:
+            return False
+        if floor_area_sqm and match.get("certificateNumber"):
+            cert = _epc_fetch_certificate(match["certificateNumber"])
+            area = _extract_floor_area(cert) if cert else None
+            if area and abs(area - floor_area_sqm) / floor_area_sqm > 0.10:
+                return False
+        return True
+    except Exception as e:
+        print(f"EPC corroboration error: {e}")
+        return False
+
+
+def resolve_full_address(scraped):
+    """Resolve the full street address (incl. house number) for a scraped listing
+    by matching it against historical sold-price records — the address-finder
+    extension method. Returns {"address", "confidence"} where confidence is:
+      "high"   - single unambiguous match (coordinate hit or unique sold record,
+                 or EPC-corroborated)
+      "medium" - best of multiple plausible candidates (callers must NOT swap
+                 the address in on medium)
+      None     - no match (e.g. new build, never sold)
+    Enhancement only: never raises, and costs at most one PropertyData call."""
+    try:
+        scraped = scraped or {}
+        address = scraped.get("address") or ""
+        postcode = scraped.get("postcode") or ""
+        property_type = scraped.get("property_type") or ""
+        latitude = scraped.get("latitude")
+        longitude = scraped.get("longitude")
+        floor_area_sqm = scraped.get("floor_area_sqm")
+
+        if not postcode:
+            return {"address": None, "confidence": None}
+        # Listing already shows the house number — nothing to resolve
+        if address and _leading_house_number(address):
+            return {"address": address, "confidence": "high"}
+
+        # ── Primary: coordinate match against Rightmove sold records ─────────
+        # Each sold record carries its own pin; the record sitting on top of the
+        # listing pin IS the property. Free scrape, no PropertyData credits.
+        coord_candidate = None
+        if latitude and longitude:
+            try:
+                nearby = fetch_sold_nearby(postcode)
+            except Exception as e:
+                print(f"resolve_full_address: sold-nearby fetch failed: {e}")
+                nearby = []
+            ranked = []
+            for rec in nearby:
+                rec_addr = rec.get("address") or ""
+                if not _leading_house_number(rec_addr):
+                    continue
+                if rec.get("latitude") is None or rec.get("longitude") is None:
+                    continue
+                dist = _haversine_m(latitude, longitude, rec["latitude"], rec["longitude"])
+                ranked.append((dist, rec))
+            ranked.sort(key=lambda x: x[0])
+            typed = [(d, r) for d, r in ranked
+                     if _sold_type_compatible(r.get("property_type"), property_type)]
+            pool = typed or ranked
+            if pool:
+                dist, rec = pool[0]
+                runner_up = pool[1][0] if len(pool) > 1 else None
+                if dist <= COORD_MATCH_MAX_M and (runner_up is None or runner_up >= COORD_RUNNERUP_MIN_M):
+                    return {"address": rec["address"], "confidence": "high"}
+                if dist <= COORD_PLAUSIBLE_MAX_M:
+                    # Near but not decisive (offset pin or close neighbours):
+                    # let the EPC register settle it
+                    if _epc_corroborates(postcode, rec["address"], floor_area_sqm):
+                        return {"address": rec["address"], "confidence": "high"}
+                    coord_candidate = rec["address"]
+
+        # ── Fallback: street-token match against postcode sale history ───────
+        # The single extra PropertyData call per report lives here. Full
+        # postcode only - the district fallback in get_all_sold_at_postcode
+        # would burn a second call to return rows we filter out anyway.
+        sales = _all_sold_transactions(fetch_sold_prices(format_postcode(postcode)))
+        postcode_sales = [s for s in (sales or []) if _sale_matches_postcode(s, postcode)]
+        if address:
+            street_filtered = [s for s in postcode_sales if _sale_matches_address(s, address)]
+            if street_filtered:
+                postcode_sales = street_filtered
+
+        # Dedup to distinct properties (one sale record per house number)
+        distinct = {}
+        for s in sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True):
+            num = _leading_house_number(s.get("address") or "")
+            if num and num not in distinct:
+                distinct[num] = s
+        candidates = list(distinct.values())
+        if not candidates:
+            return {"address": coord_candidate, "confidence": "medium" if coord_candidate else None}
+
+        typed = [s for s in candidates if _sold_type_compatible(s.get("type"), property_type)]
+        pool = typed or candidates
+        if len(pool) == 1:
+            return {"address": pool[0]["address"], "confidence": "high"}
+
+        # Multiple plausible candidates — EPC floor-area cross-check can single
+        # one out when the listing supplied a floor area
+        if floor_area_sqm and EPC_API_KEY and len(pool) <= EPC_CORROBORATION_MAX_CERTS:
+            try:
+                epc_results = _epc_search(postcode)
+                corroborated = [s for s in pool
+                                if _epc_corroborates(postcode, s["address"], floor_area_sqm, epc_results)]
+                if len(corroborated) == 1:
+                    return {"address": corroborated[0]["address"], "confidence": "high"}
+            except Exception as e:
+                print(f"resolve_full_address: EPC disambiguation failed: {e}")
+
+        best = coord_candidate or sorted(pool, key=lambda s: s.get("date", ""), reverse=True)[0]["address"]
+        return {"address": best, "confidence": "medium"}
+    except Exception as e:
+        print(f"resolve_full_address error: {e}")
+        return {"address": None, "confidence": None}
+
+
 def get_last_sale_candidates(postcode):
     """Return all distinct sold properties at this postcode, deduplicated by address.
     Used to build a 'select your property' dropdown when auto-match fails.
@@ -1028,6 +1199,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       scraper_days_on_market=None, scraper_floor_area_sqm=None,
                       price_reduced=False, original_asking_price=None,
                       reduction_date=None, reduction_amount=None, reduction_pct=None,
+                      resolved_address=None, address_resolution=None,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -1051,8 +1223,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     avm = None
     discount_pct = None
     local_avg_dom = None
-    resolved_address = None
-    address_resolution = None
+    # resolved_address / address_resolution arrive as parameters from the
+    # sold-record resolution in merge_scraped_listing; the EPC cross-match
+    # below may still overwrite them with a better outcome
     last_sale = None
     psqf_points = []
 
@@ -1537,6 +1710,10 @@ def _start_paid_build_from_url(report_id, property_url, address_override=None):
             )
             if not postcode:
                 raise ValueError("Could not determine the postcode from that listing")
+            log_event(report_id, "address_resolved", {
+                "confidence": extra.get("address_resolution") or "none",
+                "resolved_address": extra.get("resolved_address"),
+            })
             if address_override:
                 address = address_override
             report = build_report_data(
@@ -2495,6 +2672,10 @@ def submit():
                 raise ValueError("Could not determine postcode from that link.")
             if not ap:
                 raise ValueError("Could not determine asking price from that link.")
+            log_event(_rid, "address_resolved", {
+                "confidence": extra.get("address_resolution") or "none",
+                "resolved_address": extra.get("resolved_address"),
+            })
 
             report = build_report_data(
                 property_url=_url,

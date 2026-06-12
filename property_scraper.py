@@ -524,6 +524,103 @@ def scrape_rightmove(url: str) -> dict:
     return result
 
 
+def _walk_find_properties(obj: Any) -> Optional[list]:
+    """Find the sold-property list inside the house-prices page state: the first
+    list under a 'properties' key whose entries carry an address and location."""
+    if isinstance(obj, dict):
+        props = obj.get("properties")
+        if isinstance(props, list) and props and all(
+            isinstance(p, dict) and p.get("address") and isinstance(p.get("location"), dict)
+            for p in props
+        ):
+            return props
+        for v in obj.values():
+            found = _walk_find_properties(v)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = _walk_find_properties(item)
+            if found is not None:
+                return found
+    return None
+
+
+def fetch_sold_nearby(postcode: str) -> list:
+    """Sold-price records for a postcode from Rightmove's house-prices page —
+    the same data address-finder browser extensions match against. Unlike
+    PropertyData's sold-prices feed, each record carries its own pin
+    coordinates, so the listing pin can be matched property-to-property.
+    Returns a list of {address, latitude, longitude, property_type, bedrooms,
+    price, date}; empty list on any failure (never raises)."""
+    pc = (postcode or "").strip().upper().replace(" ", "")
+    if len(pc) < 5:
+        return []
+    slug = f"{pc[:-3]}-{pc[-3:]}".lower()
+    html = _fetch_html(
+        f"https://www.rightmove.co.uk/house-prices/{slug}.html",
+        referer="https://www.rightmove.co.uk/house-prices.html",
+    )
+    if not html:
+        return []
+
+    state = None
+    for marker in ("__PRELOADED_STATE__", "PRELOADED_STATE", "PAGE_MODEL"):
+        idx = html.find(marker)
+        if idx < 0:
+            continue
+        blob = _extract_balanced_json(html, idx + len(marker))
+        if not blob:
+            continue
+        try:
+            state = json.loads(blob)
+            break
+        except json.JSONDecodeError:
+            continue
+    if state is None:
+        return []
+
+    props = _walk_find_properties(state)
+    if not props:
+        return []
+
+    records = []
+    for p in props:
+        loc = p.get("location") or {}
+        lat = loc.get("lat") or loc.get("latitude")
+        lng = loc.get("lng") or loc.get("longitude")
+        try:
+            lat = float(lat) if lat is not None else None
+            lng = float(lng) if lng is not None else None
+        except (TypeError, ValueError):
+            lat = lng = None
+        price = 0
+        sold_date = None
+        transactions = p.get("transactions") or []
+        if isinstance(transactions, list) and transactions:
+            # Transactions are newest-first; take the most recent sale
+            tx = transactions[0]
+            if isinstance(tx, dict):
+                price = parse_price(tx.get("displayPrice") or tx.get("price"))
+                dt = _parse_date_to_date(str(tx.get("dateSold") or tx.get("date") or ""))
+                sold_date = dt.isoformat() if dt else None
+        bedrooms = p.get("bedrooms")
+        try:
+            bedrooms = int(bedrooms) if bedrooms is not None else None
+        except (TypeError, ValueError):
+            bedrooms = None
+        records.append({
+            "address": str(p.get("address") or "").strip(),
+            "latitude": lat,
+            "longitude": lng,
+            "property_type": p.get("propertyType"),
+            "bedrooms": bedrooms,
+            "price": price,
+            "date": sold_date,
+        })
+    return records
+
+
 def _deep_get(obj: Any, *paths: tuple) -> Any:
     for path in paths:
         cur = obj
