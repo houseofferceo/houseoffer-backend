@@ -445,7 +445,22 @@ def _epc_resolution(postcode, address, property_type, floor_area_sqm):
     return resolved, confidence, floor_area_sqm
 
 
+# Short-lived sold-prices cache: address resolution, comparables and the
+# last-sale lookup all need the same response within one report build.
+# Sharing it keeps PropertyData usage at one call per postcode AND stops
+# rapid back-to-back identical calls tripping the API's rate limit (which
+# made the comparables fetch fail and fall back to district-wide data).
+_SOLD_PRICES_CACHE = {}
+_SOLD_PRICES_TTL_SECONDS = 120
+_sold_prices_cache_lock = threading.Lock()
+
 def fetch_sold_prices(postcode):
+    key = (postcode or "").upper().replace(" ", "")
+    now = time.time()
+    with _sold_prices_cache_lock:
+        hit = _SOLD_PRICES_CACHE.get(key)
+        if hit and now - hit[0] < _SOLD_PRICES_TTL_SECONDS:
+            return hit[1]
     try:
         r = requests.get(
             "https://api.propertydata.co.uk/sold-prices",
@@ -453,7 +468,14 @@ def fetch_sold_prices(postcode):
             timeout=10
         )
         if r.status_code == 200:
-            return r.json()
+            data = r.json()
+            with _sold_prices_cache_lock:
+                # Cache successes only; failures should retry next call
+                _SOLD_PRICES_CACHE[key] = (now, data)
+                if len(_SOLD_PRICES_CACHE) > 200:
+                    oldest = min(_SOLD_PRICES_CACHE, key=lambda k: _SOLD_PRICES_CACHE[k][0])
+                    del _SOLD_PRICES_CACHE[oldest]
+            return data
     except Exception:
         pass
     return None
