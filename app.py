@@ -340,7 +340,7 @@ def _epc_built_form_matches(cert, property_type):
     return True
 
 def epc_cross_match(postcode, address=None, property_type=None, floor_area_sqm=None,
-                    max_cert_fetches=10, trace=None):
+                    max_cert_fetches=30, trace=None):
     """Identify the subject property's EPC certificate WITHOUT a house number, by
     cross-matching listing attributes against the postcode's certificates:
     1. Street-token filter using the (street-only) listing address.
@@ -386,31 +386,55 @@ def epc_cross_match(postcode, address=None, property_type=None, floor_area_sqm=N
         )
         return None
 
-    matches = []
+    # Floor area is a precise discriminator; property type is not — the listing's
+    # agent-entered type and the EPC assessor's type frequently disagree (e.g. a
+    # whole street of "detached" listings recorded as semi-detached on the EPC).
+    # So when we have a floor area, decide on THAT and use type only to break a
+    # tie. Property type vetoes a candidate only when we have no floor area to
+    # compare. (Earlier logic let the noisy type field reject every candidate
+    # before the floor area was ever checked — 0% resolution despite good data.)
+    area_matched = []   # cert floor area within 10% of the listing's
+    type_only = []      # type-compatible, used only when no listing floor area
     rejected = []
-    for r in candidates:
+    # Fetch the candidate certificates in parallel — a busy street can have
+    # 20-30, and serial fetches would be slow enough to risk a request timeout.
+    def _fetch(r):
+        return r, (_epc_fetch_certificate(r.get("certificateNumber") or "") or {})
+    with ThreadPoolExecutor(max_workers=8) as cert_pool:
+        cert_pairs = list(cert_pool.map(_fetch, candidates))
+    for r, cert in cert_pairs:
         cand_addr = (r.get("addressLine1") or "").strip()
-        cert = _epc_fetch_certificate(r.get("certificateNumber") or "") or {}
-        if property_type and not _epc_built_form_matches(cert, property_type):
-            rejected.append(f"{cand_addr}: built form mismatch")
-            continue
         area = _extract_floor_area(cert)
+        type_ok = (not property_type) or _epc_built_form_matches(cert, property_type)
         if floor_area_sqm and area:
-            if abs(area - floor_area_sqm) / floor_area_sqm > 0.10:
+            if abs(area - floor_area_sqm) / floor_area_sqm <= 0.10:
+                area_matched.append({"summary": r, "floor_area_sqm": area, "type_ok": type_ok})
+            else:
                 rejected.append(f"{cand_addr}: floor area {area} sqm outside 10% of {floor_area_sqm}")
-                continue
-        matches.append({"summary": r, "floor_area_sqm": area})
+        elif type_ok:
+            type_only.append({"summary": r, "floor_area_sqm": area, "type_ok": True})
+        else:
+            rejected.append(f"{cand_addr}: built form mismatch (no floor area to compare)")
+
+    if floor_area_sqm:
+        pool = area_matched
+        if len(pool) > 1 and property_type:
+            typed = [m for m in pool if m["type_ok"]]
+            if len(typed) == 1:
+                trace["tiebreak"] = "property type broke a floor-area tie"
+                pool = typed
+    else:
+        pool = type_only
+
     trace["rejected"] = rejected
     trace["verified_matches"] = [
-        (m["summary"].get("addressLine1") or "").strip() for m in matches
+        (m["summary"].get("addressLine1") or "").strip() for m in pool
     ]
-    if len(matches) != 1:
-        trace["outcome"] = (
-            f"{len(matches)} verified matches; need exactly 1 to act"
-        )
+    if len(pool) != 1:
+        trace["outcome"] = f"{len(pool)} verified matches; need exactly 1 to act"
         return None
     trace["outcome"] = "unique match"
-    m = matches[0]
+    m = pool[0]
     confidence = "accurate" if (floor_area_sqm and m["floor_area_sqm"]) else "approx"
     return {
         "address": (m["summary"].get("addressLine1") or "").strip(),
