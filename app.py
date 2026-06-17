@@ -2380,6 +2380,61 @@ def debug_epc():
     })
 
 
+@app.route("/debug-epc-resolve")
+def debug_epc_resolve():
+    """Measure the EPC cross-match auto-resolution rate against real listings.
+    Scrapes each Rightmove URL, runs the EPC register cross-match on the scraped
+    attributes (street + type + floor area), and reports whether it resolved a
+    unique address. Accepts multiple ?url= params. Admin-key protected.
+    Usage: /debug-epc-resolve?key=ADMIN&url=<rightmove1>&url=<rightmove2>"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    urls = request.args.getlist("url")
+    if not urls:
+        return jsonify({"error": "Pass one or more ?url= Rightmove listing URLs"}), 400
+    results = []
+    resolved = 0
+    for u in urls:
+        row = {"url": u}
+        try:
+            sc = scrape_property_url(u)
+            row["scraped"] = {
+                "postcode": sc.get("postcode"),
+                "address": sc.get("address"),
+                "property_type": sc.get("property_type"),
+                "floor_area_sqm": sc.get("floor_area_sqm"),
+                "has_house_number": bool(_leading_house_number(sc.get("address") or "")),
+            }
+            if not sc.get("postcode"):
+                row["outcome"] = "no postcode scraped"
+            elif row["scraped"]["has_house_number"]:
+                row["outcome"] = "listing already shows house number"
+                row["resolved_address"] = sc.get("address")
+                resolved += 1
+            else:
+                trace = {}
+                match = epc_cross_match(sc.get("postcode"), sc.get("address"),
+                                        sc.get("property_type"), sc.get("floor_area_sqm"),
+                                        trace=trace)
+                row["epc_trace"] = trace
+                if match and match.get("address"):
+                    row["resolved_address"] = match["address"]
+                    row["confidence"] = match.get("confidence")
+                    row["outcome"] = "EPC resolved"
+                    resolved += 1
+                else:
+                    row["outcome"] = "EPC could not uniquely resolve"
+        except Exception as e:
+            row["outcome"] = f"error: {type(e).__name__}: {e}"
+        results.append(row)
+    return jsonify({
+        "tested": len(urls),
+        "resolved": resolved,
+        "resolution_rate": f"{round(100 * resolved / len(urls))}%" if urls else "0%",
+        "results": results,
+    })
+
 @app.route("/debug-epc-match")
 def debug_epc_match():
     """Test EPC cross-matching without a house number.
