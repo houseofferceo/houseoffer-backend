@@ -986,16 +986,32 @@ def find_last_sale(postcode, address=None):
             return sorted(num_matched, key=lambda x: x.get("date", ""), reverse=True)[0]
         return None
 
-    # Step 3b: no house number but all candidates are the same property (the two data
-    # sources can return the same sale in different address formats) — confident enough
+    # Step 3b: subject has no house number. A single surviving candidate is the
+    # subject ONLY if the subject address actually carries that candidate's
+    # identifier — a building name like "Overdale" that we resolved, or a matching
+    # number. A bare street-only listing ("Abbotsbury Road") shares no such token
+    # with a lone neighbouring sale ("112a Abbotsbury Road"), so it must fall
+    # through to the picker rather than borrow that neighbour's price.
     distinct = {
         _leading_house_number(s.get("address") or "") or (s.get("address") or "").upper()
         for s in postcode_sales
     }
     if len(distinct) == 1:
-        return sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
+        cand = sorted(postcode_sales, key=lambda x: x.get("date", ""), reverse=True)[0]
+        cand_addr = cand.get("address") or ""
+        subj_upper = (address or "").upper()
+        cand_num = _leading_house_number(cand_addr)
+        if cand_num:
+            # Numbered candidate: trust only if that exact number is in the subject
+            if re.search(rf"(?<![\dA-Za-z]){re.escape(cand_num)}(?![\dA-Za-z])", subj_upper):
+                return cand
+        else:
+            # Named candidate (e.g. "Overdale"): trust only if the name is in subject
+            cand_name = cand_addr.split(",")[0].strip().upper()
+            if cand_name and cand_name in subj_upper:
+                return cand
 
-    # Step 3c: multiple distinct properties, no house number — cannot identify property
+    # Step 3c: cannot confidently identify the property — caller shows the picker
     return None
 
 
@@ -1137,11 +1153,16 @@ def resolve_full_address(scraped):
 
         typed = [s for s in candidates if _sold_type_compatible(s.get("type"), property_type)]
         pool = typed or candidates
-        if len(pool) == 1:
-            return {"address": pool[0]["address"], "confidence": "high"}
 
-        # Multiple plausible candidates — EPC floor-area cross-check can single
-        # one out when the listing supplied a floor area
+        # A street-name match alone CANNOT identify the specific property. A single
+        # surviving candidate only means one house on this street sold and landed in
+        # our data — NOT that it is the subject (which may simply never have sold, as
+        # with 120 Abbotsbury Road, where the only DT4 0JS sale was a neighbouring
+        # flat at 112a). Without the coordinate pin, only EPC corroboration (house
+        # number + street + floor area agreeing with a certificate) can earn "high".
+        # Everything else is "medium", which the caller must NOT swap in: the report
+        # keeps the street-only address and offers the address-picker rather than
+        # silently presenting a neighbour's sale as this property's history.
         if floor_area_sqm and EPC_API_KEY and len(pool) <= EPC_CORROBORATION_MAX_CERTS:
             try:
                 epc_results = _epc_search(postcode)
@@ -2187,6 +2208,62 @@ def debug_scrape():
     if not url:
         return jsonify({"error": "Pass ?url= with a Rightmove or Zoopla listing URL"}), 400
     return jsonify(scrape_property_url(url))
+
+@app.route("/debug-soldfetch")
+def debug_soldfetch():
+    """Diagnose the Rightmove house-prices fetch that feeds coordinate matching.
+    Tries several URL formats, reports HTTP status + length for each, and for any
+    that load, which JSON markers are present and a snippet around the property
+    data — so the parser can be fixed against the real page. Admin-key protected.
+    Usage: /debug-soldfetch?postcode=DT4+0JS&key=ADMIN"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    from property_scraper import BROWSER_HEADERS, _request_kwargs
+    pc = (request.args.get("postcode", "") or "").upper().replace(" ", "")
+    if len(pc) < 5:
+        return jsonify({"error": "Pass ?postcode= e.g. DT4+0JS"}), 400
+    outcode, incode = pc[:-3], pc[-3:]
+    candidate_urls = [
+        f"https://www.rightmove.co.uk/house-prices/{outcode}-{incode}.html".lower(),
+        f"https://www.rightmove.co.uk/house-prices/{pc}.html".lower(),
+        f"https://www.rightmove.co.uk/house-prices/search.html?searchLocation={outcode}+{incode}",
+    ]
+    attempts = []
+    for u in candidate_urls:
+        info = {"url": u}
+        try:
+            r = requests.get(u, headers=BROWSER_HEADERS, timeout=20,
+                             allow_redirects=True, **_request_kwargs())
+            html = r.text or ""
+            info["status"] = r.status_code
+            info["final_url"] = r.url
+            info["length"] = len(html)
+            if r.status_code == 200 and len(html) > 2000:
+                markers = ["PAGE_MODEL", "__PRELOADED_STATE__", "__NEXT_DATA__",
+                           "window.__PRELOADED_STATE__", '"properties"', '"location"',
+                           '"latitude"', '"lat"', '"transactions"', '"displayPrice"',
+                           "captcha", "Access Denied", "are not a robot", "blocked"]
+                info["markers"] = {m: (m in html) for m in markers}
+                anchor = -1
+                for token in ('"properties"', '"location"', '"transactions"', '"latitude"'):
+                    anchor = html.find(token)
+                    if anchor >= 0:
+                        info["anchor_token"] = token
+                        break
+                info["snippet"] = (html[max(0, anchor - 150):anchor + 1200]
+                                   if anchor >= 0 else html[:1200])
+        except Exception as e:
+            info["error"] = str(e)
+        attempts.append(info)
+    # Also report what the live fetch_sold_nearby currently returns
+    try:
+        recs = fetch_sold_nearby(pc)
+        attempts.append({"fetch_sold_nearby_count": len(recs),
+                         "fetch_sold_nearby_sample": recs[:2]})
+    except Exception as e:
+        attempts.append({"fetch_sold_nearby_error": str(e)})
+    return jsonify({"postcode": pc, "attempts": attempts})
 
 @app.route("/debug-resolve")
 def debug_resolve():
