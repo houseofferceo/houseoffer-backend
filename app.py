@@ -2209,6 +2209,43 @@ def debug_scrape():
         return jsonify({"error": "Pass ?url= with a Rightmove or Zoopla listing URL"}), 400
     return jsonify(scrape_property_url(url))
 
+@app.route("/debug-listing-history")
+def debug_listing_history():
+    """Find the subject property's sold-price history on its own listing page.
+    Rightmove shows a 'Property sale history' (e.g. 2013 £200,000) tied to the
+    exact property. This reports whether those figures are embedded in the page
+    HTML (extractable for free) or loaded by a separate API call, and where.
+    Admin-key protected. Usage: /debug-listing-history?url=<rightmove>&key=ADMIN"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    url = request.args.get("url", "")
+    if not url:
+        return jsonify({"error": "Pass ?url= with a Rightmove listing URL"}), 400
+    from property_scraper import _fetch_html, _parse_rightmove_page_model
+    html = _fetch_html(url, referer="https://www.rightmove.co.uk/")
+    if not html:
+        return jsonify({"fetched": False})
+    # Distinctive figures from the example; also generic field-name probes
+    probes = ["66000", "66,000", "200000", "200,000", "soldPropertyHistory",
+              "salesHistory", "saleHistory", "priceHistory", "soldPrice",
+              "transactions", "yearSold", "dateSold", "1998", "2013"]
+    out = {"fetched": True, "length": len(html),
+           "raw_contains": {p: (p in html) for p in probes}}
+    for tok in ("soldPropertyHistory", "salesHistory", "saleHistory", "66000", "yearSold", "soldPrice"):
+        i = html.find(tok)
+        if i >= 0:
+            out["snippet_token"] = tok
+            out["snippet"] = html[max(0, i - 300):i + 900]
+            break
+    model = _parse_rightmove_page_model(html)
+    prop = (model or {}).get("propertyData") or model or {}
+    if isinstance(prop, dict):
+        out["propertyData_keys"] = sorted(prop.keys())
+        out["history_fields"] = {k: v for k, v in prop.items()
+                                 if re.search(r"hist|sold|sale|transact", k, re.I)}
+    return jsonify(out)
+
 @app.route("/debug-soldfetch")
 def debug_soldfetch():
     """Diagnose the Rightmove house-prices fetch that feeds coordinate matching.
@@ -2342,6 +2379,61 @@ def debug_epc():
         "floor_area_sqm": floor_area,
     })
 
+
+@app.route("/debug-epc-resolve")
+def debug_epc_resolve():
+    """Measure the EPC cross-match auto-resolution rate against real listings.
+    Scrapes each Rightmove URL, runs the EPC register cross-match on the scraped
+    attributes (street + type + floor area), and reports whether it resolved a
+    unique address. Accepts multiple ?url= params. Admin-key protected.
+    Usage: /debug-epc-resolve?key=ADMIN&url=<rightmove1>&url=<rightmove2>"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    urls = request.args.getlist("url")
+    if not urls:
+        return jsonify({"error": "Pass one or more ?url= Rightmove listing URLs"}), 400
+    results = []
+    resolved = 0
+    for u in urls:
+        row = {"url": u}
+        try:
+            sc = scrape_property_url(u)
+            row["scraped"] = {
+                "postcode": sc.get("postcode"),
+                "address": sc.get("address"),
+                "property_type": sc.get("property_type"),
+                "floor_area_sqm": sc.get("floor_area_sqm"),
+                "has_house_number": bool(_leading_house_number(sc.get("address") or "")),
+            }
+            if not sc.get("postcode"):
+                row["outcome"] = "no postcode scraped"
+            elif row["scraped"]["has_house_number"]:
+                row["outcome"] = "listing already shows house number"
+                row["resolved_address"] = sc.get("address")
+                resolved += 1
+            else:
+                trace = {}
+                match = epc_cross_match(sc.get("postcode"), sc.get("address"),
+                                        sc.get("property_type"), sc.get("floor_area_sqm"),
+                                        trace=trace)
+                row["epc_trace"] = trace
+                if match and match.get("address"):
+                    row["resolved_address"] = match["address"]
+                    row["confidence"] = match.get("confidence")
+                    row["outcome"] = "EPC resolved"
+                    resolved += 1
+                else:
+                    row["outcome"] = "EPC could not uniquely resolve"
+        except Exception as e:
+            row["outcome"] = f"error: {type(e).__name__}: {e}"
+        results.append(row)
+    return jsonify({
+        "tested": len(urls),
+        "resolved": resolved,
+        "resolution_rate": f"{round(100 * resolved / len(urls))}%" if urls else "0%",
+        "results": results,
+    })
 
 @app.route("/debug-epc-match")
 def debug_epc_match():
