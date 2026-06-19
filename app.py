@@ -1225,6 +1225,61 @@ def get_last_sale_candidates(postcode):
             candidates.append({"address": addr, "last_date": s.get("date"), "last_price": s.get("price")})
     return candidates
 
+def resolve_address_by_sale_fingerprint(postcode, sold_price, sold_date=None):
+    """Pin the exact address by matching a user-supplied past sale against the
+    postcode's Land Registry sold records. Land Registry prices are exact to the
+    pound and the address travels with each record, so a (price[, year]) pair is
+    a near-unique fingerprint within a postcode - more reliable than floor area.
+    The user reads these figures off the Rightmove listing (the sale history is
+    shown in their browser but not in the HTML we fetch, so it cannot be obtained
+    server-side). Returns {address, confidence, candidates}:
+      high   - exactly one distinct address matches -> auto-resolve
+      medium - several addresses match (returns them for the picker)
+      none   - no match (never sold / pre-1995 / figure not in our data)
+    Never raises; costs no extra PropertyData call (SPARQL primary)."""
+    try:
+        target_price = int(re.sub(r"[^0-9]", "", str(sold_price or "")))
+        if not postcode or not target_price:
+            return {"address": None, "confidence": None, "candidates": []}
+        # Full postcode history (address + price + date): SPARQL primary,
+        # PropertyData backup - the same sources as the candidate dropdown.
+        sales = _fetch_land_registry_direct(postcode)
+        if not sales:
+            pd_sales, _ = get_all_sold_at_postcode(postcode)
+            sales = [s for s in (pd_sales or []) if _sale_matches_postcode(s, postcode)]
+        year = None
+        if sold_date:
+            m = re.search(r"(?:19|20)\d{2}", str(sold_date))
+            if m:
+                year = m.group(0)
+        matches = []
+        for s in sales:
+            price = s.get("price")
+            if not price:
+                continue
+            # Exact price (both sides are Land Registry); a tiny tolerance only
+            # absorbs a user mistyping the last digits.
+            if abs(int(price) - target_price) > max(500, round(target_price * 0.003)):
+                continue
+            if year and (s.get("date") or "")[:4] and (s.get("date") or "")[:4] != year:
+                continue
+            matches.append(s)
+        distinct = {}
+        for s in sorted(matches, key=lambda x: x.get("date", ""), reverse=True):
+            addr = (s.get("address") or "").strip()
+            if addr and addr not in distinct:
+                distinct[addr] = s
+        addrs = list(distinct.keys())
+        if len(addrs) == 1:
+            return {"address": addrs[0], "confidence": "high", "candidates": addrs}
+        if len(addrs) > 1:
+            return {"address": None, "confidence": "medium", "candidates": addrs}
+        return {"address": None, "confidence": None, "candidates": []}
+    except Exception as e:
+        print(f"resolve_address_by_sale_fingerprint error: {e}")
+        return {"address": None, "confidence": None, "candidates": []}
+
+
 def calculate_hpi_adjustment(last_sale_price, sale_date_str, region):
     """Adjust a historical price to today's value using regional HPI."""
     try:
@@ -2112,6 +2167,39 @@ def select_address(report_id):
     log_event(report_id, "address_selected", {"address": chosen})
     _start_rebuild(report_id, stored, address=chosen,
                    tier="paid" if stored.get("paid") else "free")
+    return redirect(f"/r/{report_id}")
+
+
+@app.route("/r/<report_id>/resolve-by-sale")
+def resolve_by_sale(report_id):
+    """Pin the exact address from a past sale the user reads off the Rightmove
+    listing (price, optionally year), then rebuild on a unique match. The
+    annotated picker handles 'I recognise my sold figure'; this handles 'I'll
+    type it' and is the accuracy path when the candidate list is long."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return "Report not found", 404
+    stored = load_report(report_id)
+    if not stored:
+        return "Report not found", 404
+    report = stored.get("report", {})
+    postcode = report.get("postcode", "")
+    price = re.sub(r"[^0-9]", "", request.args.get("price", "") or "")
+    date_raw = (request.args.get("date", "") or "").strip() or None
+    if not price or not postcode:
+        return redirect(f"/r/{report_id}")
+    res = resolve_address_by_sale_fingerprint(postcode, price, date_raw)
+    if res["confidence"] == "high" and res["address"]:
+        stored["status"] = "building"
+        stored["build_started_at"] = _now_iso()
+        save_report(report_id, stored)
+        log_event(report_id, "address_resolved_by_sale",
+                  {"address": res["address"], "price": price, "date": date_raw})
+        _start_rebuild(report_id, stored, address=res["address"],
+                       tier="paid" if stored.get("paid") else "free")
+    else:
+        log_event(report_id, "sale_fingerprint_no_unique_match",
+                  {"price": price, "date": date_raw,
+                   "confidence": res["confidence"], "candidates": len(res["candidates"])})
     return redirect(f"/r/{report_id}")
 
 

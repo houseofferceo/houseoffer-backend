@@ -488,6 +488,15 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </select>
       <button type="submit" style="padding:9px 18px; border:none; border-radius:8px; background:var(--teal, #0d9488); color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Update report</button>
     </form>
+    <p style="margin:14px 0 8px; font-size:13px; color:#5c5849;">
+      Don't see your property above? The Rightmove listing shows its last sold price.
+      Enter that (and the year if shown) and we'll pin the exact address.
+    </p>
+    <form method="get" action="/r/{{ report_id }}/resolve-by-sale" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <input name="price" required inputmode="numeric" placeholder="Last sold price, e.g. 200000" style="flex:1; min-width:200px; padding:9px 12px; border:1px solid #cdd4de; border-radius:8px; font-size:14px;">
+      <input name="date" placeholder="Year (optional), e.g. 2013" style="width:170px; padding:9px 12px; border:1px solid #cdd4de; border-radius:8px; font-size:14px;">
+      <button type="submit" style="padding:9px 18px; border:none; border-radius:8px; background:var(--teal, #0d9488); color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Find my property</button>
+    </form>
   </div>
   <div class="source-note">📊 Sold properties at this postcode · HM Land Registry Price Paid Data</div>
   {% endif %}
