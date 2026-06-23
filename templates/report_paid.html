@@ -142,6 +142,35 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
   </div>
 
+  <!-- NEW-BUILD NOTICE -->
+  {% if is_new_build %}
+  <div style="background:#fffbeb; border:1px solid #f59e0b; border-radius:10px; padding:16px 20px; margin-bottom:20px;">
+    <div style="font-weight:700; font-size:15px; color:#92400e; margin-bottom:10px;">🏗️ New build / recently developed</div>
+    <p style="margin:0 0 12px; font-size:14px; color:#44403c;">This listing shows signs of being newly built or recently completed. That changes which valuation tools we can use:</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px;">
+      <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:12px;">
+        <div style="font-weight:700; color:#166534; margin-bottom:6px;">✓ Available</div>
+        <ul style="margin:0; padding-left:18px; color:#166534; line-height:1.7;">
+          <li>Comparable sold prices of similar homes in the area</li>
+          <li>Days on market vs local average</li>
+          <li>Asking price vs sold price ratio</li>
+          <li>Price per m² vs area average</li>
+        </ul>
+      </div>
+      <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:12px;">
+        <div style="font-weight:700; color:#991b1b; margin-bottom:6px;">✗ Not available</div>
+        <ul style="margin:0; padding-left:18px; color:#991b1b; line-height:1.7;">
+          <li>This property's previous sale price</li>
+          <li>HPI-adjusted last sale value</li>
+          <li>EPC floor-area address match</li>
+          <li>Land Registry sale history</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin:12px 0 0; font-size:13px; color:#78716c;">New builds and heavily renovated homes typically price at a premium to the established market. The comparable data below reflects what buyers paid for existing homes — use it as a ceiling, not a direct target.</p>
+  </div>
+  {% endif %}
+
   <!-- OFFER HEADLINE -->
   {% if recommended_offer %}
   <div class="offer-headline">
@@ -414,7 +443,12 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   <div style="background:#f8f9fb; border:1px solid #e2e6ed; border-radius:10px; padding:18px 20px; margin-bottom:8px;">
     <p style="margin:0 0 12px; font-size:14px;">
       The listing doesn't include a house number, so we can't automatically match this
-      property to its sale history. We found these sold properties at the same postcode.
+      property to its sale history.
+      {% if last_sale_candidates and last_sale_candidates[0].radius_fallback %}
+      Land Registry has no records at this exact postcode, so we've shown nearby sold properties instead — your property may appear under a neighbouring postcode.
+      {% else %}
+      We found these sold properties at the same postcode.
+      {% endif %}
       If one of them is this property, select it and we'll update the report.
     </p>
     <form method="get" action="/r/{{ report_id }}/select-address" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
@@ -436,7 +470,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <button type="submit" style="padding:9px 18px; border:none; border-radius:8px; background:var(--teal, #0d9488); color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Find my property</button>
     </form>
   </div>
-  <div class="source-note">Sold properties at this postcode · HM Land Registry Price Paid Data</div>
+  <div class="source-note">Sold properties {% if last_sale_candidates and last_sale_candidates[0].radius_fallback %}near{% else %}at{% endif %} this postcode · HM Land Registry Price Paid Data</div>
   {% endif %}
 
   <!-- DATA POINT 3: PRICE PER SQM -->
