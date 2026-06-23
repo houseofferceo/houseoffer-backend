@@ -129,6 +129,13 @@ def format_postcode(raw):
 def district_postcode(postcode):
     return postcode.strip().upper().replace(" ", "")[:-3]
 
+def sector_postcode(postcode):
+    """Return the postcode sector, e.g. 'LS17 9' from 'LS17 9NA'."""
+    raw = postcode.strip().upper().replace(" ", "")
+    if len(raw) < 4:
+        return district_postcode(postcode)
+    return f"{raw[:-3]} {raw[-3]}"
+
 def normalise_type_sold(property_type):
     mapping = {
         "semi-detached": ["semi-detached_house", "semi_detached_house", "Semi-Detached"],
@@ -185,6 +192,7 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "reduction_amount": scraped.get("reduction_amount"),
         "reduction_pct": scraped.get("reduction_pct"),
         "scraper_floor_area_sqm": scraped.get("floor_area_sqm"),
+        "is_new_build": scraped.get("is_new_build", False),
     }
 
     # Full-address resolution (sold-record coordinate match). Enhancement only:
@@ -200,6 +208,11 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
     if (resolution.get("confidence") == "high" and resolution.get("address")
             and not _leading_house_number(address or "")):
         address = resolution["address"]
+    elif not _leading_house_number(address or ""):
+        # Coordinate/EPC resolution didn't find a house number; try the description.
+        desc_num = scraped.get("description_house_number")
+        if desc_num and address:
+            address = f"{desc_num} {address}"
 
     return postcode, asking_price, bedrooms, property_type, address, extra
 
@@ -527,11 +540,22 @@ def get_sold_comparables(postcode, property_type):
     broadened = False
     postcode_used = formatted
     if len(comparables) < MIN_COMPARABLES:
-        district = district_postcode(postcode)
-        data = fetch_sold_prices(district)
-        comparables = _filter_sold(data, type_keys)
-        broadened = True
-        postcode_used = district
+        # Try sector (e.g. 'LS17 9') before jumping to the full district ('LS17'),
+        # which can be too broad and mix premium and cheap sub-areas.
+        sector = sector_postcode(postcode)
+        if sector != district_postcode(postcode):
+            data = fetch_sold_prices(sector)
+            sector_comps = _filter_sold(data, type_keys)
+            if len(sector_comps) >= MIN_COMPARABLES:
+                comparables = sector_comps
+                postcode_used = sector
+                broadened = True
+        if len(comparables) < MIN_COMPARABLES:
+            district = district_postcode(postcode)
+            data = fetch_sold_prices(district)
+            comparables = _filter_sold(data, type_keys)
+            broadened = True
+            postcode_used = district
     # HPI-adjust all comparables to today's value before returning
     comparables = hpi_adjust_comparables(comparables, postcode)
     return comparables, postcode_used, broadened
@@ -1327,6 +1351,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       price_reduced=False, original_asking_price=None,
                       reduction_date=None, reduction_amount=None, reduction_pct=None,
                       resolved_address=None, address_resolution=None,
+                      is_new_build=False,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -1817,6 +1842,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "generated": datetime.now().strftime("%-d %B %Y"),
         "property_url": property_url,
         "tier": tier,
+        "is_new_build": is_new_build,
     }
 
 # ── BACKGROUND REPORT BUILDS ──────────────────────────────────────────────────
@@ -1887,6 +1913,7 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
                 reduction_date=report.get("reduction_date"),
                 reduction_amount=report.get("reduction_amount"),
                 reduction_pct=report.get("reduction_pct"),
+                is_new_build=report.get("is_new_build", False),
                 tier=tier,
             )
             latest = load_report(report_id) or {}

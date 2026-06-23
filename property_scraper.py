@@ -32,7 +32,23 @@ DEFAULT_RESULT = {
     "latitude": None,
     "longitude": None,
     "epc_cert_url": None,
+    "is_new_build": False,
+    "description_house_number": None,
 }
+
+_NEW_BUILD_RE = re.compile(
+    r"\bnew[\s\-]?build\b"
+    r"|\bbrand[\s\-]?new\s+development\b"
+    r"|\bbrand[\s\-]?new\b"
+    r"|\bnewly\s+built\b"
+    r"|\bnew\s+development\b"
+    r"|\bnew\s+homes?\b"
+    r"|\bepc\s+to\s+follow\b"
+    r"|\bepc\s+(?:rating\s+)?to\s+be\s+(?:confirmed|provided|issued)\b"
+    r"|\boff[\s\-]?plan\b"
+    r"|\bnewly\s+(?:constructed|developed)\b",
+    re.IGNORECASE,
+)
 
 BROWSER_HEADERS = {
     "User-Agent": (
@@ -411,6 +427,18 @@ def _apply_rightmove_listing_dates(result: dict, prop: dict, html: str) -> None:
         result["price_reduced"] = False
 
 
+def _house_number_from_description(description: str, street_address: str) -> Optional[str]:
+    """Return a house number found as '{number} {street-word}' in the listing text."""
+    if not description or not street_address:
+        return None
+    words = [w for w in re.sub(r"[^A-Za-z ]", " ", street_address).split() if len(w) > 2]
+    if not words:
+        return None
+    pattern = rf"\b(\d+[A-Za-z]?)\s+{re.escape(words[0])}\b"
+    m = re.search(pattern, description, re.IGNORECASE)
+    return m.group(1) if m else None
+
+
 def _apply_rightmove_property(result: dict, prop: dict) -> None:
     prices = prop.get("prices") or {}
     price = prices.get("primaryPrice") or prices.get("displayPrice") or prop.get("price")
@@ -496,6 +524,28 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
                     break
             except (TypeError, ValueError):
                 pass
+
+    # Description text: new-build detection + house-number extraction
+    description = ""
+    text_block = prop.get("text")
+    if isinstance(text_block, dict):
+        description = str(text_block.get("description") or "")
+
+    if description and _NEW_BUILD_RE.search(description):
+        result["is_new_build"] = True
+
+    # Also flag from infoReelItems or tags if they carry new-build markers
+    for item in (prop.get("infoReelItems") or []):
+        if isinstance(item, dict) and "new" in str(item.get("type") or "").lower():
+            result["is_new_build"] = True
+            break
+
+    # Extract house number from description when displayAddress omits it
+    addr = result.get("address") or ""
+    if description and addr and not re.match(r"\s*\d", addr):
+        num = _house_number_from_description(description, addr)
+        if num:
+            result["description_house_number"] = num
 
 
 def scrape_rightmove(url: str) -> dict:
