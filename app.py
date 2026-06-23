@@ -1230,14 +1230,25 @@ def resolve_full_address(scraped):
 
 def get_last_sale_candidates(postcode):
     """Return all distinct sold properties at this postcode, deduplicated by address.
-    Used to build a 'select your property' dropdown when auto-match fails.
-    Primary source is the Land Registry SPARQL endpoint (complete history for the
-    exact postcode); falls back to PropertyData radius results filtered to the
-    exact postcode if SPARQL is unavailable."""
+    Primary: Land Registry SPARQL (exact postcode).
+    Secondary: PropertyData radius results filtered to exact postcode.
+    Fallback: unfiltered PropertyData radius results (new/reassigned postcodes where
+    Land Registry holds the sale under a neighbouring postcode code). Flagged with
+    is_radius_fallback=True so the template can adjust its wording."""
+    radius_fallback = False
     sales = _fetch_land_registry_direct(postcode)
     if not sales:
-        pd_sales, _ = get_all_sold_at_postcode(postcode)
-        sales = [s for s in (pd_sales or []) if _sale_matches_postcode(s, postcode)]
+        pd_data = fetch_sold_prices(format_postcode(postcode))
+        pd_all = _all_sold_transactions(pd_data)
+        exact = [s for s in pd_all if _sale_matches_postcode(s, postcode)]
+        if exact:
+            sales = exact
+        elif pd_all:
+            # No exact postcode match in PropertyData either — postcode is new or was
+            # recently reassigned. Surface the radius records anyway so the user can
+            # still identify their property by sold price/date.
+            sales = pd_all
+            radius_fallback = True
     if not sales:
         return []
     seen = set()
@@ -1246,7 +1257,12 @@ def get_last_sale_candidates(postcode):
         addr = (s.get("address") or "").strip()
         if addr and addr not in seen:
             seen.add(addr)
-            candidates.append({"address": addr, "last_date": s.get("date"), "last_price": s.get("price")})
+            candidates.append({
+                "address": addr,
+                "last_date": s.get("date"),
+                "last_price": s.get("price"),
+                "radius_fallback": radius_fallback,
+            })
     return candidates
 
 def resolve_address_by_sale_fingerprint(postcode, sold_price, sold_date=None):
