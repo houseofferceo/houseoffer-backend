@@ -108,6 +108,11 @@ BASE_URL = os.environ.get("BASE_URL", "https://houseoffer-backend.onrender.com")
 SHEETS_WEBHOOK_URL = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL", "")
 SHEETS_WEBHOOK_SECRET = os.environ.get("SHEETS_WEBHOOK_SECRET", "")
 MIN_COMPARABLES = 10
+# Sector (e.g. "LS17 9") queries cover a smaller area than the district but
+# can still be thin for less-traded property types. Require more records than
+# the full-postcode minimum to avoid a 10–15 comp IQM on a small sub-area
+# dragging the market average far from the district consensus.
+MIN_SECTOR_COMPARABLES = 25
 
 
 def post_to_sheets(payload):
@@ -546,7 +551,7 @@ def get_sold_comparables(postcode, property_type):
         if sector != district_postcode(postcode):
             data = fetch_sold_prices(sector)
             sector_comps = _filter_sold(data, type_keys)
-            if len(sector_comps) >= MIN_COMPARABLES:
+            if len(sector_comps) >= MIN_SECTOR_COMPARABLES:
                 comparables = sector_comps
                 postcode_used = sector
                 broadened = True
