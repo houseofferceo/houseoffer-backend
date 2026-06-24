@@ -2836,6 +2836,132 @@ def debug_psqf():
         "sample_matched_records": matched_raw[:3],
     })
 
+@app.route("/batch-resolve-test")
+def batch_resolve_test():
+    """Run address resolution on a fixed test batch and return scored JSON.
+    Admin-key protected. Intended for the daily resolution-quality loop.
+    Usage: /batch-resolve-test?key=ADMIN_KEY
+    Optional: &url0=...&url1=... to override individual batch entries (0-indexed)."""
+    if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+
+    BATCH = [
+        {"url": "https://www.rightmove.co.uk/properties/174255275", "label": "3b terraced SE25 London"},
+        {"url": "https://www.rightmove.co.uk/properties/171324848", "label": "2b terraced SE26 Sydenham"},
+        {"url": "https://www.rightmove.co.uk/properties/174960656", "label": "3b terraced S10 Sheffield"},
+        {"url": "https://www.rightmove.co.uk/properties/171389720", "label": "3b semi BS10 Bristol"},
+        {"url": "https://www.rightmove.co.uk/properties/88209348",  "label": "5b detached BS9 Bristol"},
+        {"url": "https://www.rightmove.co.uk/properties/173962388", "label": "2b flat B23 Birmingham"},
+        {"url": "https://www.rightmove.co.uk/properties/171192797", "label": "1b flat new-build B1 Birmingham"},
+        {"url": "https://www.rightmove.co.uk/properties/87488955",  "label": "3b flat EH10 Edinburgh"},
+        {"url": "https://www.rightmove.co.uk/properties/174671255", "label": "3b semi LS25 Leeds"},
+        {"url": "https://www.rightmove.co.uk/properties/174908915", "label": "4b detached new-build CW11 Sandbach"},
+    ]
+    # Allow individual URL overrides via ?url0=..., ?url1=... etc.
+    for i in range(len(BATCH)):
+        override = request.args.get(f"url{i}")
+        if override:
+            BATCH[i] = {"url": override, "label": f"override-{i}"}
+
+    def _test_one(item):
+        url = item["url"]
+        row = {
+            "url": url,
+            "label": item["label"],
+            "postcode": None,
+            "address_scraped": None,
+            "description_house_number": None,
+            "is_new_build": False,
+            "floor_area_sqm": None,
+            "resolved_address": None,
+            "resolution_confidence": None,
+            "method": "picker",
+            "auto_resolved": False,
+            "picker_candidates": 0,
+            "scrape_ok": False,
+            "error": None,
+        }
+        try:
+            scraped = scrape_property_url(url)
+            postcode = scraped.get("postcode")
+            addr = scraped.get("address") or ""
+            row["postcode"] = postcode
+            row["address_scraped"] = addr
+            row["description_house_number"] = scraped.get("description_house_number")
+            row["is_new_build"] = bool(scraped.get("is_new_build"))
+            row["floor_area_sqm"] = scraped.get("floor_area_sqm")
+            row["scrape_ok"] = bool(postcode)
+
+            if not postcode:
+                row["error"] = "no postcode scraped — Rightmove blocked or listing removed"
+                return row
+
+            # Tier 0: listing already carries the house/flat number
+            if _leading_house_number(addr):
+                row["method"] = "listing-has-number"
+                row["resolved_address"] = addr
+                row["resolution_confidence"] = "high"
+                row["auto_resolved"] = True
+                return row
+
+            # Tier 1+2: coordinate / EPC resolution
+            resolution = resolve_full_address(scraped)
+            row["resolved_address"] = resolution.get("address")
+            row["resolution_confidence"] = resolution.get("confidence")
+            if resolution.get("confidence") == "high":
+                row["method"] = "auto-resolved"  # coordinate or EPC
+                row["auto_resolved"] = True
+                return row
+
+            # Tier 3: house number from description text (applied automatically in real flow)
+            if row["description_house_number"] and addr:
+                row["method"] = "description"
+                row["resolved_address"] = f"{row['description_house_number']} {addr}"
+                row["resolution_confidence"] = "medium"
+                row["auto_resolved"] = True
+                return row
+
+            # Picker fallback
+            row["method"] = "picker"
+            candidates = get_last_sale_candidates(postcode)
+            row["picker_candidates"] = len(candidates)
+
+        except Exception as exc:
+            row["error"] = str(exc)
+        return row
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        results = list(pool.map(_test_one, BATCH))
+
+    # Summary
+    total = len(results)
+    auto = sum(1 for r in results if r.get("auto_resolved"))
+    method_counts = {}
+    for r in results:
+        m = r.get("method", "unknown")
+        method_counts[m] = method_counts.get(m, 0) + 1
+    miss_classes = {}
+    for r in results:
+        if r.get("method") == "picker" or r.get("error"):
+            cls = "new-build" if r.get("is_new_build") else (
+                "scrape-error" if r.get("error") else (
+                "no-floor-area" if not r.get("floor_area_sqm") else "uniform-street"))
+            miss_classes[cls] = miss_classes.get(cls, 0) + 1
+
+    return jsonify({
+        "run_at": datetime.utcnow().isoformat() + "Z",
+        "total": total,
+        "auto_resolved": auto,
+        "auto_resolve_pct": round(100 * auto / total) if total else 0,
+        "picker_fallback": sum(1 for r in results if r.get("method") == "picker"),
+        "new_build_count": sum(1 for r in results if r.get("is_new_build")),
+        "scrape_errors": sum(1 for r in results if r.get("error")),
+        "method_counts": method_counts,
+        "miss_classes": miss_classes,
+        "results": results,
+    })
+
+
 @app.route("/debug-report")
 def debug_report():
     """Raw report JSON. Admin-key protected (paid tier burns API credits).
