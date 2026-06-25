@@ -267,10 +267,18 @@ def _epc_fetch_certificate(certificate_number):
     return cert if isinstance(cert, dict) else None
 
 def _leading_house_number(addr):
-    """Extract the leading house number from an address string, e.g. '9 Chantry Close' -> '9'."""
+    """Extract the leading house/flat number from an address string.
+    Handles '9 Chantry Close', '9A Chantry Close', and UK flat formats:
+    'Flat 51, 26 Viewforth', 'Apartment 3, ...', 'Unit 12, ...'"""
     if not addr:
         return None
-    m = re.match(r"\s*(\d+[A-Za-z]?)\b", addr.strip())
+    s = addr.strip()
+    # Plain leading digit: '9 Chantry Close' or '24, Tudor Road'
+    m = re.match(r"(\d+[A-Za-z]?)\b", s)
+    if m:
+        return m.group(1).upper()
+    # Flat/Apartment/Unit prefix: 'Flat 51, ...' or 'Apartment 3B, ...'
+    m = re.match(r"(?:flat|apartment|apt|unit)\s+(\d+[A-Za-z]?)\b", s, re.IGNORECASE)
     return m.group(1).upper() if m else None
 
 def _street_tokens(addr):
