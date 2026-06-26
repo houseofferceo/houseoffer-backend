@@ -542,6 +542,96 @@ def _epc_resolution(postcode, address, property_type, floor_area_sqm):
     return resolved, confidence, floor_area_sqm
 
 
+# ── FIX 3: floor-area sanity check ─────────────────────────────────────────────
+# A scraped floor area can be physically impossible for the street (e.g. 164 m²
+# where every EPC on the road tops out near 130 m²) — a mis-read that corrupts
+# £/sqm and the AVM. We validate it against EPC data before it feeds any maths.
+SUBJECT_EPC_TOLERANCE = 0.25   # accept scraped up to +25% over the subject's own EPC area
+STREET_MAX_MULTIPLE = 1.30     # else reject if >30% above the largest EPC on the street
+STREET_MIN_SAMPLE = 3          # never reject on fewer EPC samples than this
+
+def _street_epc_floor_areas(postcode, address, cap=25):
+    """Floor areas (sqm) of EPC certificates on the subject's street, capped to
+    `cap` certificate fetches. Used only as a fallback when the subject's own EPC
+    area can't be found. Best-effort; returns [] on any failure."""
+    results = _epc_search(postcode)
+    if not results:
+        return []
+    subj_streets = _street_tokens(address) if address else set()
+    candidates, seen = [], set()
+    for r in results:
+        line1 = (r.get("addressLine1") or "").strip()
+        if not line1 or line1.upper() in seen:
+            continue
+        seen.add(line1.upper())
+        toks = {t for t in _normalise_text(line1) if len(t) > 3}
+        if subj_streets and not (subj_streets & toks):
+            continue
+        candidates.append(r)
+    candidates = candidates[:cap]
+    if not candidates:
+        return []
+
+    def _f(r):
+        cert = _epc_fetch_certificate(r.get("certificateNumber") or "")
+        return _extract_floor_area(cert) if cert else None
+
+    areas = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for a in pool.map(_f, candidates):
+            try:
+                a = float(a)
+            except (TypeError, ValueError):
+                continue
+            if a and a > 0:
+                areas.append(a)
+    return areas
+
+def validate_scraped_floor_area(postcode, address, scraped_sqm, property_type=None):
+    """Decide whether a scraped floor area is plausible against EPC data.
+    Returns a dict: {ok, replacement, reason, basis, sample}. Conservative —
+    only flags a clear upper-bound outlier, and never on thin EPC evidence.
+    Tier A: the subject's OWN EPC floor area (authoritative for this property);
+    Tier B: the street's EPC floor-area envelope."""
+    if not scraped_sqm or scraped_sqm <= 0:
+        return {"ok": True, "replacement": None, "reason": "no floor area", "basis": "none", "sample": 0}
+
+    # Tier A — subject's own EPC certificate.
+    subject_area = None
+    try:
+        subject_area = get_floor_area_from_epc(postcode, address)
+    except Exception as e:
+        print(f"floor-area validation (subject EPC) error: {e}")
+    if subject_area and subject_area > 0:
+        if scraped_sqm > subject_area * (1 + SUBJECT_EPC_TOLERANCE):
+            return {"ok": False, "replacement": subject_area,
+                    "reason": f"scraped {scraped_sqm} m² exceeds the property's EPC area "
+                              f"{subject_area} m² by >{int(SUBJECT_EPC_TOLERANCE*100)}%",
+                    "basis": "subject-epc", "sample": 1}
+        return {"ok": True, "replacement": None, "reason": "within subject EPC tolerance",
+                "basis": "subject-epc", "sample": 1}
+
+    # Tier B — street envelope (only when the subject's own EPC area is unavailable).
+    try:
+        areas = _street_epc_floor_areas(postcode, address)
+    except Exception as e:
+        print(f"floor-area validation (street EPC) error: {e}")
+        areas = []
+    if len(areas) >= STREET_MIN_SAMPLE:
+        street_max = max(areas)
+        if scraped_sqm > street_max * STREET_MAX_MULTIPLE:
+            return {"ok": False, "replacement": None,
+                    "reason": f"scraped {scraped_sqm} m² exceeds {STREET_MAX_MULTIPLE}× the "
+                              f"largest EPC floor area on the street ({street_max} m²)",
+                    "basis": "street", "sample": len(areas)}
+        return {"ok": True, "replacement": None, "reason": "within street envelope",
+                "basis": "street", "sample": len(areas)}
+
+    # Not enough EPC evidence to judge — never reject on thin data.
+    return {"ok": True, "replacement": None, "reason": "insufficient EPC data to validate",
+            "basis": "none", "sample": len(areas)}
+
+
 # Short-lived sold-prices cache: address resolution, comparables and the
 # last-sale lookup all need the same response within one report build.
 # Sharing it keeps PropertyData usage at one call per postcode AND stops
@@ -1465,6 +1555,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     # Confidence flags, refined by FIX 2 (comparables) and FIX 3 (floor area).
     comparable_confidence = "area_only"
     floor_area_confidence = "high"
+    floor_area_sqm_raw = None  # set by FIX 3 when a scraped area is rejected
 
     if not floor_area_sqm and scraper_floor_area_sqm:
         floor_area_sqm = scraper_floor_area_sqm
@@ -1513,6 +1604,29 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                     floor_area_sqm = epc_area
             except Exception as e:
                 print(f"EPC resolution error: {e}")
+
+        # ── FIX 3: sanity-check a SCRAPED floor area before it feeds the AVM,
+        # £/sqm or size-match. EPC-derived areas are already authoritative and
+        # skip this. On rejection we prefer the property's own EPC area; if none
+        # is available we drop the corrupt value rather than valuing on it.
+        if paid_tier and floor_area_sqm and floor_area_source == "scraped":
+            try:
+                fa_check = validate_scraped_floor_area(
+                    postcode, address, floor_area_sqm, property_type)
+            except Exception as e:
+                print(f"floor-area validation error: {e}")
+                fa_check = {"ok": True}
+            if not fa_check.get("ok"):
+                floor_area_sqm_raw = floor_area_sqm
+                print(f"FIX3 rejected scraped floor area: {fa_check.get('reason')}")
+                if fa_check.get("replacement"):
+                    floor_area_sqm = fa_check["replacement"]
+                    floor_area_source = "epc"
+                    floor_area_confidence = "high"
+                else:
+                    floor_area_sqm = None
+                    floor_area_source = "unverified"
+                    floor_area_confidence = "low"
 
         fut_avm = None
         if paid_tier:
@@ -1941,6 +2055,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "property_type_source": property_type_source,
         "floor_area_source": floor_area_source,
         "floor_area_confidence": floor_area_confidence,
+        # Raw scraped area when FIX 3 rejected it as implausible (else None) —
+        # kept for the QC layer; never fed into the valuation maths.
+        "floor_area_sqm_raw": floor_area_sqm_raw,
         "comparable_confidence": comparable_confidence,
         "comparable_count_size_matched": comparable_count_size_matched,
         "local_avg_sold": local_avg_sold,
