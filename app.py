@@ -946,6 +946,16 @@ def fetch_psqf_points(postcode, property_type):
     return points
 
 
+SIZE_MATCH_TOLERANCE = 0.20  # ±20% floor-area band for like-for-like matching
+
+def _within_size_band(area_sqf, subject_sqf, tol=SIZE_MATCH_TOLERANCE):
+    """True when a comparable's floor area (sqf) is within ±tol of the subject.
+    Shared by the £/sqm benchmark and the headline comparable size-match (FIX 2)
+    so both use one definition of 'same size'."""
+    if not area_sqf or not subject_sqf or subject_sqf <= 0:
+        return False
+    return subject_sqf * (1 - tol) <= area_sqf <= subject_sqf * (1 + tol)
+
 def get_psqm_benchmarks(postcode, property_type, floor_area_sqm=None, points=None):
     """Return both sold £/sqm benchmarks:
       - area_wide_psqm: all comparable-type homes
@@ -966,8 +976,7 @@ def get_psqm_benchmarks(postcode, property_type, floor_area_sqm=None, points=Non
     size_matched_count = 0
     if floor_area_sqm and floor_area_sqm > 0:
         subject_sqf = floor_area_sqm * 10.764
-        lo, hi = subject_sqf * 0.8, subject_sqf * 1.2
-        sized = [p for p in points if p.get("sqf") and lo <= p["sqf"] <= hi]
+        sized = [p for p in points if _within_size_band(p.get("sqf"), subject_sqf)]
         if len(sized) >= 3:
             sm_psqf = sum(p["psqf"] for p in sized) / len(sized)
             size_matched_psqm = round(price_per_sqft_to_sqm(sm_psqf))
@@ -1549,7 +1558,55 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
 
     # ── DERIVED VALUES (all local computation from here) ────────────────────────
 
-    local_avg_sold = avg_sold_price(comparables)
+    # Address-normalised floor areas from the £/sqf feed — the only sold feed
+    # carrying per-property floor area. Used to size-match the headline
+    # comparables (FIX 2) and to enrich the comparables table for display.
+    psqf_lookup = {}
+    for pt in psqf_points:
+        addr = pt.get("address")
+        sqf = pt.get("sqf")
+        if addr and sqf and sqf > 0:
+            key = re.sub(r"[^A-Z0-9]", "", addr.upper())
+            sqm = round(sqf / 10.764, 1)
+            price = pt.get("price")
+            psqm_val = round(price / sqm) if price else round(price_per_sqft_to_sqm(pt["psqf"]))
+            psqf_lookup[key] = {"sqm": sqm, "psqm": psqm_val}
+
+    # ── FIX 2: real ±20% size-matching of the headline comparable set ──────────
+    # The /sold-prices feed has no floor area, so we join it to the £/sqf feed by
+    # address and keep only comparables within ±20% of the subject's floor area.
+    # Correctness > coverage: if too few size-matched comps remain we do NOT
+    # broaden the area — we keep the best available set and flag low confidence.
+    # The median-band junk-trim in _filter_sold still runs as a secondary filter.
+    comparables_for_avg = comparables
+    comparable_count_size_matched = 0
+    if floor_area_sqm and floor_area_sqm > 0 and psqf_lookup:
+        subject_sqf = floor_area_sqm * 10.764
+        size_matched = []
+        for c in comparables:
+            key = re.sub(r"[^A-Z0-9]", "", (c.get("address") or "").upper())
+            info = psqf_lookup.get(key)
+            if info and _within_size_band(info["sqm"] * 10.764, subject_sqf):
+                size_matched.append(c)
+        comparable_count_size_matched = len(size_matched)
+        if len(size_matched) >= MIN_COMPARABLES:
+            comparables_for_avg = size_matched
+            comparable_confidence = "size_matched"
+            # Bedroom precision tier: tighten to same-bedroom comps only when it
+            # keeps the set at or above the minimum — never as a hard filter.
+            if bedrooms:
+                same_beds = [c for c in size_matched
+                             if _coerce_bedrooms(c.get("bedrooms")) == bedrooms]
+                if len(same_beds) >= MIN_COMPARABLES:
+                    comparables_for_avg = same_beds
+                    comparable_confidence = "bedroom_matched"
+        else:
+            # Not enough like-for-like comps: keep the type-matched set but make
+            # clear it is area-level only, not size-matched.
+            if comparable_confidence != "low":
+                comparable_confidence = "area_only"
+
+    local_avg_sold = avg_sold_price(comparables_for_avg)
 
     sold_diff_pct = None
     sold_verdict = None
@@ -1568,18 +1625,6 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     size_matched_psqm = benchmarks["size_matched_psqm"]
     area_wide_psqm = benchmarks["area_wide_psqm"]
     size_matched_count = benchmarks["size_matched_count"]
-
-    # Build address lookup from psqf records for comparables enrichment
-    psqf_lookup = {}
-    for pt in psqf_points:
-        addr = pt.get("address")
-        sqf = pt.get("sqf")
-        if addr and sqf and sqf > 0:
-            key = re.sub(r"[^A-Z0-9]", "", addr.upper())
-            sqm = round(sqf / 10.764, 1)
-            price = pt.get("price")
-            psqm_val = round(price / sqm) if price else round(price_per_sqft_to_sqm(pt["psqf"]))
-            psqf_lookup[key] = {"sqm": sqm, "psqm": psqm_val}
 
     if floor_area_sqm and floor_area_sqm > 0:
         asking_psqm = round(asking_price / floor_area_sqm)
@@ -1879,7 +1924,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "postcode": formatted,
         "postcode_used": postcode_used,
         "address": address,
-        "comparables_count": len(comparables),
+        # Count behind the headline average (the size-matched subset when FIX 2
+        # tightened the set), so "based on N comparable sales" stays truthful.
+        "comparables_count": len(comparables_for_avg),
         "comparables": comparables_list,
         "search_broadened": broadened,
         "asking_price": asking_price,
@@ -1895,6 +1942,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "floor_area_source": floor_area_source,
         "floor_area_confidence": floor_area_confidence,
         "comparable_confidence": comparable_confidence,
+        "comparable_count_size_matched": comparable_count_size_matched,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
