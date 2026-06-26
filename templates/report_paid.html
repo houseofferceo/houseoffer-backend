@@ -133,11 +133,11 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   <div class="report-header">
     <div class="report-label"><span class="report-label-dot"></span>Independent property analysis</div>
     <div class="report-address">{{ address or postcode }}</div>
-    <div class="report-sub">{{ property_type|title }} · {{ postcode }} · Generated {{ generated }}</div>
+    <div class="report-sub">{{ property_type|title if property_type else "Property type not stated" }} · {{ postcode }} · Generated {{ generated }}</div>
     <div class="report-meta">
       <div class="meta-pill">🏷️ Asking price: <strong>&nbsp;{{ asking_price_formatted }}</strong></div>
-      <div class="meta-pill">🏠 {{ property_type|title }}</div>
-      <div class="meta-pill">🛏️ {{ bedrooms }} bedrooms</div>
+      <div class="meta-pill">🏠 {{ property_type|title if property_type else "Type not stated" }}</div>
+      {% if bedrooms %}<div class="meta-pill">🛏️ {{ bedrooms }} bedrooms</div>{% endif %}
       <span class="paid-badge">Full Report</span>
     </div>
   </div>
@@ -226,7 +226,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
     <div class="verdict-body">
       {% if local_avg_sold %}
-        Based on {{ comparables_count }} completed sales of similar {{ property_type }} homes
+        Based on {{ comparables_count }} completed sales of similar {{ property_type_label }} homes
         {% if search_broadened %}in the {{ postcode.split()[0] }} area{% else %}near {{ postcode }}{% endif %},
         HPI-adjusted to today's value, this property is asking
         <strong>
@@ -404,7 +404,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div class="data-card-label">What the market says</div>
       <div class="data-card-value">{{ local_avg_sold_formatted }}</div>
       <div class="data-card-sub">
-        avg of <strong>{{ comparables_count }} sold {{ property_type }}</strong>
+        avg of <strong>{{ comparables_count }} sold {{ property_type_label }}</strong>
         {% if search_broadened %}in {{ postcode.split()[0] }}{% else %}near {{ postcode }}{% endif %}
         · Land Registry
       </div>
@@ -437,7 +437,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </div>
     </div>
   </div>
-  <div class="source-note">HPI adjustment based on ONS/Land Registry regional House Price Index for {{ property_type }} homes</div>
+  <div class="source-note">HPI adjustment based on ONS/Land Registry regional House Price Index for {{ property_type_label }} homes</div>
   {% elif last_sale_candidates and report_id is defined and report_id %}
   <div class="section-title">This property's history vs asking price</div>
   <div style="background:#f8f9fb; border:1px solid #e2e6ed; border-radius:10px; padding:18px 20px; margin-bottom:8px;">
@@ -492,7 +492,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     <div class="data-card after">
       <div class="data-card-label">Local average / m²</div>
       <div class="data-card-value">£{{ "{:,}".format(local_avg_psqm) }}</div>
-      <div class="data-card-sub">for comparable <strong>{{ property_type }}</strong> nearby</div>
+      <div class="data-card-sub">for comparable <strong>{{ property_type_label }}</strong> nearby</div>
     </div>
   </div>
   {% endif %}

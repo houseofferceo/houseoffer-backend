@@ -16,8 +16,15 @@ import requests
 DEFAULT_RESULT = {
     "postcode": None,
     "asking_price": 0,
-    "bedrooms": 3,
-    "property_type": "semi-detached",
+    # bedrooms / property_type default to None (unknown) rather than a fabricated
+    # "3-bed semi-detached". A guessed profile poisons the comparable filter and
+    # the AVM; downstream code must treat None as "unknown" and flag low confidence
+    # rather than silently re-introducing a default.
+    "bedrooms": None,
+    "bedrooms_source": "unknown",      # "scraped" | "keyfeatures" | "unknown"
+    "property_type": None,
+    "property_type_source": "unknown", # "scraped" | "unknown"
+    "floor_area_source": "unknown",    # "scraped" | "unknown" (validated to "epc"/"unverified" in app.py)
     "address": None,
     "source": None,
     "date_first_listed": None,
@@ -101,7 +108,10 @@ def detect_portal(url: str) -> Optional[str]:
     return None
 
 
-def normalise_property_type(raw: str) -> str:
+def normalise_property_type(raw: str) -> Optional[str]:
+    """Map a portal property-type string to our canonical type, or None if it
+    cannot be recognised. Returns None (not a fabricated 'semi-detached') so the
+    caller can flag the type as unknown rather than guessing."""
     t = (raw or "").lower()
     if "semi" in t:
         return "semi-detached"
@@ -113,7 +123,7 @@ def normalise_property_type(raw: str) -> str:
         return "flat"
     if "bungalow" in t:
         return "detached"
-    return "semi-detached"
+    return None
 
 
 def parse_price(value: Any) -> int:
@@ -455,15 +465,18 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
             beds_int = int(beds)
             if 0 < beds_int <= 10:
                 result["bedrooms"] = beds_int
+                result["bedrooms_source"] = "scraped"
         except (TypeError, ValueError):
             pass
-    if result["bedrooms"] == DEFAULT_RESULT["bedrooms"]:
+    # keyFeatures fallback only when the structured field gave us nothing.
+    if result["bedrooms"] is None:
         key_features = prop.get("keyFeatures") or []
         if isinstance(key_features, list):
             joined = " ".join(str(f) for f in key_features)
             match = re.search(r"(\d+)\s*bedroom", joined, re.IGNORECASE)
             if match:
                 result["bedrooms"] = int(match.group(1))
+                result["bedrooms_source"] = "keyfeatures"
 
     ptype = (
         prop.get("propertySubType")
@@ -471,7 +484,10 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
         or prop.get("propertyTypeFullDescription")
         or ""
     )
-    result["property_type"] = normalise_property_type(str(ptype))
+    normalised_type = normalise_property_type(str(ptype))
+    if normalised_type:
+        result["property_type"] = normalised_type
+        result["property_type_source"] = "scraped"
 
     addr = prop.get("address") or {}
     pc = _postcode_from_address(addr if isinstance(addr, dict) else {})
@@ -615,6 +631,11 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
                         result["floor_area_sqm"] = round(area / 10.764, 1)
                 except (ValueError, TypeError):
                     pass
+
+    # Tag floor-area provenance once all listing-side extraction is done. app.py
+    # validates this against street EPC areas and may downgrade it to "unverified".
+    if result.get("floor_area_sqm"):
+        result["floor_area_source"] = "scraped"
 
     if description and _NEW_BUILD_RE.search(description):
         result["is_new_build"] = True
@@ -825,6 +846,7 @@ def _apply_zoopla_next_data(result: dict, page_props: dict) -> None:
     if beds is not None:
         try:
             result["bedrooms"] = int(beds)
+            result["bedrooms_source"] = "scraped"
         except (TypeError, ValueError):
             pass
 
@@ -833,7 +855,10 @@ def _apply_zoopla_next_data(result: dict, page_props: dict) -> None:
         {"propertyType", "propertySubType", "propertyTypeFullDescription", "category"},
     )
     if ptype:
-        result["property_type"] = normalise_property_type(str(ptype))
+        normalised_type = normalise_property_type(str(ptype))
+        if normalised_type:
+            result["property_type"] = normalised_type
+            result["property_type_source"] = "scraped"
 
     postcode = _walk_find_first(
         listing,
@@ -943,8 +968,14 @@ def scrape_property_url(url: str) -> dict:
     """Scrape Rightmove or Zoopla; returns shared listing field dict."""
     portal = detect_portal(url)
     if portal == "rightmove":
-        return scrape_rightmove(url)
-    if portal == "zoopla":
-        return scrape_zoopla(url)
-    print(f"Unknown property portal for URL: {url[:80]}")
-    return _empty_result()
+        result = scrape_rightmove(url)
+    elif portal == "zoopla":
+        result = scrape_zoopla(url)
+    else:
+        print(f"Unknown property portal for URL: {url[:80]}")
+        return _empty_result()
+    # Safety net: any path that produced a floor area but didn't tag its source
+    # (e.g. Zoopla) is "scraped" — app.py revalidates against street EPC data.
+    if result.get("floor_area_sqm") and result.get("floor_area_source") == "unknown":
+        result["floor_area_source"] = "scraped"
+    return result

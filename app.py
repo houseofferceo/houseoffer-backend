@@ -142,22 +142,30 @@ def sector_postcode(postcode):
     return f"{raw[:-3]} {raw[-3]}"
 
 def normalise_type_sold(property_type):
+    """Map our canonical type to PropertyData's sold-record type keys. Returns
+    None when the type is unknown so the caller can skip type-filtering and flag
+    low confidence rather than matching against a fabricated 'semi-detached'."""
+    if not property_type:
+        return None
     mapping = {
         "semi-detached": ["semi-detached_house", "semi_detached_house", "Semi-Detached"],
         "detached":      ["detached_house", "Detached"],
         "terraced":      ["terraced_house", "Terraced"],
         "flat":          ["flat", "Flat"],
     }
-    return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
+    return mapping.get(property_type.lower())
 
 def normalise_type_listings(property_type):
+    """As normalise_type_sold, for £/sqf listing records. None when unknown."""
+    if not property_type:
+        return None
     mapping = {
         "semi-detached": ["semi-detached_house", "semi_detached_house"],
         "detached":      ["detached_house"],
         "terraced":      ["terraced_house"],
         "flat":          ["flat"],
     }
-    return mapping.get(property_type.lower(), ["semi-detached_house", "semi_detached_house"])
+    return mapping.get(property_type.lower())
 
 def price_per_sqft_to_sqm(p):
     return p * 10.764
@@ -169,12 +177,33 @@ def extract_postcode_from_url(url):
         return match.group(1).replace(" ", "").upper()
     return None
 
+def _coerce_bedrooms(value):
+    """Caller-supplied bedrooms may be '', '3', 3 or None. Return an int in a
+    sane range, or None for anything that isn't a real bedroom count."""
+    try:
+        n = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if 0 < n <= 20 else None
+
 def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, property_type, address=""):
     """Fill listing fields from Rightmove/Zoopla when a property URL is provided.
     Returns a 6-tuple: (postcode, asking_price, bedrooms, property_type, address, extra_dict)
-    where extra_dict carries days_on_market and price-reduction fields from the scraper."""
-    extra = {}
+    where extra_dict carries days_on_market, price-reduction fields and provenance
+    flags from the scraper. bedrooms/property_type are None when unknown (FIX 1) —
+    callers must never substitute a default."""
+    # Caller-supplied values (from a manual form) count as "user"-sourced known
+    # data; an empty/blank value is treated as unknown, not a fabricated default.
+    caller_beds = _coerce_bedrooms(bedrooms)
+    caller_type = (property_type or "").strip() or None
+    bedrooms, property_type = caller_beds, caller_type
+
     if not property_url:
+        extra = {
+            "bedrooms_source": "user" if caller_beds is not None else "unknown",
+            "property_type_source": "user" if caller_type else "unknown",
+            "floor_area_source": "unknown",
+        }
         return postcode, asking_price, bedrooms, property_type, address, extra
 
     scraped = scrape_property_url(property_url)
@@ -182,10 +211,23 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         postcode = scraped.get("postcode") or ""
     if not asking_price:
         asking_price = scraped.get("asking_price") or 0
+
+    # Scrape is authoritative for a URL; fall back to the caller value only when
+    # the scrape couldn't read it. Provenance reflects the final value's origin.
     if scraped.get("bedrooms") is not None:
-        bedrooms = scraped.get("bedrooms", bedrooms)
+        bedrooms = scraped.get("bedrooms")
+        beds_source = scraped.get("bedrooms_source", "scraped")
+    else:
+        bedrooms = caller_beds
+        beds_source = "user" if caller_beds is not None else "unknown"
+
     if scraped.get("property_type"):
-        property_type = scraped.get("property_type", property_type)
+        property_type = scraped.get("property_type")
+        type_source = scraped.get("property_type_source", "scraped")
+    else:
+        property_type = caller_type
+        type_source = "user" if caller_type else "unknown"
+
     if scraped.get("address") and not address:
         address = scraped.get("address")
 
@@ -198,6 +240,11 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "reduction_pct": scraped.get("reduction_pct"),
         "scraper_floor_area_sqm": scraped.get("floor_area_sqm"),
         "is_new_build": scraped.get("is_new_build", False),
+        # Provenance flags (FIX 1) so the report/QC layer can see when bedrooms,
+        # property type or floor area were unknown rather than truly read.
+        "bedrooms_source": beds_source,
+        "property_type_source": type_source,
+        "floor_area_source": scraped.get("floor_area_source", "unknown"),
     }
 
     # Full-address resolution (sold-record coordinate match). Enhancement only:
@@ -547,6 +594,7 @@ def fetch_sold_psqf(postcode):
 
 def get_sold_comparables(postcode, property_type):
     type_keys = normalise_type_sold(property_type)
+    type_unknown = type_keys is None
     formatted = format_postcode(postcode)
     data = fetch_sold_prices(formatted)
     comparables = _filter_sold(data, type_keys)
@@ -571,14 +619,19 @@ def get_sold_comparables(postcode, property_type):
             postcode_used = district
     # HPI-adjust all comparables to today's value before returning
     comparables = hpi_adjust_comparables(comparables, postcode)
-    return comparables, postcode_used, broadened
+    return comparables, postcode_used, broadened, type_unknown
 
 def _filter_sold(data, type_keys):
     if not data:
         return []
     try:
         transactions = data.get("data", {}).get("raw_data", [])
-        comps = [t for t in transactions if t.get("type") in type_keys and t.get("price") and t.get("price") < 2_000_000]
+        # type_keys is None when the subject's property type is unknown (FIX 1):
+        # skip type-filtering rather than fabricate a default. The caller flags
+        # this as low confidence; the size-match (FIX 2) becomes the like-for-like.
+        comps = [t for t in transactions
+                 if (type_keys is None or t.get("type") in type_keys)
+                 and t.get("price") and t.get("price") < 2_000_000]
         # Median band: exclude non-market transactions (partial transfers,
         # right-to-buy, inter-family sales) that Land Registry records at
         # far-from-market values. Anchored on the median, which an outlier
@@ -696,7 +749,8 @@ def _psqf_points(data, type_keys):
 
     points = []
     for p in raw:
-        if p.get("type") in type_keys:
+        # type_keys is None when subject type is unknown (FIX 1): skip type filter.
+        if type_keys is None or p.get("type") in type_keys:
             v = psqf_value(p)
             if v:
                 points.append({
@@ -793,6 +847,11 @@ def fetch_propertydata_avm(postcode, property_type, bedrooms=None, floor_area_sq
     Returns {low, mid, high} or None."""
     if not floor_area_sqm or floor_area_sqm <= 0:
         return None
+    # Correctness > coverage: the AVM keys off property type and bedrooms. If
+    # either is unknown (FIX 1), skip the call rather than send a fabricated
+    # "3-bed semi" — a guessed profile produces a confident-but-wrong valuation.
+    if not property_type or not bedrooms:
+        return None
     try:
         params = {
             "key": PROPERTYDATA_API_KEY,
@@ -800,7 +859,7 @@ def fetch_propertydata_avm(postcode, property_type, bedrooms=None, floor_area_sq
             "internal_area": round(float(floor_area_sqm) * 10.764),
             "property_type": _avm_property_type(property_type),
             "construction_date": "1914_2000",
-            "bedrooms": int(bedrooms) if bedrooms else 3,
+            "bedrooms": int(bedrooms),
             "bathrooms": 1,
             "finish_quality": "average",
             "outdoor_space": "none" if "flat" in (property_type or "").lower() else "garden",
@@ -1381,6 +1440,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       reduction_date=None, reduction_amount=None, reduction_pct=None,
                       resolved_address=None, address_resolution=None,
                       is_new_build=False,
+                      bedrooms_source="unknown", property_type_source="unknown",
+                      floor_area_source="unknown",
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -1391,6 +1452,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     paid_tier = tier != "free"
     formatted = format_postcode(postcode)
     region = postcode_to_region(postcode)
+
+    # Confidence flags, refined by FIX 2 (comparables) and FIX 3 (floor area).
+    comparable_confidence = "area_only"
+    floor_area_confidence = "high"
 
     if not floor_area_sqm and scraper_floor_area_sqm:
         floor_area_sqm = scraper_floor_area_sqm
@@ -1420,7 +1485,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             fut_psqf = pool.submit(fetch_psqf_points, postcode, property_type)
             fut_rents = pool.submit(fetch_avg_rents, formatted, property_type, bedrooms)
 
-        comparables, postcode_used, broadened = fut_comps.result()
+        comparables, postcode_used, broadened, type_unknown = fut_comps.result()
+        if type_unknown:
+            # No type filter could be applied — comparables mix property types.
+            comparable_confidence = "low"
 
         fut_dom = pool.submit(fetch_avg_dom, postcode_used)
         fut_ratio = pool.submit(fetch_asking_sold_ratio, postcode_used, property_type)
@@ -1818,7 +1886,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "asking_price_formatted": f"£{asking_price:,}",
         "bedrooms": bedrooms,
         "property_type": property_type,
+        # Display-safe label for inline prose: never renders the literal "None".
+        "property_type_label": property_type or "property",
         "floor_area_sqm": floor_area_sqm,
+        # Provenance / confidence flags (FIX 1-3) for the report UI and QC layer.
+        "bedrooms_source": bedrooms_source,
+        "property_type_source": property_type_source,
+        "floor_area_source": floor_area_source,
+        "floor_area_confidence": floor_area_confidence,
+        "comparable_confidence": comparable_confidence,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
@@ -1888,8 +1964,10 @@ def _start_paid_build_from_url(report_id, property_url, address_override=None):
     and store it under report_id. Failures are recorded on the stored report."""
     def work():
         try:
+            # Pass None (not "3"/"semi-detached") as the bedrooms/type fallback:
+            # if the scrape can't read them they must stay unknown, never default.
             postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
-                property_url, "", 0, "3", "semi-detached", ""
+                property_url, "", 0, None, None, ""
             )
             if not postcode:
                 raise ValueError("Could not determine the postcode from that listing")
@@ -1931,8 +2009,8 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
             new_report = build_report_data(
                 property_url=stored.get("property_url", "") or report.get("property_url", ""),
                 asking_price=report.get("asking_price"),
-                bedrooms=report.get("bedrooms", "3"),
-                property_type=report.get("property_type", "semi-detached"),
+                bedrooms=report.get("bedrooms"),
+                property_type=report.get("property_type"),
                 postcode=report.get("postcode", ""),
                 floor_area_sqm=report.get("floor_area_sqm"),
                 address=address or stored.get("selected_address"),
@@ -1943,6 +2021,9 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
                 reduction_amount=report.get("reduction_amount"),
                 reduction_pct=report.get("reduction_pct"),
                 is_new_build=report.get("is_new_build", False),
+                bedrooms_source=report.get("bedrooms_source", "unknown"),
+                property_type_source=report.get("property_type_source", "unknown"),
+                floor_area_source=report.get("floor_area_source", "unknown"),
                 tier=tier,
             )
             latest = load_report(report_id) or {}
@@ -3026,7 +3107,7 @@ def preview_free():
     if not property_url:
         return "Pass ?url= with a Rightmove URL and ?key= with your admin key", 400
     postcode, asking_price, bedrooms, property_type, address, extra = merge_scraped_listing(
-        property_url, "", 0, "3", "semi-detached", ""
+        property_url, "", 0, None, None, ""
     )
     if not postcode:
         return "Could not determine postcode from that URL.", 400
@@ -3054,8 +3135,8 @@ def generate_report():
     postcode = data.get("postcode", "")
     property_url = data.get("property_url", "")
     asking_price = int(str(data.get("asking_price", 0)).replace(",", "").replace("£", ""))
-    bedrooms = data.get("bedrooms", "3")
-    property_type = data.get("property_type", "semi-detached")
+    bedrooms = data.get("bedrooms") or None
+    property_type = data.get("property_type") or None
     address = data.get("address", "")
     if not postcode and property_url:
         postcode = extract_postcode_from_url(property_url) or ""
@@ -3083,8 +3164,8 @@ def report_data_json():
     postcode = data.get("postcode", "")
     property_url = data.get("property_url", "")
     asking_price = int(str(data.get("asking_price", 0)).replace(",", "").replace("£", ""))
-    bedrooms = data.get("bedrooms", "3")
-    property_type = data.get("property_type", "semi-detached")
+    bedrooms = data.get("bedrooms") or None
+    property_type = data.get("property_type") or None
     address = data.get("address", "")
     if not postcode and property_url:
         postcode = extract_postcode_from_url(property_url) or ""
@@ -3140,8 +3221,8 @@ def submit():
     # These may be pre-filled by the frontend; the scraper will override with
     # live values if it finds better data.
     asking_price   = int(str(data.get("asking_price", 0) or 0).replace(",", "").replace("£", "")) or 0
-    bedrooms       = data.get("bedrooms", "3")
-    property_type  = data.get("property_type", "semi-detached")
+    bedrooms       = data.get("bedrooms") or None
+    property_type  = data.get("property_type") or None
     postcode       = data.get("postcode", "")
     address        = data.get("address", "")
     floor_area_sqm = float(data.get("floor_area_sqm", 0) or 0) or None

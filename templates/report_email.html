@@ -74,7 +74,7 @@
                 {{ postcode }}
               </h1>
               <p style="margin:0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; color:#5c5849; line-height:1.5;">
-                {{ property_type|title }} · {{ bedrooms }} bedrooms · Asking <strong style="color:#1e1c18;">{{ asking_price_formatted }}</strong>
+                {{ property_type|title if property_type else "Property" }}{% if bedrooms %} · {{ bedrooms }} bedrooms{% endif %} · Asking <strong style="color:#1e1c18;">{{ asking_price_formatted }}</strong>
               </p>
             </td>
           </tr>
@@ -118,7 +118,7 @@
                             {% if sold_diff_pct > 0 %}{{ sold_diff_pct }}%{% elif sold_diff_pct < 0 %}{{ sold_diff_pct|abs }}%{% else %}0%{% endif %}
                           </p>
                           <p style="margin:8px 0 0 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; color:#5c5849; line-height:1.5;">
-                            Based on <strong style="color:#1e1c18;">{{ comparables_count }} comparable {{ property_type }} sales</strong>
+                            Based on <strong style="color:#1e1c18;">{{ comparables_count }} comparable {{ property_type_label }} sales</strong>
                             {% if search_broadened %}in {{ postcode.split()[0] }}{% else %}near {{ postcode }}{% endif %}, averaging <strong style="color:#1e1c18;">{{ local_avg_sold_formatted }}</strong>.
                           </p>
                         </td>
