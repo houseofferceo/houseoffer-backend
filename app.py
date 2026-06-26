@@ -3219,7 +3219,11 @@ def batch_resolve_test():
 @app.route("/debug-report")
 def debug_report():
     """Raw report JSON. Admin-key protected (paid tier burns API credits).
-    Usage: /debug-report?postcode=..&price=..&type=..&tier=free|paid&key=ADMIN"""
+    Usage: /debug-report?postcode=..&price=..&type=..&tier=free|paid&key=ADMIN
+    Test-only knobs (exercise FIX 2 size-match / FIX 3 floor-area sanity without a
+    Rightmove scrape):
+      &sqm=NN     inject a subject floor area (treated as a scraped value)
+      &beds=N     inject bedrooms (default 3; pass 'unknown' to test FIX 1 path)"""
     auth = request.args.get("key", "")
     if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
         return jsonify({"error": "Unauthorised"}), 403
@@ -3228,7 +3232,14 @@ def debug_report():
     property_type = request.args.get("type", "semi-detached")
     address = request.args.get("address", "")
     tier = request.args.get("tier", "paid")
-    report = build_report_data("", asking_price, "3", property_type, postcode,
+    sqm_arg = request.args.get("sqm")
+    floor_area_sqm = float(sqm_arg) if sqm_arg else None
+    beds_arg = request.args.get("beds", "3")
+    bedrooms = None if beds_arg == "unknown" else beds_arg
+    report = build_report_data("", asking_price, bedrooms, property_type, postcode,
+                               floor_area_sqm=floor_area_sqm,
+                               # mark an injected floor area as scraped so FIX 3 runs
+                               floor_area_source="scraped" if floor_area_sqm else "unknown",
                                address=address, tier=tier)
     return jsonify(report)
 
