@@ -525,11 +525,96 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
             except (TypeError, ValueError):
                 pass
 
+    # Floor area fallback 1: infoReelItems (icon row under price)
+    # e.g. {"type": "SIZE", "text": "129 sq. m"} or {"type": "FLOORAREA", ...}
+    if not result.get("floor_area_sqm"):
+        for item in (prop.get("infoReelItems") or []):
+            if not isinstance(item, dict):
+                continue
+            item_type = (item.get("type") or "").upper()
+            if item_type not in ("SIZE", "FLOORAREA", "FLOOR_AREA", "AREA"):
+                continue
+            raw = str(item.get("text") or item.get("value") or "")
+            m = re.search(r"([\d,]+(?:\.\d+)?)\s*(?:m²|sqm|sq\.?\s*m)\b", raw, re.IGNORECASE)
+            if m:
+                try:
+                    area = float(m.group(1).replace(",", ""))
+                    if area > 10:
+                        result["floor_area_sqm"] = area
+                        break
+                except (ValueError, TypeError):
+                    pass
+            m = re.search(r"([\d,]+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft)\b", raw, re.IGNORECASE)
+            if m:
+                try:
+                    area = float(m.group(1).replace(",", ""))
+                    if area > 100:
+                        result["floor_area_sqm"] = round(area / 10.764, 1)
+                        break
+                except (ValueError, TypeError):
+                    pass
+
+    # Floor area fallback 2: keyFeatures bullet list
+    # Agents almost always include a "Total floor area: 129 m²" or "Approx 1,450 sq ft" bullet.
+    if not result.get("floor_area_sqm"):
+        for feat in (prop.get("keyFeatures") or []):
+            feat_str = str(feat)
+            m = re.search(r"([\d,]+(?:\.\d+)?)\s*(?:m²|sqm|sq\.?\s*m)\b", feat_str, re.IGNORECASE)
+            if m:
+                try:
+                    area = float(m.group(1).replace(",", ""))
+                    if area > 10:
+                        result["floor_area_sqm"] = area
+                        break
+                except (ValueError, TypeError):
+                    pass
+            m = re.search(r"([\d,]+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft)\b", feat_str, re.IGNORECASE)
+            if m:
+                try:
+                    area = float(m.group(1).replace(",", ""))
+                    if area > 100:
+                        result["floor_area_sqm"] = round(area / 10.764, 1)
+                        break
+                except (ValueError, TypeError):
+                    pass
+
     # Description text: new-build detection + house-number extraction
     description = ""
     text_block = prop.get("text")
     if isinstance(text_block, dict):
         description = str(text_block.get("description") or "")
+
+    # Floor area fallback 3: description text, anchored to floor-area phrases only.
+    # Room dimensions like "4.5m × 3.2m" are NOT matched — we only accept a bare
+    # sqm/sqft figure that follows an explicit "floor area / living space / extends to" phrase.
+    if description and not result.get("floor_area_sqm"):
+        _FA_DESC_RE = re.compile(
+            r"(?:floor\s+area|internal\s+area|living\s+space|accommodation\s+(?:extends?\s+to|of)|total\s+area)"
+            r"[^.]{0,60}?([\d,]+(?:\.\d+)?)\s*(?:m²|sqm|sq\.?\s*m)\b",
+            re.IGNORECASE,
+        )
+        m = _FA_DESC_RE.search(description)
+        if m:
+            try:
+                area = float(m.group(1).replace(",", ""))
+                if area > 10:
+                    result["floor_area_sqm"] = area
+            except (ValueError, TypeError):
+                pass
+        if not result.get("floor_area_sqm"):
+            _FA_SQFT_RE = re.compile(
+                r"(?:floor\s+area|internal\s+area|living\s+space|accommodation\s+(?:extends?\s+to|of)|total\s+area)"
+                r"[^.]{0,60}?([\d,]+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft)\b",
+                re.IGNORECASE,
+            )
+            m = _FA_SQFT_RE.search(description)
+            if m:
+                try:
+                    area = float(m.group(1).replace(",", ""))
+                    if area > 100:
+                        result["floor_area_sqm"] = round(area / 10.764, 1)
+                except (ValueError, TypeError):
+                    pass
 
     if description and _NEW_BUILD_RE.search(description):
         result["is_new_build"] = True
