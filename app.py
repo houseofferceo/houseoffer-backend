@@ -3216,6 +3216,202 @@ def batch_resolve_test():
     })
 
 
+# ── Valuation-accuracy batch test ──────────────────────────────────────────────
+# Scrape N live Rightmove sale listings, run a full paid valuation on each, and
+# report our valuation vs the asking price so outliers can be reviewed and the
+# methodology tuned. Heavy (one paid build per URL → many API credits), so it
+# runs as a background job and the results are polled by job id.
+
+_CURATED_VALUATION_BATCH = [
+    {"url": "https://www.rightmove.co.uk/properties/174255275", "label": "3b terraced SE25 London"},
+    {"url": "https://www.rightmove.co.uk/properties/171324848", "label": "2b terraced SE26 Sydenham"},
+    {"url": "https://www.rightmove.co.uk/properties/174960656", "label": "3b terraced S10 Sheffield"},
+    {"url": "https://www.rightmove.co.uk/properties/171389720", "label": "3b semi BS10 Bristol"},
+    {"url": "https://www.rightmove.co.uk/properties/88209348",  "label": "5b detached BS9 Bristol"},
+    {"url": "https://www.rightmove.co.uk/properties/173962388", "label": "2b flat B23 Birmingham"},
+    {"url": "https://www.rightmove.co.uk/properties/171192797", "label": "1b flat new-build B1 Birmingham"},
+    {"url": "https://www.rightmove.co.uk/properties/87488955",  "label": "3b flat EH10 Edinburgh"},
+    {"url": "https://www.rightmove.co.uk/properties/174671255", "label": "3b semi LS25 Leeds"},
+    {"url": "https://www.rightmove.co.uk/properties/174908915", "label": "4b detached new-build CW11 Sandbach"},
+]
+
+def _harvest_random_rightmove(n, id_min, id_max, attempts_cap):
+    """Sample random Rightmove property IDs and keep the ones that are live SALE
+    listings (have a postcode and a sale asking price). Over-samples because many
+    IDs are dead, rentals or SSTC. Best-effort; returns whatever it found."""
+    import random
+    found, seen, attempts = [], set(), 0
+    while len(found) < n and attempts < attempts_cap:
+        attempts += 1
+        pid = random.randint(id_min, id_max)
+        if pid in seen:
+            continue
+        seen.add(pid)
+        url = f"https://www.rightmove.co.uk/properties/{pid}"
+        try:
+            s = scrape_property_url(url)
+        except Exception:
+            continue
+        if s.get("postcode") and s.get("asking_price"):
+            found.append({"url": url, "label": f"random {s.get('postcode')}"})
+    return found
+
+def _valuation_test_row(url, label=None):
+    """Full paid valuation for one URL, reduced to the fields needed to review
+    valuation-vs-asking accuracy. Never raises — errors are captured in the row."""
+    row = {
+        "url": url, "label": label, "postcode": None, "property_type": None,
+        "property_type_source": None, "bedrooms": None, "bedrooms_source": None,
+        "asking_price": None, "valuation_midpoint": None, "valuation_low": None,
+        "valuation_high": None, "gap_vs_asking_pct": None, "verdict": None,
+        "comparable_confidence": None, "comparables_count": None,
+        "size_matched_count": None, "floor_area_sqm": None,
+        "floor_area_source": None, "floor_area_confidence": None,
+        "methods_available": None, "error": None,
+    }
+    try:
+        pc, ap, beds, ptype, addr, extra = merge_scraped_listing(url, "", 0, None, None, "")
+        if not pc:
+            row["error"] = "no postcode (blocked / removed / not a sale listing)"
+            return row
+        report = build_report_data(
+            property_url=url, asking_price=ap, bedrooms=beds, property_type=ptype,
+            postcode=pc, floor_area_sqm=None, address=addr, tier="paid", **extra)
+        mid = report.get("weighted_midpoint")
+        ask = report.get("asking_price")
+        row.update({
+            "postcode": report.get("postcode"),
+            "property_type": report.get("property_type"),
+            "property_type_source": report.get("property_type_source"),
+            "bedrooms": report.get("bedrooms"),
+            "bedrooms_source": report.get("bedrooms_source"),
+            "asking_price": ask,
+            "valuation_midpoint": mid,
+            "valuation_low": report.get("weighted_low"),
+            "valuation_high": report.get("weighted_high"),
+            "verdict": report.get("verdict"),
+            "comparable_confidence": report.get("comparable_confidence"),
+            "comparables_count": report.get("comparables_count"),
+            "size_matched_count": report.get("comparable_count_size_matched"),
+            "floor_area_sqm": report.get("floor_area_sqm"),
+            "floor_area_source": report.get("floor_area_source"),
+            "floor_area_confidence": report.get("floor_area_confidence"),
+            "methods_available": sum(1 for m in (report.get("football_field") or [])
+                                     if m.get("available")),
+        })
+        # Positive gap = our valuation ABOVE asking; negative = below (listing may
+        # be priced above what our methodology supports).
+        if ask and mid:
+            row["gap_vs_asking_pct"] = round((mid - ask) / ask * 100, 1)
+    except Exception as e:
+        row["error"] = str(e)
+    return row
+
+@app.route("/batch-valuation-test")
+def batch_valuation_test():
+    """Kick a background job that values N live Rightmove listings and reports
+    valuation-vs-asking with outliers flagged. Admin-key protected. Returns a
+    job_id immediately; poll /batch-valuation-test/<job_id>?key=... for results.
+    Args:
+      &n=12            how many listings (max 40; each is a paid build = credits)
+      &mode=random     random national sample (default); &mode=curated for the
+                       fixed diverse batch
+      &urls=a,b,c      value an explicit list instead (comma/space separated)
+      &id_min=&id_max= tune the random Rightmove ID range
+      &outlier=15      |gap%| at/above which a row is flagged an outlier"""
+    if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    n = max(1, min(int(request.args.get("n", "12")), 40))
+    mode = request.args.get("mode", "random")
+    urls_arg = request.args.get("urls")
+    id_min = int(request.args.get("id_min", "150000000"))
+    id_max = int(request.args.get("id_max", "176000000"))
+    outlier_threshold = float(request.args.get("outlier", "15"))
+
+    job_id = uuid.uuid4().hex[:12]
+    save_report(job_id, {
+        "kind": "valuation-test", "status": "building", "run_at": _now_iso(),
+        "n": n, "mode": mode, "completed": 0, "results": [],
+    })
+
+    def work():
+        try:
+            if urls_arg:
+                batch = [{"url": u.strip(), "label": "supplied"}
+                         for u in re.split(r"[,\s]+", urls_arg) if u.strip()][:n]
+            elif mode == "curated":
+                batch = list(_CURATED_VALUATION_BATCH[:n])
+            else:
+                batch = _harvest_random_rightmove(n, id_min, id_max, attempts_cap=n * 6)
+                if len(batch) < n:  # top up from the curated set so a thin harvest still returns data
+                    have = {b["url"] for b in batch}
+                    batch += [b for b in _CURATED_VALUATION_BATCH if b["url"] not in have][:n - len(batch)]
+            batch = batch[:n]
+
+            results = []
+            # Limited concurrency: each build itself fans out to several APIs, and
+            # we don't want to trip PropertyData / Rightmove rate limits.
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                for r in pool.map(lambda it: _valuation_test_row(it["url"], it.get("label")), batch):
+                    results.append(r)
+                    st = load_report(job_id) or {}
+                    st["results"] = results
+                    st["completed"] = len(results)
+                    save_report(job_id, st)
+
+            ok = [r for r in results if not r["error"] and r["valuation_midpoint"]]
+            gaps = sorted(abs(r["gap_vs_asking_pct"]) for r in ok
+                          if r["gap_vs_asking_pct"] is not None)
+            conf_hist = {}
+            for r in ok:
+                c = r["comparable_confidence"] or "n/a"
+                conf_hist[c] = conf_hist.get(c, 0) + 1
+            outliers = sorted(
+                [r for r in ok if r["gap_vs_asking_pct"] is not None
+                 and abs(r["gap_vs_asking_pct"]) >= outlier_threshold],
+                key=lambda r: -abs(r["gap_vs_asking_pct"]))
+            st = load_report(job_id) or {}
+            st.update({
+                "status": "ready",
+                "completed": len(results),
+                "summary": {
+                    "requested": n,
+                    "valued_ok": len(ok),
+                    "errors": len(results) - len(ok),
+                    "median_abs_gap_pct": gaps[len(gaps) // 2] if gaps else None,
+                    "confidence_histogram": conf_hist,
+                    "outlier_threshold_pct": outlier_threshold,
+                    "outlier_count": len(outliers),
+                    "outliers": outliers,
+                },
+            })
+            save_report(job_id, st)
+        except Exception as e:
+            st = load_report(job_id) or {}
+            st.update({"status": "failed", "error": str(e)})
+            save_report(job_id, st)
+
+    threading.Thread(target=work, daemon=True).start()
+    return jsonify({
+        "job_id": job_id,
+        "status": "building",
+        "n": n, "mode": mode,
+        "poll_url": f"/batch-valuation-test/{job_id}?key=YOUR_ADMIN_KEY",
+        "note": "Each listing is a full paid build (API credits). Poll the URL "
+                "in 1-3 minutes; results stream in as they complete.",
+    })
+
+@app.route("/batch-valuation-test/<job_id>")
+def batch_valuation_test_status(job_id):
+    """Poll the status/results of a batch valuation test job. Admin-key protected."""
+    if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "Unauthorised"}), 403
+    st = load_report(job_id)
+    if not st or st.get("kind") != "valuation-test":
+        return jsonify({"error": "unknown job_id"}), 404
+    return jsonify(st)
+
+
 @app.route("/debug-report")
 def debug_report():
     """Raw report JSON. Admin-key protected (paid tier burns API credits).
