@@ -1980,6 +1980,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     available_methods = [m for m in methods if m["available"] and m["weight"] > 0]
     weighted_low = weighted_high = weighted_midpoint = None
     recommended_offer = None
+    # Offer figures are only computed when at least one weighted method is
+    # available; initialise them so the references below (and the return dict)
+    # never hit an unbound local when a listing has no usable valuation method.
+    open_offer = target_price = walk_away = None
 
     if available_methods:
         total_weight = sum(m["weight"] for m in available_methods)
