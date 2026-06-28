@@ -1026,6 +1026,64 @@ def fetch_avg_rents(postcode, property_type, bedrooms=None):
     return None
 
 
+def fetch_bedroom_price(postcode, property_type, bedrooms):
+    """PropertyData /prices — local average ASKING price for this EXACT bedroom
+    count + type (Option D). Returns {average, low, high} or None. This is the
+    bedroom-specific signal the Land Registry comparable average can't provide:
+    Land Registry has no bedroom data, but /prices filters live listings by it.
+    Asking-based — the caller applies the asking-to-sold discount to imply value."""
+    if not bedrooms or not property_type:
+        return None
+    try:
+        params = {
+            "key": PROPERTYDATA_API_KEY,
+            "postcode": format_postcode(postcode),
+            "bedrooms": int(bedrooms),
+            "type": _avm_property_type(property_type),
+        }
+        r = requests.get("https://api.propertydata.co.uk/prices", params=params, timeout=10)
+        if r.status_code != 200:
+            print(f"fetch_bedroom_price: {r.status_code} — {r.text[:200]}")
+            return None
+        inner = (r.json() or {}).get("data") or {}
+        if not isinstance(inner, dict):
+            return None
+        # Average across the response shapes PropertyData uses.
+        avg = (inner.get("average") or inner.get("mean") or inner.get("avg")
+               or inner.get("average_price"))
+        # Confidence band: explicit percentiles if present, else points, else ±12%.
+        low = (inner.get("10pc") or inner.get("25pc") or inner.get("low")
+               or inner.get("percentile_25") or inner.get("lower"))
+        high = (inner.get("90pc") or inner.get("75pc") or inner.get("high")
+                or inner.get("percentile_75") or inner.get("upper"))
+        if not avg:
+            points = inner.get("points") or inner.get("raw_data") or []
+            prices = []
+            if isinstance(points, list):
+                for p in points:
+                    if isinstance(p, dict):
+                        v = p.get("price") or p.get("asking_price") or p.get("value")
+                        if v:
+                            try:
+                                prices.append(float(v))
+                            except (TypeError, ValueError):
+                                pass
+            if prices:
+                prices.sort()
+                avg = sum(prices) / len(prices)
+                low = low or prices[len(prices) // 4]
+                high = high or prices[min(len(prices) - 1, len(prices) - len(prices) // 4)]
+        if not avg:
+            return None
+        avg = float(avg)
+        low = float(low) if low else round(avg * 0.88)
+        high = float(high) if high else round(avg * 1.12)
+        return {"average": round(avg), "low": round(low), "high": round(high)}
+    except Exception as e:
+        print(f"fetch_bedroom_price error: {e}")
+    return None
+
+
 def _avm_property_type(property_type):
     """Map our property type to PropertyData /valuation-sale values."""
     pt = (property_type or "").lower()
@@ -1691,6 +1749,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     # comparables broadening, address/floor area from the EPC resolution).
     monthly_rent = None
     avm = None
+    bedroom_price = None  # Option D: bedroom-specific local asking price
     discount_pct = None
     local_avg_dom = None
     # resolved_address / address_resolution arrive as parameters from the
@@ -1707,13 +1766,17 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         fut_nearby = None
         if latitude is not None and longitude is not None:
             fut_nearby = pool.submit(fetch_sold_nearby, postcode)
-        fut_epc = fut_psqf = fut_rents = None
+        fut_epc = fut_psqf = fut_rents = fut_bedroom_price = None
         if paid_tier:
             if EPC_API_KEY:
                 fut_epc = pool.submit(_epc_resolution, postcode, address,
                                       property_type, floor_area_sqm)
             fut_psqf = pool.submit(fetch_psqf_points, postcode, property_type)
             fut_rents = pool.submit(fetch_avg_rents, formatted, property_type, bedrooms)
+            # Option D: bedroom-specific local price (the like-for-like signal the
+            # Land Registry comparable average lacks). Needs known beds + type.
+            fut_bedroom_price = (pool.submit(fetch_bedroom_price, formatted, property_type, bedrooms)
+                                 if (bedrooms and property_type) else None)
 
         comparables, postcode_used, broadened, type_unknown = fut_comps.result()
         if type_unknown:
@@ -1807,6 +1870,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                 avm = fut_avm.result()
             except Exception as e:
                 print(f"AVM fetch error: {e}")
+
+        if fut_bedroom_price is not None:
+            try:
+                bedroom_price = fut_bedroom_price.result()
+            except Exception as e:
+                print(f"bedroom price fetch error: {e}")
 
         if fut_last is not None:
             try:
@@ -2135,6 +2204,32 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         print(f"Method 7 error: {e}")
         methods.append(_method_dict("Asking-to-sold discount", 0, 0, 0, "Asking-to-sold discount", False, weight=0))
 
+    # Method 8 (Option D): Bedroom-matched local price. The bedroom-specific local
+    # ASKING average (PropertyData /prices), converted to an implied sold value via
+    # the local asking-to-sold discount. This is the like-for-like-by-bedroom signal
+    # the Land Registry comparable average structurally cannot provide.
+    bedroom_implied_value = None
+    bedroom_local_avg_asking = None
+    try:
+        if bedroom_price and bedroom_price.get("average"):
+            bedroom_local_avg_asking = bedroom_price["average"]
+            disc = (discount_pct if discount_pct is not None else 4.5) / 100.0
+            bedroom_implied_value = round(bedroom_price["average"] * (1 - disc))
+            m8_low = round(bedroom_price["low"] * (1 - disc))
+            m8_high = round(bedroom_price["high"] * (1 - disc))
+            methods.append(_method_dict(
+                f"Bedroom-matched local price ({bedrooms}-bed)",
+                m8_low, m8_high, bedroom_implied_value,
+                "PropertyData local asking by bedroom, less sold discount", True, weight=2
+            ))
+        else:
+            methods.append(_method_dict("Bedroom-matched local price", 0, 0, 0,
+                                        "PropertyData local asking by bedroom", False, weight=2))
+    except Exception as e:
+        print(f"Method 8 error: {e}")
+        methods.append(_method_dict("Bedroom-matched local price", 0, 0, 0,
+                                    "PropertyData local asking by bedroom", False, weight=2))
+
     # ── GUARDRAIL: contain thin, bedroom-blind comparable averages ─────────────
     # A small Land Registry comparable set carries no bedroom/size info, so it can
     # average a 2-bed in with large houses and produce a wild headline (e.g. a
@@ -2265,6 +2360,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # Guardrail: true when a thin, bedroom-blind comparable outlier was dropped
         # from the weighted range to avoid a misleading headline valuation.
         "comparable_outlier_excluded": comparable_outlier_excluded,
+        # Option D: bedroom-specific local price signal.
+        "bedroom_local_avg_asking": bedroom_local_avg_asking,
+        "bedroom_implied_value": bedroom_implied_value,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
@@ -3499,6 +3597,8 @@ def _valuation_test_row(url, label=None):
             "comparable_confidence": report.get("comparable_confidence"),
             "comparable_source": report.get("comparable_source"),
             "comparable_outlier_excluded": report.get("comparable_outlier_excluded"),
+            "bedroom_local_avg_asking": report.get("bedroom_local_avg_asking"),
+            "bedroom_implied_value": report.get("bedroom_implied_value"),
             "comparable_radius_miles": report.get("comparable_radius_miles"),
             "nearby_feed_count": report.get("nearby_feed_count"),
             "nearby_match_count": report.get("nearby_match_count"),
