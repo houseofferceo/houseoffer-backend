@@ -674,23 +674,33 @@ def fetch_sold_prices(postcode):
         hit = _SOLD_PRICES_CACHE.get(key)
         if hit and now - hit[0] < _SOLD_PRICES_TTL_SECONDS:
             return hit[1]
-    try:
-        r = requests.get(
-            "https://api.propertydata.co.uk/sold-prices",
-            params={"key": PROPERTYDATA_API_KEY, "postcode": postcode},
-            timeout=10
-        )
-        if r.status_code == 200:
-            data = r.json()
-            with _sold_prices_cache_lock:
-                # Cache successes only; failures should retry next call
-                _SOLD_PRICES_CACHE[key] = (now, data)
-                if len(_SOLD_PRICES_CACHE) > 200:
-                    oldest = min(_SOLD_PRICES_CACHE, key=lambda k: _SOLD_PRICES_CACHE[k][0])
-                    del _SOLD_PRICES_CACHE[oldest]
-            return data
-    except Exception:
-        pass
+    # Retry on throttling/transient failure — under load this call competes with
+    # the other PropertyData requests in a build, and a starved comp set produces
+    # wild thin-set valuations. Retries protect the comparable count.
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                "https://api.propertydata.co.uk/sold-prices",
+                params={"key": PROPERTYDATA_API_KEY, "postcode": postcode},
+                timeout=10
+            )
+            if r.status_code == 200:
+                data = r.json()
+                with _sold_prices_cache_lock:
+                    # Cache successes only; failures should retry next call
+                    _SOLD_PRICES_CACHE[key] = (now, data)
+                    if len(_SOLD_PRICES_CACHE) > 200:
+                        oldest = min(_SOLD_PRICES_CACHE, key=lambda k: _SOLD_PRICES_CACHE[k][0])
+                        del _SOLD_PRICES_CACHE[oldest]
+                return data
+            if r.status_code in (429, 500, 502, 503) and attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            return None
+        except Exception:
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+                continue
     return None
 
 def fetch_sold_psqf(postcode):
@@ -2241,6 +2251,19 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         methods.append(_method_dict("Bedroom-matched local price", 0, 0, 0,
                                     "PropertyData local asking by bedroom", False, weight=2))
 
+    # ── Bedroom-specific signal leads ──────────────────────────────────────────
+    # When Option D (bedroom-matched local price) is available, let it lead: the
+    # bedroom-BLIND comparable average drops to a secondary single vote so a 2-bed's
+    # matched price isn't outweighed by an average that mixes in larger homes.
+    comparable_downweighted_for_bedroom = False
+    if bedroom_implied_value:
+        for m in methods:
+            if m["available"] and m["name"] == "Comparable sales (HPI-adjusted)" and m["weight"] > 1:
+                m["weight"] = 1
+                comparable_downweighted_for_bedroom = True
+            if m["available"] and m["name"] == "Comparable sales (unadjusted)" and m["weight"] > 0:
+                m["weight"] = 0
+
     # ── GUARDRAIL: contain thin, bedroom-blind comparable averages ─────────────
     # A small Land Registry comparable set carries no bedroom/size info, so it can
     # average a 2-bed in with large houses and produce a wild headline (e.g. a
@@ -2374,6 +2397,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # Option D: bedroom-specific local price signal.
         "bedroom_local_avg_asking": bedroom_local_avg_asking,
         "bedroom_implied_value": bedroom_implied_value,
+        "comparable_downweighted_for_bedroom": comparable_downweighted_for_bedroom,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
