@@ -2135,6 +2135,36 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         print(f"Method 7 error: {e}")
         methods.append(_method_dict("Asking-to-sold discount", 0, 0, 0, "Asking-to-sold discount", False, weight=0))
 
+    # ── GUARDRAIL: contain thin, bedroom-blind comparable averages ─────────────
+    # A small Land Registry comparable set carries no bedroom/size info, so it can
+    # average a 2-bed in with large houses and produce a wild headline (e.g. a
+    # £550k 2-bed "valued" at £679k). When the set is thin AND the comparable
+    # method disagrees sharply with the other signals, drop it from the weighted
+    # range and flag low confidence rather than letting it dominate.
+    comparable_outlier_excluded = False
+    thin_blind = (comparable_source == "land_registry"
+                  and len(comparables) < MIN_COMPARABLES)
+    if thin_blind:
+        comparable_confidence = "low"
+        comp_method = next((m for m in methods
+                            if m["name"] == "Comparable sales (HPI-adjusted)" and m["available"]), None)
+        others = [m for m in methods if m["available"] and m["weight"] > 0
+                  and m["name"] not in ("Comparable sales (HPI-adjusted)",
+                                        "Comparable sales (unadjusted)")]
+        if comp_method and comp_method.get("midpoint") and others:
+            omids = sorted(m["midpoint"] for m in others if m.get("midpoint"))
+            if omids:
+                omed = omids[len(omids) // 2]
+                if omed and abs(comp_method["midpoint"] - omed) / omed > 0.25:
+                    # Outlier on thin, bedroom-blind data — exclude both comparable
+                    # methods from the weighted range (the set is already flagged
+                    # low-confidence, so dropping a 25%+ outlier is safe).
+                    comparable_outlier_excluded = True
+                    for m in methods:
+                        if m["name"] in ("Comparable sales (HPI-adjusted)",
+                                         "Comparable sales (unadjusted)"):
+                            m["weight"] = 0
+
     # ── FOOTBALL FIELD WEIGHTED RANGE ─────────────────────────────────────────
 
     available_methods = [m for m in methods if m["available"] and m["weight"] > 0]
@@ -2232,6 +2262,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "nearby_feed_count": nearby_feed_count,
         "nearby_match_count": nearby_match_count,
         "lr_vs_rightmove_divergence_pct": lr_vs_rightmove_divergence_pct,
+        # Guardrail: true when a thin, bedroom-blind comparable outlier was dropped
+        # from the weighted range to avoid a misleading headline valuation.
+        "comparable_outlier_excluded": comparable_outlier_excluded,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
@@ -3465,6 +3498,7 @@ def _valuation_test_row(url, label=None):
             "verdict": report.get("verdict"),
             "comparable_confidence": report.get("comparable_confidence"),
             "comparable_source": report.get("comparable_source"),
+            "comparable_outlier_excluded": report.get("comparable_outlier_excluded"),
             "comparable_radius_miles": report.get("comparable_radius_miles"),
             "nearby_feed_count": report.get("nearby_feed_count"),
             "nearby_match_count": report.get("nearby_match_count"),
