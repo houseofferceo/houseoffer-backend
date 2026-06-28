@@ -269,6 +269,8 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         # Subject coordinates for the bedroom/distance comparable engine (P2).
         "latitude": scraped.get("latitude"),
         "longitude": scraped.get("longitude"),
+        # Subject bathrooms — scraped from the listing, feeds the AVM.
+        "bathrooms": scraped.get("bathrooms"),
     }
 
     # Full-address resolution (sold-record coordinate match). Enhancement only:
@@ -1039,7 +1041,8 @@ def _avm_property_type(property_type):
         return "detached_bungalow"
     return "semi-detached_house"
 
-def fetch_propertydata_avm(postcode, property_type, bedrooms=None, floor_area_sqm=None):
+def fetch_propertydata_avm(postcode, property_type, bedrooms=None, floor_area_sqm=None,
+                           bathrooms=None):
     """PropertyData /valuation-sale AVM. Requires internal_area (sq ft), so this
     method is unavailable without a floor area. Fields we cannot know from the
     listing are sent as honest middle-of-the-road defaults (bathrooms 1, average
@@ -1060,7 +1063,9 @@ def fetch_propertydata_avm(postcode, property_type, bedrooms=None, floor_area_sq
             "property_type": _avm_property_type(property_type),
             "construction_date": "1914_2000",
             "bedrooms": int(bedrooms),
-            "bathrooms": 1,
+            # Real scraped bathroom count where we have it; fall back to 1 only
+            # when the listing didn't state it.
+            "bathrooms": int(bathrooms) if bathrooms else 1,
             "finish_quality": "average",
             "outdoor_space": "none" if "flat" in (property_type or "").lower() else "garden",
             "off_street_parking": "1",
@@ -1651,7 +1656,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       is_new_build=False,
                       bedrooms_source="unknown", property_type_source="unknown",
                       floor_area_source="unknown",
-                      latitude=None, longitude=None,
+                      latitude=None, longitude=None, bathrooms=None,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -1780,7 +1785,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         fut_avm = None
         if paid_tier:
             fut_avm = pool.submit(fetch_propertydata_avm, postcode_used,
-                                  property_type, bedrooms, floor_area_sqm)
+                                  property_type, bedrooms, floor_area_sqm, bathrooms)
         # Last sale uses Land Registry SPARQL (free, no PropertyData credits),
         # so both tiers get the previous sold price and HPI-adjusted value.
         fut_last = pool.submit(find_last_sale, postcode, address)
@@ -2205,6 +2210,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "asking_price": asking_price,
         "asking_price_formatted": f"£{asking_price:,}",
         "bedrooms": bedrooms,
+        "bathrooms": bathrooms,
         "property_type": property_type,
         # Display-safe label for inline prose: never renders the literal "None".
         "property_type_label": property_type or "property",
@@ -3450,6 +3456,7 @@ def _valuation_test_row(url, label=None):
             "property_type": report.get("property_type"),
             "property_type_source": report.get("property_type_source"),
             "bedrooms": report.get("bedrooms"),
+            "bathrooms": report.get("bathrooms"),
             "bedrooms_source": report.get("bedrooms_source"),
             "asking_price": ask,
             "valuation_midpoint": mid,

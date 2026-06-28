@@ -22,6 +22,7 @@ DEFAULT_RESULT = {
     # rather than silently re-introducing a default.
     "bedrooms": None,
     "bedrooms_source": "unknown",      # "scraped" | "keyfeatures" | "unknown"
+    "bathrooms": None,                 # scraped from the listing; feeds the AVM
     "property_type": None,
     "property_type_source": "unknown", # "scraped" | "unknown"
     "floor_area_source": "unknown",    # "scraped" | "unknown" (validated to "epc"/"unverified" in app.py)
@@ -478,6 +479,17 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
                 result["bedrooms"] = int(match.group(1))
                 result["bedrooms_source"] = "keyfeatures"
 
+    # Bathrooms sit right beside bedrooms in the listing page model — capture them
+    # for the AVM (which otherwise assumes a single bathroom).
+    baths = prop.get("bathrooms") or prop.get("baths")
+    if baths is not None:
+        try:
+            baths_int = int(baths)
+            if 0 < baths_int <= 10:
+                result["bathrooms"] = baths_int
+        except (TypeError, ValueError):
+            pass
+
     ptype = (
         prop.get("propertySubType")
         or prop.get("propertyType")
@@ -847,6 +859,15 @@ def _apply_zoopla_next_data(result: dict, page_props: dict) -> None:
         try:
             result["bedrooms"] = int(beds)
             result["bedrooms_source"] = "scraped"
+        except (TypeError, ValueError):
+            pass
+
+    baths = _walk_find_first(listing, {"bathrooms", "numBathrooms", "baths", "bathroomCount"})
+    if baths is not None:
+        try:
+            b = int(baths)
+            if 0 < b <= 10:
+                result["bathrooms"] = b
         except (TypeError, ValueError):
             pass
 
