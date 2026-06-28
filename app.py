@@ -1041,9 +1041,20 @@ def fetch_bedroom_price(postcode, property_type, bedrooms):
             "bedrooms": int(bedrooms),
             "type": _avm_property_type(property_type),
         }
-        r = requests.get("https://api.propertydata.co.uk/prices", params=params, timeout=10)
-        if r.status_code != 200:
-            print(f"fetch_bedroom_price: {r.status_code} — {r.text[:200]}")
+        # Retry once on throttling/transient failure — /prices is the last of
+        # several PropertyData calls per build and is the first to get rate-limited.
+        r = None
+        for attempt in range(2):
+            r = requests.get("https://api.propertydata.co.uk/prices", params=params, timeout=10)
+            if r.status_code == 200:
+                break
+            if r.status_code in (429, 500, 502, 503):
+                time.sleep(0.6 * (attempt + 1))
+                continue
+            break
+        if r is None or r.status_code != 200:
+            print(f"fetch_bedroom_price: {getattr(r, 'status_code', 'no-response')} — "
+                  f"{getattr(r, 'text', '')[:200]}")
             return None
         inner = (r.json() or {}).get("data") or {}
         if not isinstance(inner, dict):
@@ -3633,6 +3644,9 @@ def batch_valuation_test():
     if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
         return jsonify({"error": "Unauthorised"}), 403
     n = max(1, min(int(request.args.get("n", "12")), 40))
+    # Lower concurrency reduces PropertyData rate-limiting (each build makes several
+    # PD calls). concurrency=1 = sequential builds, the gentlest on the API.
+    concurrency = max(1, min(int(request.args.get("concurrency", "4")), 6))
     mode = request.args.get("mode", "random")
     urls_arg = request.args.get("urls")
     id_min = int(request.args.get("id_min", "150000000"))
@@ -3662,7 +3676,7 @@ def batch_valuation_test():
             results = []
             # Limited concurrency: each build itself fans out to several APIs, and
             # we don't want to trip PropertyData / Rightmove rate limits.
-            with ThreadPoolExecutor(max_workers=4) as pool:
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
                 for r in pool.map(lambda it: _valuation_test_row(it["url"], it.get("label")), batch):
                     results.append(r)
                     st = load_report(job_id) or {}
