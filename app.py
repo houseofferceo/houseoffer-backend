@@ -141,10 +141,31 @@ def sector_postcode(postcode):
         return district_postcode(postcode)
     return f"{raw[:-3]} {raw[-3]}"
 
+def _canonical_sold_type(raw):
+    """Map ANY property-type label — from PropertyData, Land Registry or Rightmove
+    — to one of our canonical types, or None. Robust to the many variants that
+    caused zero-comp results (P1): 'terraced_house', 'Terraced', 'End Terrace',
+    'Semi-Detached House', 'detached_bungalow', 'Apartment', etc. Order matters:
+    'flat' and 'semi' are tested before 'detached' (semi-detached contains
+    'detached')."""
+    t = (raw or "").lower()
+    if not t:
+        return None
+    if "flat" in t or "apartment" in t or "maisonette" in t:
+        return "flat"
+    if "semi" in t:
+        return "semi-detached"
+    if "terrace" in t:
+        return "terraced"
+    if "detached" in t:
+        return "detached"
+    if "bungalow" in t:
+        return "detached"  # consistent with the scraper's normalise_property_type
+    return None
+
 def normalise_type_sold(property_type):
-    """Map our canonical type to PropertyData's sold-record type keys. Returns
-    None when the type is unknown so the caller can skip type-filtering and flag
-    low confidence rather than matching against a fabricated 'semi-detached'."""
+    """Legacy key-list form, kept for the address-resolution type check and debug
+    endpoints. The production comparable filter now uses _canonical_sold_type."""
     if not property_type:
         return None
     mapping = {
@@ -156,7 +177,7 @@ def normalise_type_sold(property_type):
     return mapping.get(property_type.lower())
 
 def normalise_type_listings(property_type):
-    """As normalise_type_sold, for £/sqf listing records. None when unknown."""
+    """Legacy key-list form for debug endpoints. None when unknown."""
     if not property_type:
         return None
     mapping = {
@@ -245,6 +266,9 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "bedrooms_source": beds_source,
         "property_type_source": type_source,
         "floor_area_source": scraped.get("floor_area_source", "unknown"),
+        # Subject coordinates for the bedroom/distance comparable engine (P2).
+        "latitude": scraped.get("latitude"),
+        "longitude": scraped.get("longitude"),
     }
 
     # Full-address resolution (sold-record coordinate match). Enhancement only:
@@ -683,11 +707,10 @@ def fetch_sold_psqf(postcode):
     return None
 
 def get_sold_comparables(postcode, property_type):
-    type_keys = normalise_type_sold(property_type)
-    type_unknown = type_keys is None
+    canonical = _canonical_sold_type(property_type)
+    type_unknown = canonical is None
     formatted = format_postcode(postcode)
-    data = fetch_sold_prices(formatted)
-    comparables = _filter_sold(data, type_keys)
+    comparables = _filter_sold(fetch_sold_prices(formatted), canonical)
     broadened = False
     postcode_used = formatted
     if len(comparables) < MIN_COMPARABLES:
@@ -695,32 +718,118 @@ def get_sold_comparables(postcode, property_type):
         # which can be too broad and mix premium and cheap sub-areas.
         sector = sector_postcode(postcode)
         if sector != district_postcode(postcode):
-            data = fetch_sold_prices(sector)
-            sector_comps = _filter_sold(data, type_keys)
+            sector_comps = _filter_sold(fetch_sold_prices(sector), canonical)
             if len(sector_comps) >= MIN_SECTOR_COMPARABLES:
                 comparables = sector_comps
                 postcode_used = sector
                 broadened = True
         if len(comparables) < MIN_COMPARABLES:
             district = district_postcode(postcode)
-            data = fetch_sold_prices(district)
-            comparables = _filter_sold(data, type_keys)
-            broadened = True
-            postcode_used = district
+            district_comps = _filter_sold(fetch_sold_prices(district), canonical)
+            # P1 fix: only broaden to the district if it actually yields MORE
+            # comps. A failed/empty district call must never wipe out comps we
+            # already found at the postcode/sector (a cause of zero-comp reports).
+            if len(district_comps) > len(comparables):
+                comparables = district_comps
+                postcode_used = district
+                broadened = True
     # HPI-adjust all comparables to today's value before returning
     comparables = hpi_adjust_comparables(comparables, postcode)
     return comparables, postcode_used, broadened, type_unknown
 
-def _filter_sold(data, type_keys):
+# ── P2: bedroom-matched, distance-ranked comparables ───────────────────────────
+# The Rightmove sold feed (fetch_sold_nearby) carries property_type, bedrooms and
+# coordinates per sold property — data we already scrape but only used for address
+# resolution. Here we use it to build a like-for-like comparable set: same type,
+# same bedrooms, nearest first. Falls back to the Land Registry feed when thin.
+
+NEARBY_RADII_MILES = [0.5, 1.0, 2.0]
+
+def _haversine_miles(lat1, lng1, lat2, lng2):
+    """Great-circle distance in miles, or None if any coordinate is missing."""
+    if None in (lat1, lng1, lat2, lng2):
+        return None
+    R = 3958.8
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * R * math.asin(min(1.0, math.sqrt(a)))
+
+def get_nearby_comparables(lat, lng, property_type, bedrooms, sold_records,
+                           min_comps=None):
+    """Bedroom- and distance-matched comparables from the Rightmove sold feed.
+    Returns (comparables, meta). comparables are dicts {address, price, date,
+    bedrooms, distance_miles} ready for HPI adjustment. meta carries the radius,
+    bedroom band and a confidence label. Widening ladder (correctness > coverage):
+    bedroom ±0 then ±1; radius 0.5 → 1 → 2 miles. Returns ([], meta) when subject
+    coordinates or the feed are missing — caller then falls back to Land Registry."""
+    if min_comps is None:
+        min_comps = MIN_COMPARABLES
+    meta = {"source": "rightmove_nearby", "radius_miles": None,
+            "bedroom_band": None, "confidence": None, "count": 0}
+    if lat is None or lng is None or not sold_records:
+        return [], meta
+    canonical = _canonical_sold_type(property_type)
+
+    annotated = []
+    for r in sold_records:
+        d = _haversine_miles(lat, lng, r.get("latitude"), r.get("longitude"))
+        if d is None or not r.get("price"):
+            continue
+        annotated.append({
+            "address": r.get("address"), "price": r.get("price"),
+            "date": r.get("date"), "bedrooms": r.get("bedrooms"),
+            "distance_miles": round(d, 3),
+            "_ctype": _canonical_sold_type(r.get("property_type")),
+        })
+    # Type filter (skip only when the subject type is unknown).
+    pool = [r for r in annotated if canonical is None or r["_ctype"] == canonical]
+
+    def pick(bed_band, radius):
+        out = []
+        for r in pool:
+            if r["distance_miles"] > radius:
+                continue
+            if bedrooms is not None:
+                rb = r.get("bedrooms")
+                if rb is None:
+                    if bed_band == 0:
+                        continue  # strict rung needs a known, matching bed count
+                elif abs(rb - bedrooms) > bed_band:
+                    continue
+            out.append(r)
+        out.sort(key=lambda r: (r["distance_miles"], r.get("date") or ""))
+        return out
+
+    for bed_band in (0, 1):
+        for radius in NEARBY_RADII_MILES:
+            sel = pick(bed_band, radius)
+            if len(sel) >= min_comps:
+                meta.update({
+                    "radius_miles": radius, "bedroom_band": bed_band,
+                    "confidence": "bedroom_distance" if bed_band == 0 else "bedroom_distance_wide",
+                    "count": len(sel)})
+                return sel, meta
+
+    # Nothing reached the minimum at any rung — hand back the widest attempt so the
+    # caller can decide between this and the Land Registry fallback.
+    sel = pick(1, NEARBY_RADII_MILES[-1])
+    meta.update({"radius_miles": NEARBY_RADII_MILES[-1], "bedroom_band": 1,
+                 "confidence": "insufficient", "count": len(sel)})
+    return sel, meta
+
+def _filter_sold(data, canonical_type):
     if not data:
         return []
     try:
         transactions = data.get("data", {}).get("raw_data", [])
-        # type_keys is None when the subject's property type is unknown (FIX 1):
-        # skip type-filtering rather than fabricate a default. The caller flags
-        # this as low confidence; the size-match (FIX 2) becomes the like-for-like.
+        # canonical_type is None when the subject's property type is unknown
+        # (FIX 1): skip type-filtering rather than fabricate a default. Otherwise
+        # match by CANONICAL type (P1) so label variants — 'Terraced',
+        # 'terraced_house', 'End Terrace' — all match and don't yield zero comps.
         comps = [t for t in transactions
-                 if (type_keys is None or t.get("type") in type_keys)
+                 if (canonical_type is None or _canonical_sold_type(t.get("type")) == canonical_type)
                  and t.get("price") and t.get("price") < 2_000_000]
         # Median band: exclude non-market transactions (partial transfers,
         # right-to-buy, inter-family sales) that Land Registry records at
@@ -819,8 +928,9 @@ def hpi_adjust_comparables(comparables, postcode):
         adjusted.append(comp)
     return adjusted
 
-def _psqf_points(data, type_keys):
-    """Extract type-matched points carrying both a £/sqf value and floor area (sqf)."""
+def _psqf_points(data, canonical_type):
+    """Extract type-matched points carrying both a £/sqf value and floor area (sqf).
+    Matches by canonical type (P1) so label variants don't yield zero points."""
     if not data:
         return []
     try:
@@ -839,8 +949,8 @@ def _psqf_points(data, type_keys):
 
     points = []
     for p in raw:
-        # type_keys is None when subject type is unknown (FIX 1): skip type filter.
-        if type_keys is None or p.get("type") in type_keys:
+        # canonical_type is None when subject type is unknown (FIX 1): skip filter.
+        if canonical_type is None or _canonical_sold_type(p.get("type")) == canonical_type:
             v = psqf_value(p)
             if v:
                 points.append({
@@ -850,7 +960,7 @@ def _psqf_points(data, type_keys):
                     "price": p.get("price"),
                 })
     if not points:
-        print(f"_psqf_points: no matches for {type_keys}. Types present: {sorted({p.get('type') for p in raw})}")
+        print(f"_psqf_points: no matches for {canonical_type}. Types present: {sorted({p.get('type') for p in raw})}")
     return points
 
 def fetch_avg_dom(postcode):
@@ -1029,10 +1139,10 @@ def _hpi_month_offset(year_month: str, months: int) -> str:
 def fetch_psqf_points(postcode, property_type):
     """Fetch and parse sold £/sqf records for the area: full postcode first,
     district fallback. Returns a list of points (possibly empty)."""
-    type_keys = normalise_type_listings(property_type)
-    points = _psqf_points(fetch_sold_psqf(format_postcode(postcode)), type_keys)
+    canonical = _canonical_sold_type(property_type)
+    points = _psqf_points(fetch_sold_psqf(format_postcode(postcode)), canonical)
     if not points:
-        points = _psqf_points(fetch_sold_psqf(district_postcode(postcode)), type_keys)
+        points = _psqf_points(fetch_sold_psqf(district_postcode(postcode)), canonical)
     return points
 
 
@@ -1541,6 +1651,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       is_new_build=False,
                       bedrooms_source="unknown", property_type_source="unknown",
                       floor_area_source="unknown",
+                      latitude=None, longitude=None,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -1556,6 +1667,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     comparable_confidence = "area_only"
     floor_area_confidence = "high"
     floor_area_sqm_raw = None  # set by FIX 3 when a scraped area is rejected
+    # P2 comparable-source signals (default to the Land Registry path).
+    comparable_source = "land_registry"
+    comparable_radius_miles = None
+    comparable_bedroom_band = None
 
     if not floor_area_sqm and scraper_floor_area_sqm:
         floor_area_sqm = scraper_floor_area_sqm
@@ -1577,6 +1692,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
 
     with ThreadPoolExecutor(max_workers=6) as pool:
         fut_comps = pool.submit(get_sold_comparables, postcode, property_type)
+        # P2: fetch the Rightmove sold feed (bedroom/type/coordinate-tagged) when we
+        # have subject coordinates to distance-match against. Land Registry remains
+        # the fallback and cross-check.
+        fut_nearby = None
+        if latitude is not None and longitude is not None:
+            fut_nearby = pool.submit(fetch_sold_nearby, postcode)
         fut_epc = fut_psqf = fut_rents = None
         if paid_tier:
             if EPC_API_KEY:
@@ -1589,6 +1710,28 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         if type_unknown:
             # No type filter could be applied — comparables mix property types.
             comparable_confidence = "low"
+
+        # ── P2: prefer bedroom + distance-matched comps from the Rightmove feed ──
+        # when it yields enough like-for-like sales; else keep the Land Registry set.
+        lr_avg_for_xcheck = avg_sold_price(comparables) if comparables else None
+        if fut_nearby is not None and not type_unknown:
+            try:
+                sold_records = fut_nearby.result() or []
+            except Exception as e:
+                print(f"fetch_sold_nearby error: {e}")
+                sold_records = []
+            if sold_records:
+                nearby, nmeta = get_nearby_comparables(
+                    latitude, longitude, property_type, bedrooms, sold_records)
+                if (nmeta["confidence"] in ("bedroom_distance", "bedroom_distance_wide")
+                        and len(nearby) >= MIN_COMPARABLES):
+                    comparables = hpi_adjust_comparables(nearby, postcode)
+                    postcode_used = formatted
+                    broadened = False
+                    comparable_source = "rightmove_nearby"
+                    comparable_confidence = nmeta["confidence"]
+                    comparable_radius_miles = nmeta["radius_miles"]
+                    comparable_bedroom_band = nmeta["bedroom_band"]
 
         fut_dom = pool.submit(fetch_avg_dom, postcode_used)
         fut_ratio = pool.submit(fetch_asking_sold_ratio, postcode_used, property_type)
@@ -1714,13 +1857,19 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                 if len(same_beds) >= MIN_COMPARABLES:
                     comparables_for_avg = same_beds
                     comparable_confidence = "bedroom_matched"
-        else:
-            # Not enough like-for-like comps: keep the type-matched set but make
-            # clear it is area-level only, not size-matched.
-            if comparable_confidence != "low":
-                comparable_confidence = "area_only"
+        # else: too few size-matched comps. Do NOT downgrade here — a
+        # bedroom_distance label from P2 already reflects a stronger constraint
+        # than "area_only"; only the Land Registry path keeps the default.
 
     local_avg_sold = avg_sold_price(comparables_for_avg)
+
+    # P2 cross-check: when we valued off the Rightmove nearby feed, compare against
+    # the Land Registry average and surface any large divergence for the QC layer.
+    lr_vs_rightmove_divergence_pct = None
+    if (comparable_source == "rightmove_nearby" and local_avg_sold
+            and lr_avg_for_xcheck):
+        lr_vs_rightmove_divergence_pct = round(
+            ((local_avg_sold - lr_avg_for_xcheck) / lr_avg_for_xcheck) * 100, 1)
 
     sold_diff_pct = None
     sold_verdict = None
@@ -2064,6 +2213,11 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "floor_area_sqm_raw": floor_area_sqm_raw,
         "comparable_confidence": comparable_confidence,
         "comparable_count_size_matched": comparable_count_size_matched,
+        # P2: where the comparable set came from and how it was matched.
+        "comparable_source": comparable_source,
+        "comparable_radius_miles": comparable_radius_miles,
+        "comparable_bedroom_band": comparable_bedroom_band,
+        "lr_vs_rightmove_divergence_pct": lr_vs_rightmove_divergence_pct,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
