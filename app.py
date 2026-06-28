@@ -1671,6 +1671,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     comparable_source = "land_registry"
     comparable_radius_miles = None
     comparable_bedroom_band = None
+    # Diagnostics: None = nearby feed not attempted (no subject coords);
+    # 0 = feed returned nothing; >0 = how many records / bed+distance matches.
+    nearby_feed_count = None
+    nearby_match_count = None
 
     if not floor_area_sqm and scraper_floor_area_sqm:
         floor_area_sqm = scraper_floor_area_sqm
@@ -1720,9 +1724,11 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             except Exception as e:
                 print(f"fetch_sold_nearby error: {e}")
                 sold_records = []
+            nearby_feed_count = len(sold_records)
             if sold_records:
                 nearby, nmeta = get_nearby_comparables(
                     latitude, longitude, property_type, bedrooms, sold_records)
+                nearby_match_count = nmeta["count"]
                 if (nmeta["confidence"] in ("bedroom_distance", "bedroom_distance_wide")
                         and len(nearby) >= MIN_COMPARABLES):
                     comparables = hpi_adjust_comparables(nearby, postcode)
@@ -2217,6 +2223,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "comparable_source": comparable_source,
         "comparable_radius_miles": comparable_radius_miles,
         "comparable_bedroom_band": comparable_bedroom_band,
+        "nearby_feed_count": nearby_feed_count,
+        "nearby_match_count": nearby_match_count,
         "lr_vs_rightmove_divergence_pct": lr_vs_rightmove_divergence_pct,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
@@ -3449,6 +3457,10 @@ def _valuation_test_row(url, label=None):
             "valuation_high": report.get("weighted_high"),
             "verdict": report.get("verdict"),
             "comparable_confidence": report.get("comparable_confidence"),
+            "comparable_source": report.get("comparable_source"),
+            "comparable_radius_miles": report.get("comparable_radius_miles"),
+            "nearby_feed_count": report.get("nearby_feed_count"),
+            "nearby_match_count": report.get("nearby_match_count"),
             "comparables_count": report.get("comparables_count"),
             "size_matched_count": report.get("comparable_count_size_matched"),
             "floor_area_sqm": report.get("floor_area_sqm"),
