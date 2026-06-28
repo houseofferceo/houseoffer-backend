@@ -3660,29 +3660,77 @@ def _valuation_test_row(url, label=None):
         row["error"] = str(e)
     return row
 
+def _assemble_valuation_batch(n, mode, urls_arg, id_min, id_max):
+    if urls_arg:
+        batch = [{"url": u.strip(), "label": "supplied"}
+                 for u in re.split(r"[,\s]+", urls_arg) if u.strip()][:n]
+    elif mode == "curated":
+        batch = list(_CURATED_VALUATION_BATCH[:n])
+    else:
+        batch = _harvest_random_rightmove(n, id_min, id_max, attempts_cap=n * 6)
+        if len(batch) < n:  # top up from curated so a thin harvest still returns data
+            have = {b["url"] for b in batch}
+            batch += [b for b in _CURATED_VALUATION_BATCH if b["url"] not in have][:n - len(batch)]
+    return batch[:n]
+
+def _summarise_valuation_results(results, n, outlier_threshold):
+    ok = [r for r in results if not r["error"] and r["valuation_midpoint"]]
+    gaps = sorted(abs(r["gap_vs_asking_pct"]) for r in ok if r["gap_vs_asking_pct"] is not None)
+    conf_hist = {}
+    for r in ok:
+        c = r["comparable_confidence"] or "n/a"
+        conf_hist[c] = conf_hist.get(c, 0) + 1
+    outliers = sorted(
+        [r for r in ok if r["gap_vs_asking_pct"] is not None
+         and abs(r["gap_vs_asking_pct"]) >= outlier_threshold],
+        key=lambda r: -abs(r["gap_vs_asking_pct"]))
+    return {
+        "requested": n, "valued_ok": len(ok), "errors": len(results) - len(ok),
+        "median_abs_gap_pct": gaps[len(gaps) // 2] if gaps else None,
+        "confidence_histogram": conf_hist,
+        "outlier_threshold_pct": outlier_threshold,
+        "outlier_count": len(outliers), "outliers": outliers,
+    }
+
 @app.route("/batch-valuation-test")
 def batch_valuation_test():
-    """Kick a background job that values N live Rightmove listings and reports
-    valuation-vs-asking with outliers flagged. Admin-key protected. Returns a
-    job_id immediately; poll /batch-valuation-test/<job_id>?key=... for results.
-    Args:
+    """Value N live Rightmove listings and report valuation-vs-asking with outliers
+    flagged. Admin-key protected. Args:
+      &sync=1          run inline and return results in ONE response (no polling;
+                       survives instance spin-down). n is capped to 8 in sync mode.
       &n=12            how many listings (max 40; each is a paid build = credits)
       &mode=random     random national sample (default); &mode=curated for the
                        fixed diverse batch
       &urls=a,b,c      value an explicit list instead (comma/space separated)
+      &concurrency=N   parallel builds (1-6)
       &id_min=&id_max= tune the random Rightmove ID range
-      &outlier=15      |gap%| at/above which a row is flagged an outlier"""
+      &outlier=15      |gap%| at/above which a row is flagged an outlier
+    Default (no sync): kicks a background job, returns job_id; poll
+    /batch-valuation-test/<job_id>?key=... — but that can be lost if the instance
+    spins down, so &sync=1 is preferred for small batches."""
     if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
         return jsonify({"error": "Unauthorised"}), 403
+    sync = request.args.get("sync") in ("1", "true", "yes")
     n = max(1, min(int(request.args.get("n", "12")), 40))
-    # Lower concurrency reduces PropertyData rate-limiting (each build makes several
-    # PD calls). concurrency=1 = sequential builds, the gentlest on the API.
-    concurrency = max(1, min(int(request.args.get("concurrency", "4")), 6))
+    if sync:
+        n = min(n, 8)  # keep within the request timeout — no background thread
+    concurrency = max(1, min(int(request.args.get("concurrency", "6" if sync else "4")), 6))
     mode = request.args.get("mode", "random")
     urls_arg = request.args.get("urls")
     id_min = int(request.args.get("id_min", "150000000"))
     id_max = int(request.args.get("id_max", "176000000"))
     outlier_threshold = float(request.args.get("outlier", "15"))
+
+    # ── Synchronous mode: do the work during the request, return results directly.
+    if sync:
+        batch = _assemble_valuation_batch(n, mode, urls_arg, id_min, id_max)
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            results = list(pool.map(lambda it: _valuation_test_row(it["url"], it.get("label")), batch))
+        return jsonify({
+            "kind": "valuation-test", "status": "ready", "mode": mode,
+            "run_at": _now_iso(), "completed": len(results), "results": results,
+            "summary": _summarise_valuation_results(results, n, outlier_threshold),
+        })
 
     job_id = uuid.uuid4().hex[:12]
     save_report(job_id, {
@@ -3692,21 +3740,8 @@ def batch_valuation_test():
 
     def work():
         try:
-            if urls_arg:
-                batch = [{"url": u.strip(), "label": "supplied"}
-                         for u in re.split(r"[,\s]+", urls_arg) if u.strip()][:n]
-            elif mode == "curated":
-                batch = list(_CURATED_VALUATION_BATCH[:n])
-            else:
-                batch = _harvest_random_rightmove(n, id_min, id_max, attempts_cap=n * 6)
-                if len(batch) < n:  # top up from the curated set so a thin harvest still returns data
-                    have = {b["url"] for b in batch}
-                    batch += [b for b in _CURATED_VALUATION_BATCH if b["url"] not in have][:n - len(batch)]
-            batch = batch[:n]
-
+            batch = _assemble_valuation_batch(n, mode, urls_arg, id_min, id_max)
             results = []
-            # Limited concurrency: each build itself fans out to several APIs, and
-            # we don't want to trip PropertyData / Rightmove rate limits.
             with ThreadPoolExecutor(max_workers=concurrency) as pool:
                 for r in pool.map(lambda it: _valuation_test_row(it["url"], it.get("label")), batch):
                     results.append(r)
@@ -3714,32 +3749,10 @@ def batch_valuation_test():
                     st["results"] = results
                     st["completed"] = len(results)
                     save_report(job_id, st)
-
-            ok = [r for r in results if not r["error"] and r["valuation_midpoint"]]
-            gaps = sorted(abs(r["gap_vs_asking_pct"]) for r in ok
-                          if r["gap_vs_asking_pct"] is not None)
-            conf_hist = {}
-            for r in ok:
-                c = r["comparable_confidence"] or "n/a"
-                conf_hist[c] = conf_hist.get(c, 0) + 1
-            outliers = sorted(
-                [r for r in ok if r["gap_vs_asking_pct"] is not None
-                 and abs(r["gap_vs_asking_pct"]) >= outlier_threshold],
-                key=lambda r: -abs(r["gap_vs_asking_pct"]))
             st = load_report(job_id) or {}
             st.update({
-                "status": "ready",
-                "completed": len(results),
-                "summary": {
-                    "requested": n,
-                    "valued_ok": len(ok),
-                    "errors": len(results) - len(ok),
-                    "median_abs_gap_pct": gaps[len(gaps) // 2] if gaps else None,
-                    "confidence_histogram": conf_hist,
-                    "outlier_threshold_pct": outlier_threshold,
-                    "outlier_count": len(outliers),
-                    "outliers": outliers,
-                },
+                "status": "ready", "completed": len(results),
+                "summary": _summarise_valuation_results(results, n, outlier_threshold),
             })
             save_report(job_id, st)
         except Exception as e:
@@ -3753,8 +3766,8 @@ def batch_valuation_test():
         "status": "building",
         "n": n, "mode": mode,
         "poll_url": f"/batch-valuation-test/{job_id}?key=YOUR_ADMIN_KEY",
-        "note": "Each listing is a full paid build (API credits). Poll the URL "
-                "in 1-3 minutes; results stream in as they complete.",
+        "note": "Background job (can be lost if the instance spins down). For a "
+                "reliable one-shot, add &sync=1 (n capped to 8).",
     })
 
 @app.route("/batch-valuation-test/<job_id>")
