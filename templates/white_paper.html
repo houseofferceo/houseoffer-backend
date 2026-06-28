@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How HouseOffer Values a Property — Methodology White Paper</title>
+<meta name="description" content="The methodology behind HouseOffer: how we use HM Land Registry data and bedroom-matched, distance-ranked comparable sales to judge whether a property is fairly priced.">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --sand: #f7f3ed; --sand-dark: #ece7de; --sand-border: #e0d9ce;
+  --ink: #1e1c18; --ink-mid: #5c5849; --ink-light: #9b9488;
+  --teal: #1a6b5a; --teal-mid: #238f77; --teal-light: #e3f4ef; --teal-border: #b8dfd5;
+  --amber: #c06a1a; --amber-light: #fdf0e3; --amber-border: #f0c98a;
+  --red: #b83232; --red-light: #fdf0f0; --white: #ffffff;
+  --shadow-sm: 0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);
+  --radius: 14px;
+}
+body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; min-height: 100vh; }
+nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--sand-border); padding: 0 24px; position: sticky; top: 0; z-index: 100; }
+.nav-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 58px; }
+.logo { font-family: 'Lora', serif; font-size: 20px; font-weight: 700; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+.logo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal-mid); display: inline-block; }
+.nav-tag { font-size: 12px; font-weight: 600; color: var(--white); background: var(--teal); border: 1px solid var(--teal); padding: 4px 10px; border-radius: 20px; }
+.wrapper { max-width: 720px; margin: 0 auto; padding: 36px 24px 80px; }
+
+/* HEADER */
+.wp-header { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 32px 30px 28px; margin-bottom: 24px; box-shadow: var(--shadow-sm); }
+.wp-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 12px; display: flex; align-items: center; gap: 7px; }
+.wp-label-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal-mid); }
+.wp-title { font-family: 'Lora', serif; font-size: 30px; font-weight: 700; color: var(--ink); line-height: 1.2; margin-bottom: 12px; }
+.wp-standfirst { font-size: 15.5px; color: var(--ink-mid); line-height: 1.65; }
+.wp-updated { font-size: 12px; color: var(--ink-light); margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--sand-border); }
+
+/* SECTION CARD */
+.wp-section { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 28px 30px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.wp-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 8px; }
+.wp-h2 { font-family: 'Lora', serif; font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.25; margin-bottom: 14px; }
+.wp-h3 { font-size: 15.5px; font-weight: 600; color: var(--ink); margin: 20px 0 8px; }
+.wp-section p { font-size: 14.5px; color: var(--ink-mid); line-height: 1.7; margin-bottom: 14px; }
+.wp-section p:last-child { margin-bottom: 0; }
+.wp-section strong { color: var(--ink); font-weight: 600; }
+.wp-section a { color: var(--teal); }
+
+/* LISTS */
+.wp-list { list-style: none; margin: 4px 0 14px; }
+.wp-list li { font-size: 14.5px; color: var(--ink-mid); line-height: 1.65; padding: 5px 0 5px 26px; position: relative; }
+.wp-list li::before { content: ""; position: absolute; left: 4px; top: 13px; width: 7px; height: 7px; border-radius: 2px; background: var(--teal-mid); }
+.wp-list li strong { color: var(--ink); }
+
+/* NUMBERED STEPS */
+.wp-steps { counter-reset: step; margin: 8px 0 6px; }
+.wp-step { display: flex; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--sand-border); }
+.wp-step:last-child { border-bottom: none; }
+.wp-step-num { counter-increment: step; flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--teal-light); border: 1px solid var(--teal-border); color: var(--teal); font-family: 'Lora', serif; font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: center; }
+.wp-step-num::before { content: counter(step); }
+.wp-step-body { padding-top: 2px; }
+.wp-step-title { font-size: 14.5px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+.wp-step-text { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; }
+
+/* METHOD GRID */
+.method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 6px 0; }
+.method-item { background: var(--sand); border: 1px solid var(--sand-border); border-radius: 10px; padding: 14px 16px; }
+.method-item-name { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+.method-item-desc { font-size: 12.5px; color: var(--ink-mid); line-height: 1.5; }
+
+/* CALLOUT */
+.wp-callout { background: var(--teal-light); border: 1px solid var(--teal-border); border-radius: var(--radius); padding: 20px 24px; margin: 4px 0 0; }
+.wp-callout-title { font-size: 13px; font-weight: 700; color: var(--teal); margin-bottom: 6px; letter-spacing: 0.02em; }
+.wp-callout p { font-size: 14px; color: var(--ink-mid); line-height: 1.65; margin: 0; }
+
+/* CTA */
+.wp-cta { background: var(--teal); border-radius: var(--radius); padding: 30px 32px; margin-bottom: 24px; box-shadow: 0 4px 20px rgba(26,107,90,0.25); text-align: center; }
+.wp-cta-title { font-family: 'Lora', serif; font-size: 22px; font-weight: 700; color: white; margin-bottom: 8px; }
+.wp-cta-sub { font-size: 14px; color: rgba(255,255,255,0.85); margin-bottom: 20px; }
+.wp-cta-btn { display: inline-block; background: white; color: var(--teal); font-size: 14px; font-weight: 700; padding: 12px 30px; border-radius: 24px; text-decoration: none; }
+
+/* ATTRIBUTION / FOOTER */
+.attribution { text-align: center; font-size: 12px; color: var(--ink-light); padding-top: 8px; }
+.attribution a { color: var(--ink-light); }
+
+@media (max-width: 560px) {
+  .wrapper { padding: 20px 16px 60px; }
+  .wp-title { font-size: 24px; }
+  .wp-section { padding: 22px 20px; }
+  .wp-header { padding: 24px 20px; }
+  .method-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="https://houseoffer.uk" class="logo"><span class="logo-dot"></span>HouseOffer</a>
+    <span class="nav-tag">White Paper</span>
+  </div>
+</nav>
+
+<div class="wrapper">
+
+  <!-- HEADER -->
+  <div class="wp-header">
+    <div class="wp-label"><span class="wp-label-dot"></span>Methodology White Paper</div>
+    <h1 class="wp-title">How HouseOffer decides whether a home is fairly priced</h1>
+    <p class="wp-standfirst">
+      An asking price is a seller's opening position, not evidence of value. HouseOffer
+      replaces that opinion with what comparable homes have <em>actually sold for</em> —
+      using official HM Land Registry records and a transparent, repeatable method. This
+      paper explains exactly how that method works, where the data comes from, and where
+      its limits lie.
+    </p>
+    <div class="wp-updated">Last updated June 2026 · Contains HM Land Registry data © Crown copyright</div>
+  </div>
+
+  <!-- 1. THE PROBLEM -->
+  <div class="wp-section">
+    <div class="wp-eyebrow">The problem</div>
+    <h2 class="wp-h2">The asking price tells you what the seller hopes for, not what the home is worth</h2>
+    <p>
+      Estate agents are paid by sellers, and asking prices reflect that. A listing price
+      is set to test the market, anchor negotiations, or win an instruction — it is rarely
+      an independent estimate of fair value. Buyers, meanwhile, are expected to judge that
+      price using the same listing, a few similar adverts, and instinct.
+    </p>
+    <p>
+      The evidence to do better is public and free. Every completed sale in England and
+      Wales is recorded by <strong>HM Land Registry</strong>, and energy assessments for
+      most homes sit in the <strong>EPC register</strong>. HouseOffer brings these official
+      sources together and applies a consistent valuation method, so a buyer can see how an
+      asking price compares with reality before making an offer.
+    </p>
+  </div>
+
+  <!-- 2. DATA SOURCES -->
+  <div class="wp-section">
+    <div class="wp-eyebrow">Where the data comes from</div>
+    <h2 class="wp-h2">Official records first, listings second</h2>
+    <p>Every report is built from public, authoritative data sources:</p>
+    <ul class="wp-list">
+      <li><strong>HM Land Registry Price Paid Data</strong> — the definitive record of completed sale prices for residential property in England and Wales.</li>
+      <li><strong>Recent comparable sales</strong> — nearby sold properties with their type, bedroom count, location and sale date, used to build a like-for-like comparison set.</li>
+      <li><strong>The EPC register</strong> — energy certificates that supply floor area and, where they can be matched to the subject, help confirm the exact property.</li>
+      <li><strong>The listing itself</strong> — asking price, property type, bedrooms and (where shown) floor area, taken from the advert the buyer is looking at.</li>
+      <li><strong>House Price Index data</strong> — used to adjust older sales to present-day money, so a 2021 sale can be compared fairly with today's market.</li>
+    </ul>
+    <p>
+      We deliberately do not rely on a single black-box estimate. Each independent signal
+      becomes one input into the blended valuation described below.
+    </p>
+  </div>
+
+  <!-- 3. COMPARABLE ENGINE -->
+  <div class="wp-section">
+    <div class="wp-eyebrow">The core method</div>
+    <h2 class="wp-h2">Bedroom-matched, distance-ranked comparable sales</h2>
+    <p>
+      Bedroom count and location are the two strongest drivers of price, so they sit at the
+      heart of our comparable selection. Rather than averaging every sale in a postcode, we
+      build a set of genuinely <em>like-for-like</em> homes around the subject property:
+    </p>
+    <div class="wp-steps">
+      <div class="wp-step">
+        <div class="wp-step-num"></div>
+        <div class="wp-step-body">
+          <div class="wp-step-title">Match the property type</div>
+          <div class="wp-step-text">Only sales of the same normalised type (detached, semi, terraced, flat) are considered.</div>
+        </div>
+      </div>
+      <div class="wp-step">
+        <div class="wp-step-num"></div>
+        <div class="wp-step-body">
+          <div class="wp-step-title">Match the bedroom count</div>
+          <div class="wp-step-text">We compare three-bed homes with three-bed homes — the single most decisive filter, and one that crude postcode averages ignore.</div>
+        </div>
+      </div>
+      <div class="wp-step">
+        <div class="wp-step-num"></div>
+        <div class="wp-step-body">
+          <div class="wp-step-title">Filter by distance</div>
+          <div class="wp-step-text">We start from sales within a tight radius of the property and only widen if too few exist, keeping comparables genuinely local.</div>
+        </div>
+      </div>
+      <div class="wp-step">
+        <div class="wp-step-num"></div>
+        <div class="wp-step-body">
+          <div class="wp-step-title">Rank by proximity and recency</div>
+          <div class="wp-step-text">Closer, more recent sales carry more weight; distant or older ones carry less.</div>
+        </div>
+      </div>
+      <div class="wp-step">
+        <div class="wp-step-num"></div>
+        <div class="wp-step-body">
+          <div class="wp-step-title">Tighten by size where possible</div>
+          <div class="wp-step-text">When floor areas are available, we further restrict to homes within roughly ±20% of the subject's size.</div>
+        </div>
+      </div>
+      <div class="wp-step">
+        <div class="wp-step-num"></div>
+        <div class="wp-step-body">
+          <div class="wp-step-title">Adjust to today and average</div>
+          <div class="wp-step-text">Each comparable is brought to present-day money using House Price Index data, then averaged using an interquartile mean that ignores extreme outliers.</div>
+        </div>
+      </div>
+    </div>
+    <div class="wp-callout">
+      <div class="wp-callout-title">Correctness over coverage</div>
+      <p>
+        If too few like-for-like sales exist, we relax the filters in a deliberate order —
+        first allowing ±1 bedroom, then a wider radius, and only as a last resort falling
+        back to a broad area average. Whenever we widen, we lower the confidence we report,
+        so a thin comparable set is flagged rather than hidden.
+      </p>
+    </div>
+  </div>
+
+  <!-- 4. FOOTBALL FIELD -->
+  <div class="wp-section">
+    <div class="wp-eyebrow">Triangulation</div>
+    <h2 class="wp-h2">No single number — a weighted blend of independent methods</h2>
+    <p>
+      A robust valuation should not hang on one calculation. HouseOffer estimates value
+      several different ways and combines them, weighting each by how reliable it is for the
+      property in question. The result is presented as a range — a "football field" — rather
+      than a single false-precision figure.
+    </p>
+    <div class="method-grid">
+      <div class="method-item">
+        <div class="method-item-name">Comparable sales</div>
+        <div class="method-item-desc">Bedroom- and distance-matched sold prices, adjusted to today. The primary signal.</div>
+      </div>
+      <div class="method-item">
+        <div class="method-item-name">Area price trend</div>
+        <div class="method-item-desc">How local prices have moved over time for this type of home.</div>
+      </div>
+      <div class="method-item">
+        <div class="method-item-name">Price per square metre</div>
+        <div class="method-item-desc">Local £/m² benchmarks applied to the subject's floor area, where known.</div>
+      </div>
+      <div class="method-item">
+        <div class="method-item-name">Last sale, re-indexed</div>
+        <div class="method-item-desc">The property's own previous sale price, uplifted by the House Price Index.</div>
+      </div>
+      <div class="method-item">
+        <div class="method-item-name">Automated valuation</div>
+        <div class="method-item-desc">A model estimate using the property's attributes as a cross-check.</div>
+      </div>
+      <div class="method-item">
+        <div class="method-item-name">Lender valuation band</div>
+        <div class="method-item-desc">The kind of range a mortgage surveyor would be likely to support.</div>
+      </div>
+    </div>
+    <p style="margin-top:16px;">
+      Where methods agree, confidence is high and the range is tight. Where they diverge, we
+      widen the range and lower confidence rather than pretending to a precision the data
+      cannot support.
+    </p>
+  </div>
+
+  <!-- 5. NEW BUILDS -->
+  <div class="wp-section">
+    <div class="wp-eyebrow">Special cases</div>
+    <h2 class="wp-h2">New-build homes are treated differently</h2>
+    <p>
+      Newly built homes typically command a premium over otherwise-similar resale
+      properties, so valuing them purely on resale comparables would understate them. When a
+      listing is a new build, we account for that premium and adjust the framing of the
+      verdict accordingly — so the comparison is "new-build premium versus resale
+      comparables", not a misleading "overpriced" flag.
+    </p>
+  </div>
+
+  <!-- 6. IDENTIFYING THE PROPERTY -->
+  <div class="wp-section">
+    <div class="wp-eyebrow">Getting the right house</div>
+    <h2 class="wp-h2">Honest about which property we are valuing</h2>
+    <p>
+      Listings often hide the exact house number, which matters because the wrong number
+      means the wrong sale history. We only trust an exact-property match when an EPC or
+      house-number match supports it. Where the exact home cannot be confidently identified,
+      we say so and let you choose from the candidate addresses, rather than silently
+      presenting a neighbour's sale as if it were the subject's.
+    </p>
+    <p>
+      This conservative approach occasionally means a little more work for the user, but it
+      protects the one thing that matters most: that the numbers in your report belong to
+      the property you are actually buying.
+    </p>
+  </div>
+
+  <!-- 7. LIMITATIONS -->
+  <div class="wp-section">
+    <div class="wp-eyebrow">Limits and honesty</div>
+    <h2 class="wp-h2">What this analysis is, and is not</h2>
+    <p>
+      HouseOffer is a fast, data-driven second opinion — not a physical inspection. Our
+      analysis cannot see a property's condition, recent renovations, planning issues, lease
+      terms, or kerb appeal, all of which can move real value. Public data also has gaps:
+      some streets have no recent comparable sales, and some homes have no usable floor area
+      on record. In those cases we lower the confidence we report rather than guess.
+    </p>
+    <p>
+      For these reasons, HouseOffer reports are informational only. They do not constitute
+      financial advice, a formal RICS valuation, or a guarantee of price. Always commission
+      a qualified surveyor before committing to a purchase.
+    </p>
+  </div>
+
+  <!-- CTA -->
+  <div class="wp-cta">
+    <div class="wp-cta-title">See the method applied to a real listing</div>
+    <div class="wp-cta-sub">Paste a Rightmove or Zoopla link and get a free, data-backed verdict in seconds.</div>
+    <a href="https://houseoffer.uk" class="wp-cta-btn">Check a property →</a>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="attribution">
+    Contains HM Land Registry data © Crown copyright and database right 2026.
+    Licensed under the Open Government Licence v3.0 ·
+    <a href="https://houseoffer.uk">HouseOffer.uk</a>
+    <br><br>
+    <em style="font-size: 11px; color: var(--ink-light); line-height: 1.5; display: block; max-width: 580px; margin: 0 auto;">
+      HouseOffer reports are informational only and based on publicly available data. They do not constitute financial advice, a formal RICS valuation, or a guarantee of price. Always consult a qualified surveyor before purchase.
+    </em>
+    <br>
+    <a href="https://houseoffer.uk/privacy.html" style="font-size: 11px;">Privacy</a> ·
+    <a href="https://houseoffer.uk/terms.html" style="font-size: 11px;">Terms</a>
+  </div>
+
+</div>
+
+</body>
+</html>

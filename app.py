@@ -2890,6 +2890,13 @@ def log_engagement():
 def health():
     return jsonify({"status": "ok"})
 
+@app.route("/white-paper")
+@app.route("/white-paper/")
+def white_paper():
+    """Public methodology white paper. Static page; safe to link from the
+    marketing site (e.g. houseoffer.uk/white-paper -> this route)."""
+    return render_template("white_paper.html")
+
 @app.route("/version")
 def version():
     """Diagnostic: which commit is running and which routes are registered.
