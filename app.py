@@ -972,7 +972,10 @@ def _psqf_points(data, canonical_type):
                     "price": p.get("price"),
                 })
     if not points:
-        print(f"_psqf_points: no matches for {canonical_type}. Types present: {sorted({p.get('type') for p in raw})}")
+        # None-safe: some PropertyData £/sqf records have type=null, which can't be
+        # sorted against strings (was a TypeError 500 in /debug-psqf).
+        print(f"_psqf_points: no matches for {canonical_type}. "
+              f"Types present: {sorted({(p.get('type') or '') for p in raw})}")
     return points
 
 def fetch_avg_dom(postcode):
@@ -3413,23 +3416,26 @@ def debug_psqf():
     postcode = request.args.get("postcode", "WD4")
     property_type = request.args.get("type", "semi-detached")
     floor_area_sqm = float(request.args.get("floor", 0) or 0) or None
-    type_keys = normalise_type_listings(property_type)
+    # P1 changed _psqf_points to match by CANONICAL type — pass that, not the old
+    # key-list (which never matched, so every call hit the no-match debug path).
+    canonical = _canonical_sold_type(property_type)
     formatted = format_postcode(postcode)
 
     raw_full = fetch_sold_psqf(formatted)
     used = raw_full if raw_full else fetch_sold_psqf(district_postcode(postcode))
     points = used.get("data", {}).get("raw_data", []) if used else []
-    matched = _psqf_points(used, type_keys)
+    matched = _psqf_points(used, canonical)
 
     benchmarks = get_psqm_benchmarks(postcode, property_type, floor_area_sqm)
 
-    matched_raw = [p for p in points if p.get("type") in type_keys]
+    matched_raw = [p for p in points if _canonical_sold_type(p.get("type")) == canonical]
     return jsonify({
         "postcode_tried": formatted,
         "floor_area_sqm": floor_area_sqm,
-        "type_keys_we_filter_for": type_keys,
+        "canonical_type_we_filter_for": canonical,
         "total_points_returned": len(points),
-        "all_types_present": sorted({p.get("type") for p in points}) if points else [],
+        # None-safe sort: £/sqf records can have type=null.
+        "all_types_present": sorted({(p.get("type") or "") for p in points}) if points else [],
         "matched_points_count": len(matched),
         "benchmarks": benchmarks,
         "sample_matched_records": matched_raw[:3],
