@@ -52,3 +52,30 @@ Valuation-accuracy work, all shipped to production:
   not an error — confirm against more samples.
 - Production note: a single live report makes far fewer concurrent PropertyData
   calls than the batch test, so Option D + full comp sets fire reliably in prod.
+
+## Confidence-gating programme (2026-06-30) — Cycles 1–4
+
+Pivot to confidence-gated valuation (HIGH/MEDIUM/LOW + caveat, never a silent wrong
+number). Each cycle: propose → approve → build → deploy → random-sample test.
+
+| Cycle | Shipped | Result |
+|---|---|---|
+| 1 | GB-postcode harvester filter; postcode→sector→district→region fallback; HIGH/MEDIUM/LOW score + caveat; special-tenure detection; type-parse hardening | Junk pulls ~35%→0; no blanks; but HIGH≈MEDIUM (score not yet meaningful) |
+| 2 | HIGH requires bedroom/size match OR matched-sold corroboration (≤12%); "methods disagree" guard (>20%) | HIGH 5.6% vs MEDIUM 11.6% median — score now discriminates (small n) |
+| 3 | Asking-vs-value sanity gate (>1.5× or <0.6× → LOW + caveat); wider sub-market tenure keywords | All catastrophic mispricings (−69%/+130%/+477%) → LOW; one premium false-HIGH remained |
+| 4b | Premium-property guard (value <0.75× asking → demote HIGH to MEDIUM) | Premium misses (NW3 −26.5%, CO4 −26.3%) → MEDIUM; HIGH → ~100% within 20% (projected) |
+
+**n=100 random validation (95 valued, 0 unresolvable), Cycles 1–3 live:**
+
+| Tier | Share | Within 10% | Within 20% | Median \|gap\| |
+|---|---|---|---|---|
+| HIGH | 28% | 56% | 93% | 7.0% |
+| MEDIUM | 46% | 48% | 75% | 11.6% |
+| LOW | 25% | 0% | 13% | 69.0% |
+
+Tiers cleanly monotonic at stable n — confidence model validated. The Cycle-3
+"HIGH worse than MEDIUM" reading was n=6 noise. Full write-up + marketing-use note:
+`CONFIDENCE_METHODOLOGY_AND_VALIDATION.md`.
+
+Open: Cycle 4c (EPC floor-area capture), sold-price back-test, new-build premium,
+harvester fake-postcode tightening.
