@@ -970,6 +970,13 @@ def _psqf_points(data, canonical_type):
                     "sqf": p.get("sqf"),
                     "address": p.get("address"),
                     "price": p.get("price"),
+                    # Phase A: carry the columns this feed already provides per sold
+                    # property — used to build bedroom/size/distance-matched comps.
+                    "bedrooms": p.get("bedrooms"),
+                    "latitude": p.get("lat") or p.get("latitude"),
+                    "longitude": p.get("lng") or p.get("longitude"),
+                    "date": p.get("date"),
+                    "property_type": p.get("type"),
                 })
     if not points:
         # None-safe: some PropertyData £/sqf records have type=null, which can't be
@@ -1933,6 +1940,38 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             psqm_val = round(price / sqm) if price else round(price_per_sqft_to_sqm(pt["psqf"]))
             psqf_lookup[key] = {"sqm": sqm, "psqm": psqm_val}
 
+    # ── PHASE B: bedroom + distance (+ size) matched SOLD comparables ───────────
+    # Built from the £/sqf feed's per-property bedrooms / coordinates / floor area
+    # (Phase A now carries them). Reuses the P2 matcher. Scored as a new weighted
+    # method here; promotion to the PRIMARY comparable signal is Phase C.
+    matched_sold_value = None
+    matched_sold_low = matched_sold_high = None
+    matched_sold_count = 0
+    matched_sold_confidence = None
+    if latitude is not None and longitude is not None and not type_unknown and psqf_points:
+        try:
+            msel, msmeta = get_nearby_comparables(
+                latitude, longitude, property_type, bedrooms, psqf_points, min_comps=6)
+            matched_sold_confidence = msmeta.get("confidence")
+            # Optional ±20% floor-area refinement when it keeps a usable set.
+            if floor_area_sqm and floor_area_sqm > 0:
+                subj_sqf = floor_area_sqm * 10.764
+                sized = [c for c in msel if _within_size_band(c.get("sqf"), subj_sqf)]
+                if len(sized) >= 5:
+                    msel = sized
+                    matched_sold_confidence = f"{matched_sold_confidence}+size"
+            matched_sold_count = len(msel)
+            if len(msel) >= 5:
+                adj = hpi_adjust_comparables(msel, postcode)
+                prices = sorted(c.get("adjusted_price") or c["price"] for c in adj if c.get("price"))
+                if prices:
+                    n = len(prices)
+                    q1, q3 = max(0, n // 4), min(n - 1, n - n // 4)
+                    matched_sold_low, matched_sold_high = round(prices[q1]), round(prices[q3])
+                    matched_sold_value = avg_sold_price(adj)
+        except Exception as e:
+            print(f"matched-sold comparables error: {e}")
+
     # ── FIX 2: real ±20% size-matching of the headline comparable set ──────────
     # The /sold-prices feed has no floor area, so we join it to the £/sqf feed by
     # address and keep only comparables within ±20% of the subject's floor area.
@@ -2254,6 +2293,23 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         methods.append(_method_dict("Bedroom-matched local price", 0, 0, 0,
                                     "PropertyData local asking by bedroom", False, weight=2))
 
+    # Method 9 (Phase B): bedroom/size/distance-matched SOLD comparables, from the
+    # £/sqf feed's per-property bedrooms+coordinates+floor area. Added at weight 1
+    # for SCORING — not yet the primary signal (that's Phase C, after the batch
+    # shows it tracks asking on its own).
+    if matched_sold_value:
+        methods.append(_method_dict(
+            f"Matched sold comparables ({bedrooms}-bed)" if bedrooms else "Matched sold comparables",
+            matched_sold_low or round(matched_sold_value * 0.95),
+            matched_sold_high or round(matched_sold_value * 1.05),
+            matched_sold_value,
+            "PropertyData sold £/sqf feed — bedroom/size/distance matched", True, weight=1
+        ))
+    else:
+        methods.append(_method_dict("Matched sold comparables", 0, 0, 0,
+                                    "PropertyData sold £/sqf feed — bedroom/size/distance matched",
+                                    False, weight=1))
+
     # ── Bedroom-specific signal leads ──────────────────────────────────────────
     # When Option D (bedroom-matched local price) is available, let it lead: the
     # bedroom-BLIND comparable average drops to a secondary single vote so a 2-bed's
@@ -2401,6 +2457,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "bedroom_local_avg_asking": bedroom_local_avg_asking,
         "bedroom_implied_value": bedroom_implied_value,
         "comparable_downweighted_for_bedroom": comparable_downweighted_for_bedroom,
+        # Phase B: bedroom/size/distance-matched SOLD comparables (scored, not yet primary).
+        "matched_sold_value": matched_sold_value,
+        "matched_sold_count": matched_sold_count,
+        "matched_sold_confidence": matched_sold_confidence,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
@@ -3645,6 +3705,9 @@ def _valuation_test_row(url, label=None):
             "comparable_confidence": report.get("comparable_confidence"),
             "comparable_source": report.get("comparable_source"),
             "comparable_outlier_excluded": report.get("comparable_outlier_excluded"),
+            "matched_sold_value": report.get("matched_sold_value"),
+            "matched_sold_count": report.get("matched_sold_count"),
+            "matched_sold_confidence": report.get("matched_sold_confidence"),
             "bedroom_local_avg_asking": report.get("bedroom_local_avg_asking"),
             "bedroom_implied_value": report.get("bedroom_implied_value"),
             "comparable_radius_miles": report.get("comparable_radius_miles"),
