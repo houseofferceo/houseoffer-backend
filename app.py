@@ -2297,18 +2297,22 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     # £/sqf feed's per-property bedrooms+coordinates+floor area. Added at weight 1
     # for SCORING — not yet the primary signal (that's Phase C, after the batch
     # shows it tracks asking on its own).
+    # Weight 0 = shown for scoring but EXCLUDED from the weighted valuation. The
+    # batch showed this method reads high (permissive widening pulls in larger/
+    # pricier sold comps), so it must not affect live valuations until tightened
+    # (Phase B.1: enforce ±20% size as the hard like-for-like constraint).
     if matched_sold_value:
         methods.append(_method_dict(
             f"Matched sold comparables ({bedrooms}-bed)" if bedrooms else "Matched sold comparables",
             matched_sold_low or round(matched_sold_value * 0.95),
             matched_sold_high or round(matched_sold_value * 1.05),
             matched_sold_value,
-            "PropertyData sold £/sqf feed — bedroom/size/distance matched", True, weight=1
+            "PropertyData sold £/sqf feed — bedroom/size/distance matched (scoring only)", True, weight=0
         ))
     else:
         methods.append(_method_dict("Matched sold comparables", 0, 0, 0,
-                                    "PropertyData sold £/sqf feed — bedroom/size/distance matched",
-                                    False, weight=1))
+                                    "PropertyData sold £/sqf feed — bedroom/size/distance matched (scoring only)",
+                                    False, weight=0))
 
     # ── Bedroom-specific signal leads ──────────────────────────────────────────
     # When Option D (bedroom-matched local price) is available, let it lead: the
