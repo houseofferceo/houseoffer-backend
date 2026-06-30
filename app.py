@@ -3784,9 +3784,14 @@ def batch_valuation_test():
     if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
         return jsonify({"error": "Unauthorised"}), 403
     sync = request.args.get("sync") in ("1", "true", "yes")
-    n = max(1, min(int(request.args.get("n", "12")), 40))
+    # Async runs can go up to 100 (for a durable random sample streamed to Sheets);
+    # sync stays small to fit the request timeout.
+    n = max(1, min(int(request.args.get("n", "12")), 100))
     if sync:
         n = min(n, 8)  # keep within the request timeout — no background thread
+    # &sheets=1 streams each completed row to the Google Sheets webhook so a large
+    # background run survives instance spin-down (results land in the sheet live).
+    stream_sheets = request.args.get("sheets") in ("1", "true", "yes")
     concurrency = max(1, min(int(request.args.get("concurrency", "6" if sync else "4")), 6))
     mode = request.args.get("mode", "random")
     urls_arg = request.args.get("urls")
@@ -3818,6 +3823,26 @@ def batch_valuation_test():
             with ThreadPoolExecutor(max_workers=concurrency) as pool:
                 for r in pool.map(lambda it: _valuation_test_row(it["url"], it.get("label")), batch):
                     results.append(r)
+                    if stream_sheets:
+                        # Durable per-row stream — survives instance spin-down.
+                        post_to_sheets({
+                            "type": "valuation_test",
+                            "run_id": job_id,
+                            "run_at": _now_iso(),
+                            "url": r.get("url"), "postcode": r.get("postcode"),
+                            "property_type": r.get("property_type"),
+                            "bedrooms": r.get("bedrooms"),
+                            "asking_price": r.get("asking_price"),
+                            "valuation_midpoint": r.get("valuation_midpoint"),
+                            "gap_vs_asking_pct": r.get("gap_vs_asking_pct"),
+                            "verdict": r.get("verdict"),
+                            "comparable_confidence": r.get("comparable_confidence"),
+                            "comparable_source": r.get("comparable_source"),
+                            "matched_sold_value": r.get("matched_sold_value"),
+                            "bedroom_implied_value": r.get("bedroom_implied_value"),
+                            "floor_area_sqm": r.get("floor_area_sqm"),
+                            "error": r.get("error"),
+                        })
                     st = load_report(job_id) or {}
                     st["results"] = results
                     st["completed"] = len(results)
