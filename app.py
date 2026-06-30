@@ -296,6 +296,9 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         # Special tenure / sale type (Cycle 1, item 4): shared_ownership / auction /
         # retirement / None. Drives a caveat in the report; never withholds a value.
         "sale_type": scraped.get("sale_type"),
+        # Official EPC certificate the listing links (Cycle 4c) — a direct,
+        # address-free floor-area source.
+        "epc_cert_url": scraped.get("epc_cert_url"),
         # Provenance flags (FIX 1) so the report/QC layer can see when bedrooms,
         # property type or floor area were unknown rather than truly read.
         "bedrooms_source": beds_source,
@@ -373,6 +376,25 @@ def _epc_fetch_certificate(certificate_number):
         return None
     cert = r.json().get("data")
     return cert if isinstance(cert, dict) else None
+
+_EPC_RRN_RE = re.compile(r"\d{4}-\d{4}-\d{4}-\d{4}-\d{4}")
+
+def fetch_floor_area_from_cert_url(epc_cert_url):
+    """Cycle 4c: floor area from the EXACT EPC certificate the listing links to.
+    The gov.uk certificate URL embeds the certificate number (RRN), so this needs
+    NO address match — bypassing the address-resolution bottleneck that leaves most
+    listings with no floor area. Returns floor area in m² or None."""
+    if not (EPC_API_KEY and epc_cert_url):
+        return None
+    m = _EPC_RRN_RE.search(epc_cert_url)
+    if not m:
+        return None
+    try:
+        cert = _epc_fetch_certificate(m.group(0))
+        return _extract_floor_area(cert) if cert else None
+    except Exception as e:
+        print(f"EPC cert-url lookup exception: {e}")
+        return None
 
 def _leading_house_number(addr):
     """Extract the leading house/flat number from an address string.
@@ -1929,7 +1951,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       bedrooms_source="unknown", property_type_source="unknown",
                       floor_area_source="unknown",
                       latitude=None, longitude=None, bathrooms=None,
-                      sale_type=None,
+                      sale_type=None, epc_cert_url=None,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -1985,11 +2007,16 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         fut_nearby = None
         if latitude is not None and longitude is not None:
             fut_nearby = pool.submit(fetch_sold_nearby, postcode)
-        fut_epc = fut_psqf = fut_rents = fut_bedroom_price = None
+        fut_epc = fut_psqf = fut_rents = fut_bedroom_price = fut_cert_area = None
         if paid_tier:
             if EPC_API_KEY:
                 fut_epc = pool.submit(_epc_resolution, postcode, address,
                                       property_type, floor_area_sqm)
+                # Cycle 4c: when the listing has no floor area but links its official
+                # EPC certificate, fetch that exact certificate's area directly (no
+                # address match needed) — the main floor-area coverage lever.
+                if epc_cert_url and not floor_area_sqm:
+                    fut_cert_area = pool.submit(fetch_floor_area_from_cert_url, epc_cert_url)
             fut_psqf = pool.submit(fetch_psqf_points, postcode, property_type)
             fut_rents = pool.submit(fetch_avg_rents, formatted, property_type, bedrooms)
             # Option D: bedroom-specific local price (the like-for-like signal the
@@ -2038,8 +2065,24 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                     address_resolution = epc_confidence
                 if not floor_area_sqm and epc_area:
                     floor_area_sqm = epc_area
+                    # Tag provenance so the report/QC layer knows the area is
+                    # EPC-derived (was left as "unknown" — a mislabelling bug).
+                    floor_area_source = "epc"
+                    floor_area_confidence = "high"
             except Exception as e:
                 print(f"EPC resolution error: {e}")
+
+        # Cycle 4c: direct EPC-certificate floor area (exact, address-free) when the
+        # address-matched lookup above still found nothing.
+        if not floor_area_sqm and fut_cert_area is not None:
+            try:
+                cert_area = fut_cert_area.result()
+                if cert_area:
+                    floor_area_sqm = cert_area
+                    floor_area_source = "epc"
+                    floor_area_confidence = "high"
+            except Exception as e:
+                print(f"EPC cert-url area error: {e}")
 
         # ── FIX 3: sanity-check a SCRAPED floor area before it feeds the AVM,
         # £/sqm or size-match. EPC-derived areas are already authoritative and
