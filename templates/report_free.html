@@ -53,6 +53,15 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .verdict-card.fair .verdict-headline { color: var(--amber); }
 .verdict-card.value .verdict-headline, .verdict-card.unknown .verdict-headline { color: var(--teal); }
 .verdict-body { font-size: 14.5px; color: var(--ink-mid); line-height: 1.65; }
+.confidence-card { border-radius: var(--radius); padding: 14px 18px; margin: 0 0 20px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; border: 1px solid; }
+.confidence-card.confidence-high { background: var(--teal-light); border-color: var(--teal-border); }
+.confidence-card.confidence-medium { background: var(--amber-light); border-color: var(--amber-border); }
+.confidence-card.confidence-low { background: var(--red-light); border-color: #e8b4b4; }
+.confidence-badge { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.confidence-card.confidence-high .confidence-badge { color: var(--teal); }
+.confidence-card.confidence-medium .confidence-badge { color: var(--amber); }
+.confidence-card.confidence-low .confidence-badge { color: var(--red); }
+.confidence-text { font-size: 13.5px; color: var(--ink-mid); line-height: 1.55; }
 
 /* ANCHOR BIAS CALLOUT */
 .anchor-card { background: var(--amber-light); border: 1.5px solid var(--amber-border); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 20px; }
@@ -349,6 +358,14 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       {% endif %}
     </div>
   </div>
+
+  <!-- CONFIDENCE SCORE + CAVEAT (Cycle 1) -->
+  {% if confidence_score %}
+  <div class="confidence-card confidence-{{ confidence_score }}">
+    <span class="confidence-badge">Confidence: {{ confidence_score | upper }}</span>
+    {% if confidence_caveat %}<span class="confidence-text">{{ confidence_caveat }}</span>{% endif %}
+  </div>
+  {% endif %}
 
   <!-- DATA POINT 1: SOLD PRICE COMPARISON -->
   {% if local_avg_sold %}

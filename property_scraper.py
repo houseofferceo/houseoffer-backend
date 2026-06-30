@@ -41,8 +41,42 @@ DEFAULT_RESULT = {
     "longitude": None,
     "epc_cert_url": None,
     "is_new_build": False,
+    # Special tenure / sale type detected from listing text — None for standard
+    # open-market stock, else "shared_ownership" | "auction" | "retirement".
+    # Asking price for these is NOT directly comparable to open-market value, so
+    # app.py attaches an explicit caveat (it still returns a valuation).
+    "sale_type": None,
     "description_house_number": None,
 }
+
+# Special-tenure / sale-type detection. Ordered: a shared-ownership listing that
+# also quotes a "guide price" should read as shared_ownership, not auction.
+_SALE_TYPE_PATTERNS = [
+    ("shared_ownership", re.compile(
+        r"\bshared\s+ownership\b|\b\d{1,3}\s*%\s*share\b|\bshare\s+of\s+freehold\b"
+        r"|\bpart[\s\-]?buy\b|\bpart[\s\-]?(?:buy|own)[\s/\-]+part[\s\-]?rent\b"
+        r"|\bshared\s+equity\b", re.IGNORECASE)),
+    ("retirement", re.compile(
+        r"\bretirement\b|\bover[\s\-]?(?:55|60)s?\b|\bage[\s\-]?(?:restricted|exclusive)\b"
+        r"|\bassisted\s+living\b|\bsheltered\s+(?:housing|accommodation)\b"
+        r"|\bmccarthy\s*(?:&|and)?\s*stone\b|\bretirement\s+(?:living|village|apartment)\b",
+        re.IGNORECASE)),
+    ("auction", re.compile(
+        r"\bauction\b|\bguide\s+price\b|\bfor\s+sale\s+by\s+(?:modern\s+|online\s+)?auction\b"
+        r"|\b(?:un)?conditional\s+auction\b", re.IGNORECASE)),
+]
+
+
+def detect_sale_type(*texts):
+    """Return a special-tenure/sale-type label from any listing text, or None for
+    standard open-market stock. Best-effort keyword match."""
+    blob = " ".join(str(t) for t in texts if t)
+    if not blob:
+        return None
+    for label, rx in _SALE_TYPE_PATTERNS:
+        if rx.search(blob):
+            return label
+    return None
 
 _NEW_BUILD_RE = re.compile(
     r"\bnew[\s\-]?build\b"
@@ -500,6 +534,17 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
     if normalised_type:
         result["property_type"] = normalised_type
         result["property_type_source"] = "scraped"
+    else:
+        # Hardening (Cycle 1, item 5): the structured type fields gave us nothing
+        # recognisable — try the key features (often "Semi-Detached Family Home")
+        # before giving up. We deliberately do NOT scan the free description, which
+        # is noisy ("detached garage" etc.) and would re-introduce wrong defaults.
+        kf = prop.get("keyFeatures")
+        if isinstance(kf, list) and kf:
+            nt = normalise_property_type(" ".join(str(f) for f in kf))
+            if nt:
+                result["property_type"] = nt
+                result["property_type_source"] = "scraped"
 
     addr = prop.get("address") or {}
     pc = _postcode_from_address(addr if isinstance(addr, dict) else {})
@@ -657,6 +702,18 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
         if isinstance(item, dict) and "new" in str(item.get("type") or "").lower():
             result["is_new_build"] = True
             break
+
+    # Special-tenure / sale-type detection (Cycle 1, item 4). Scan the listing
+    # text, type description, key features and price string (auction listings often
+    # show "Guide Price"). Drives a caveat in app.py — the listing still gets valued.
+    kf_blob = ""
+    kf = prop.get("keyFeatures")
+    if isinstance(kf, list):
+        kf_blob = " ".join(str(f) for f in kf)
+    result["sale_type"] = detect_sale_type(
+        description, kf_blob, str(ptype),
+        str(prop.get("propertyTypeFullDescription") or ""), price_str,
+    )
 
     # Extract house number from description when displayAddress omits it
     addr = result.get("address") or ""

@@ -198,6 +198,38 @@ def extract_postcode_from_url(url):
         return match.group(1).replace(" ", "").upper()
     return None
 
+# Valid GB (UK) postcode AREA codes — the leading alpha prefix of a postcode.
+# Used by the random-URL test harness to reject non-GB / placeholder listings
+# (e.g. Republic of Ireland Eircodes "D83 1EB", placeholder codes "A71B 0AC")
+# which are postcode-shaped but never resolve to real UK sales data.
+VALID_GB_POSTCODE_AREAS = {
+    "AB", "AL", "B", "BA", "BB", "BD", "BH", "BL", "BN", "BR", "BS", "BT", "CA",
+    "CB", "CF", "CH", "CM", "CO", "CR", "CT", "CV", "CW", "DA", "DD", "DE", "DG",
+    "DH", "DL", "DN", "DT", "DY", "E", "EC", "EH", "EN", "EX", "FK", "FY", "G",
+    "GL", "GU", "GY", "HA", "HD", "HG", "HP", "HR", "HS", "HU", "HX", "IG", "IM",
+    "IP", "IV", "JE", "KA", "KT", "KW", "KY", "L", "LA", "LD", "LE", "LL", "LN",
+    "LS", "LU", "M", "ME", "MK", "ML", "N", "NE", "NG", "NN", "NP", "NR", "NW",
+    "OL", "OX", "PA", "PE", "PH", "PL", "PO", "PR", "RG", "RH", "RM", "S", "SA",
+    "SE", "SG", "SK", "SL", "SM", "SN", "SO", "SP", "SR", "SS", "ST", "SW", "SY",
+    "TA", "TD", "TF", "TN", "TQ", "TR", "TS", "TW", "UB", "W", "WA", "WC", "WD",
+    "WF", "WN", "WR", "WS", "WV", "YO", "ZE",
+}
+
+_GB_POSTCODE_RE = re.compile(r"^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$")  # compact form
+
+def is_valid_gb_postcode(postcode):
+    """True only for structurally valid UK postcodes whose AREA is a real GB
+    postcode area. Rejects Irish Eircodes ("D83 1EB") and placeholders ("A71B 0AC")
+    that are postcode-shaped but not GB — the harvester's main pollution source."""
+    if not postcode:
+        return False
+    compact = re.sub(r"\s+", "", str(postcode).strip().upper())
+    if not _GB_POSTCODE_RE.match(compact):
+        return False
+    area_match = re.match(r"^[A-Z]{1,2}", compact)
+    return bool(area_match) and area_match.group(0) in VALID_GB_POSTCODE_AREAS
+
+
 def _coerce_bedrooms(value):
     """Caller-supplied bedrooms may be '', '3', 3 or None. Return an int in a
     sane range, or None for anything that isn't a real bedroom count."""
@@ -261,6 +293,9 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "reduction_pct": scraped.get("reduction_pct"),
         "scraper_floor_area_sqm": scraped.get("floor_area_sqm"),
         "is_new_build": scraped.get("is_new_build", False),
+        # Special tenure / sale type (Cycle 1, item 4): shared_ownership / auction /
+        # retirement / None. Drives a caveat in the report; never withholds a value.
+        "sale_type": scraped.get("sale_type"),
         # Provenance flags (FIX 1) so the report/QC layer can see when bedrooms,
         # property type or floor area were unknown rather than truly read.
         "bedrooms_source": beds_source,
@@ -725,18 +760,24 @@ def get_sold_comparables(postcode, property_type):
     comparables = _filter_sold(fetch_sold_prices(formatted), canonical)
     broadened = False
     postcode_used = formatted
+    # Cycle 1, item 2: tier label drives the published confidence score.
+    #   postcode = direct unit-postcode same-type match (HIGH)
+    #   sector / district = geographically broadened same-type match (MEDIUM)
+    #   region = area-wide, all-type last-resort fallback (LOW, but never blank)
+    tier = "postcode"
+    district = district_postcode(postcode)
+    sector = sector_postcode(postcode)
     if len(comparables) < MIN_COMPARABLES:
         # Try sector (e.g. 'LS17 9') before jumping to the full district ('LS17'),
         # which can be too broad and mix premium and cheap sub-areas.
-        sector = sector_postcode(postcode)
-        if sector != district_postcode(postcode):
+        if sector != district:
             sector_comps = _filter_sold(fetch_sold_prices(sector), canonical)
             if len(sector_comps) >= MIN_SECTOR_COMPARABLES:
                 comparables = sector_comps
                 postcode_used = sector
                 broadened = True
+                tier = "sector"
         if len(comparables) < MIN_COMPARABLES:
-            district = district_postcode(postcode)
             district_comps = _filter_sold(fetch_sold_prices(district), canonical)
             # P1 fix: only broaden to the district if it actually yields MORE
             # comps. A failed/empty district call must never wipe out comps we
@@ -745,9 +786,25 @@ def get_sold_comparables(postcode, property_type):
                 comparables = district_comps
                 postcode_used = district
                 broadened = True
+                tier = "district"
+    # Regional fallback (item 2): NEVER return "no comparables" when a valid
+    # postcode exists. If the same-type tiers above produced nothing usable, widen
+    # to ALL recent sales across the district (any property type), then the sector.
+    # Triggers only when we would otherwise hand back an empty set.
+    if not comparables:
+        region_comps = _all_sold_transactions(fetch_sold_prices(district))
+        region_pc = district
+        if not region_comps and sector != district:
+            region_comps = _all_sold_transactions(fetch_sold_prices(sector))
+            region_pc = sector
+        if region_comps:
+            comparables = _median_trim(region_comps)
+            postcode_used = region_pc
+            broadened = True
+            tier = "region"
     # HPI-adjust all comparables to today's value before returning
     comparables = hpi_adjust_comparables(comparables, postcode)
-    return comparables, postcode_used, broadened, type_unknown
+    return comparables, postcode_used, broadened, type_unknown, tier
 
 # ── P2: bedroom-matched, distance-ranked comparables ───────────────────────────
 # The Rightmove sold feed (fetch_sold_nearby) carries property_type, bedrooms and
@@ -843,19 +900,23 @@ def _filter_sold(data, canonical_type):
         comps = [t for t in transactions
                  if (canonical_type is None or _canonical_sold_type(t.get("type")) == canonical_type)
                  and t.get("price") and t.get("price") < 2_000_000]
-        # Median band: exclude non-market transactions (partial transfers,
-        # right-to-buy, inter-family sales) that Land Registry records at
-        # far-from-market values. Anchored on the median, which an outlier
-        # cannot drag the way it drags the mean. Kept loose (50%-200%) so it
-        # removes junk data without shaping the genuine distribution.
-        if len(comps) >= 5:
-            prices = sorted(c["price"] for c in comps)
-            n = len(prices)
-            median = prices[n // 2] if n % 2 else (prices[n // 2 - 1] + prices[n // 2]) / 2
-            comps = [c for c in comps if 0.5 * median <= c["price"] <= 2.0 * median]
-        return comps
+        # Median band junk-trim (see _median_trim).
+        return _median_trim(comps)
     except Exception:
         return []
+
+def _median_trim(comps):
+    """Exclude non-market transactions (partial transfers, right-to-buy,
+    inter-family sales) that Land Registry records at far-from-market values.
+    Anchored on the median, which an outlier cannot drag the way it drags the
+    mean. Kept loose (50%-200%) so it removes junk without shaping the genuine
+    distribution. Only applied once there are enough records to trust the median."""
+    if len(comps) >= 5:
+        prices = sorted(c["price"] for c in comps)
+        n = len(prices)
+        median = prices[n // 2] if n % 2 else (prices[n // 2 - 1] + prices[n // 2]) / 2
+        return [c for c in comps if 0.5 * median <= c["price"] <= 2.0 * median]
+    return comps
 
 def _all_sold_transactions(data):
     if not data:
@@ -1736,6 +1797,74 @@ def _method_dict(name, low, high, midpoint, source, available, weight=1):
     }
 
 
+_CONFIDENCE_ORDER = {"high": 2, "medium": 1, "low": 0}
+
+def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
+                        comp_count, sale_type, is_new_build, has_value):
+    """Single source of truth for the PUBLISHED confidence score + caveat
+    (Cycle 1, item 3). We always return a valuation for any listing with a usable
+    postcode — this only encodes how much to trust it and why. Combines:
+      - which comparable tier matched (postcode→high / sector·district→medium /
+        region→low), with a stronger bedroom/size match overriding to high;
+      - whether the property type was confidently parsed (item 5);
+      - whether the comparable set is thin;
+      - special tenure (item 4) and new-build, which add a caveat and cap trust.
+    Returns (score, reasons, caveat). reasons = plain-English drivers; caveat = a
+    single buyer-facing sentence (or None when high confidence with no caveats)."""
+    reasons = []
+    # A bedroom/size/distance-matched set is the strongest signal we have,
+    # regardless of the geographic tier it was drawn from.
+    strong = comparable_confidence in (
+        "bedroom_matched", "size_matched", "bedroom_distance", "bedroom_distance_wide")
+    if strong:
+        score = "high"
+    elif comparable_tier == "postcode":
+        if comp_count >= MIN_COMPARABLES:
+            score = "high"
+        else:
+            score = "medium"
+            reasons.append("based on a small number of sales in this exact postcode")
+    elif comparable_tier in ("sector", "district"):
+        score = "medium"
+        reasons.append("limited sales in the immediate postcode — estimate based on "
+                       f"the wider {comparable_tier} area")
+    elif comparable_tier == "region":
+        score = "low"
+        reasons.append("very few like-for-like sales nearby — estimate based on "
+                       "broader area-wide sales of all property types")
+    else:
+        score = "medium"
+
+    def downgrade(to):
+        return to if _CONFIDENCE_ORDER[to] < _CONFIDENCE_ORDER[score] else score
+
+    if type_unknown:
+        score = downgrade("low")
+        reasons.append("property type unclear — estimate is less precise as a result")
+
+    caveats = []
+    if sale_type:
+        score = downgrade("medium")
+        label = {
+            "shared_ownership": "a shared-ownership / part-buy listing",
+            "auction": "an auction or guide-price listing",
+            "retirement": "a retirement / age-restricted listing",
+        }.get(sale_type, "a special-tenure listing")
+        caveats.append(
+            f"This looks like {label}. Its asking price is not directly comparable "
+            "to open-market value, so treat this estimate as indicative only.")
+    if is_new_build:
+        caveats.append(
+            "This looks like a new-build; new-builds usually carry a premium over "
+            "the resale sales this estimate is based on.")
+    if not has_value:
+        score = "low"
+    if reasons and score != "high":
+        caveats.append(f"Confidence is {score}: " + "; ".join(reasons) + ".")
+    caveat = " ".join(caveats) if caveats else None
+    return score, reasons, caveat
+
+
 def build_report_data(property_url, asking_price, bedrooms, property_type,
                       postcode, floor_area_sqm=None, address=None,
                       scraper_days_on_market=None, scraper_floor_area_sqm=None,
@@ -1746,6 +1875,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       bedrooms_source="unknown", property_type_source="unknown",
                       floor_area_source="unknown",
                       latitude=None, longitude=None, bathrooms=None,
+                      sale_type=None,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -1763,6 +1893,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     floor_area_sqm_raw = None  # set by FIX 3 when a scraped area is rejected
     # P2 comparable-source signals (default to the Land Registry path).
     comparable_source = "land_registry"
+    # Cycle 1, item 2/3: which geographic tier produced the headline comparable set
+    # (postcode/sector/district/region). Set by get_sold_comparables; drives the
+    # published confidence score below.
+    comparable_tier = "postcode"
     comparable_radius_miles = None
     comparable_bedroom_band = None
     # Diagnostics: None = nearby feed not attempted (no subject coords);
@@ -1809,7 +1943,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             fut_bedroom_price = (pool.submit(fetch_bedroom_price, formatted, property_type, bedrooms)
                                  if (bedrooms and property_type) else None)
 
-        comparables, postcode_used, broadened, type_unknown = fut_comps.result()
+        comparables, postcode_used, broadened, type_unknown, comparable_tier = fut_comps.result()
         if type_unknown:
             # No type filter could be applied — comparables mix property types.
             comparable_confidence = "low"
@@ -2420,6 +2554,20 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     original_asking_price_formatted = _fmt(original_asking_price)
     reduction_amount_formatted = _fmt(reduction_amount)
 
+    # ── PUBLISHED CONFIDENCE SCORE + CAVEAT (Cycle 1, item 3) ──────────────────
+    # One resolver combines the comparable tier, type certainty, thin-set, special
+    # tenure and new-build into a high/medium/low score and a buyer-facing caveat.
+    # We still publish a number for every listing with a usable postcode.
+    confidence_score, confidence_reasons, confidence_caveat = _resolve_confidence(
+        comparable_tier=comparable_tier,
+        comparable_confidence=comparable_confidence,
+        type_unknown=type_unknown,
+        comp_count=len(comparables_for_avg),
+        sale_type=sale_type,
+        is_new_build=is_new_build,
+        has_value=weighted_midpoint is not None,
+    )
+
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
@@ -2446,6 +2594,13 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # kept for the QC layer; never fed into the valuation maths.
         "floor_area_sqm_raw": floor_area_sqm_raw,
         "comparable_confidence": comparable_confidence,
+        # Cycle 1: published confidence model — high/medium/low + plain-English
+        # caveat, plus the comparable tier and any detected special sale type.
+        "confidence_score": confidence_score,
+        "confidence_reasons": confidence_reasons,
+        "confidence_caveat": confidence_caveat,
+        "comparable_tier": comparable_tier,
+        "sale_type": sale_type,
         "comparable_count_size_matched": comparable_count_size_matched,
         # P2: where the comparable set came from and how it was matched.
         "comparable_source": comparable_source,
@@ -2594,6 +2749,10 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
                 bedrooms_source=report.get("bedrooms_source", "unknown"),
                 property_type_source=report.get("property_type_source", "unknown"),
                 floor_area_source=report.get("floor_area_source", "unknown"),
+                sale_type=report.get("sale_type"),
+                latitude=report.get("latitude"),
+                longitude=report.get("longitude"),
+                bathrooms=report.get("bathrooms"),
                 tier=tier,
             )
             latest = load_report(report_id) or {}
@@ -3667,7 +3826,11 @@ def _harvest_random_rightmove(n, id_min, id_max, attempts_cap):
             s = scrape_property_url(url)
         except Exception:
             continue
-        if s.get("postcode") and s.get("asking_price"):
+        # Cycle 1, item 1: GB-residential validity filter. Keep only live SALE
+        # listings whose postcode is a genuine GB postcode — drops the non-GB /
+        # placeholder junk (14 of 40 last run) that isn't a real valuation case.
+        if (s.get("postcode") and s.get("asking_price")
+                and is_valid_gb_postcode(s.get("postcode"))):
             found.append({"url": url, "label": f"random {s.get('postcode')}"})
     return found
 
@@ -3680,6 +3843,8 @@ def _valuation_test_row(url, label=None):
         "asking_price": None, "valuation_midpoint": None, "valuation_low": None,
         "valuation_high": None, "gap_vs_asking_pct": None, "verdict": None,
         "comparable_confidence": None, "comparables_count": None,
+        "confidence_score": None, "comparable_tier": None, "sale_type": None,
+        "confidence_caveat": None,
         "size_matched_count": None, "floor_area_sqm": None,
         "floor_area_source": None, "floor_area_confidence": None,
         "methods_available": None, "error": None,
@@ -3707,6 +3872,10 @@ def _valuation_test_row(url, label=None):
             "valuation_high": report.get("weighted_high"),
             "verdict": report.get("verdict"),
             "comparable_confidence": report.get("comparable_confidence"),
+            "confidence_score": report.get("confidence_score"),
+            "comparable_tier": report.get("comparable_tier"),
+            "sale_type": report.get("sale_type"),
+            "confidence_caveat": report.get("confidence_caveat"),
             "comparable_source": report.get("comparable_source"),
             "comparable_outlier_excluded": report.get("comparable_outlier_excluded"),
             "matched_sold_value": report.get("matched_sold_value"),
@@ -3746,20 +3915,66 @@ def _assemble_valuation_batch(n, mode, urls_arg, id_min, id_max):
             batch += [b for b in _CURATED_VALUATION_BATCH if b["url"] not in have][:n - len(batch)]
     return batch[:n]
 
+def _accuracy_block(rows):
+    """Accuracy summary for a set of valued rows: within-10%, within-20%, median
+    |gap|. Used overall and per confidence tier so we can see whether low-confidence
+    numbers really are worse (Cycle 1 report format)."""
+    gaps = sorted(abs(r["gap_vs_asking_pct"]) for r in rows
+                  if r.get("gap_vs_asking_pct") is not None)
+    if not gaps:
+        return {"n": len(rows), "within_10pct": 0, "within_20pct": 0, "median_abs_gap_pct": None}
+    return {
+        "n": len(rows),
+        "within_10pct": sum(1 for g in gaps if g <= 10),
+        "within_20pct": sum(1 for g in gaps if g <= 20),
+        "median_abs_gap_pct": gaps[len(gaps) // 2],
+    }
+
 def _summarise_valuation_results(results, n, outlier_threshold):
+    # Category (a): no usable postcode at all → we couldn't generate a report.
+    no_postcode = [r for r in results
+                   if r.get("error") and "postcode" in str(r["error"]).lower()]
     ok = [r for r in results if not r["error"] and r["valuation_midpoint"]]
     gaps = sorted(abs(r["gap_vs_asking_pct"]) for r in ok if r["gap_vs_asking_pct"] is not None)
     conf_hist = {}
     for r in ok:
         c = r["comparable_confidence"] or "n/a"
         conf_hist[c] = conf_hist.get(c, 0) + 1
+    # Accuracy broken out by published confidence score (high/medium/low).
+    by_score = {}
+    for score in ("high", "medium", "low"):
+        tier_rows = [r for r in ok if r.get("confidence_score") == score]
+        if tier_rows:
+            by_score[score] = _accuracy_block(tier_rows)
+    score_hist = {}
+    for r in ok:
+        s = r.get("confidence_score") or "n/a"
+        score_hist[s] = score_hist.get(s, 0) + 1
+    tier_hist = {}
+    for r in ok:
+        t = r.get("comparable_tier") or "n/a"
+        tier_hist[t] = tier_hist.get(t, 0) + 1
+    sale_type_hist = {}
+    for r in ok:
+        st = r.get("sale_type")
+        if st:
+            sale_type_hist[st] = sale_type_hist.get(st, 0) + 1
     outliers = sorted(
         [r for r in ok if r["gap_vs_asking_pct"] is not None
          and abs(r["gap_vs_asking_pct"]) >= outlier_threshold],
         key=lambda r: -abs(r["gap_vs_asking_pct"]))
     return {
         "requested": n, "valued_ok": len(ok), "errors": len(results) - len(ok),
+        # Category (a) = no resolvable postcode; categories (b)+(c) = valued_ok.
+        "no_usable_postcode": len(no_postcode),
+        "valued_with_confidence": len(ok),
         "median_abs_gap_pct": gaps[len(gaps) // 2] if gaps else None,
+        "within_10pct": sum(1 for g in gaps if g <= 10),
+        "within_20pct": sum(1 for g in gaps if g <= 20),
+        "accuracy_by_confidence": by_score,
+        "confidence_score_histogram": score_hist,
+        "comparable_tier_histogram": tier_hist,
+        "sale_type_histogram": sale_type_hist,
         "confidence_histogram": conf_hist,
         "outlier_threshold_pct": outlier_threshold,
         "outlier_count": len(outliers), "outliers": outliers,
