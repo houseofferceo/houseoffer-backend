@@ -1804,10 +1804,18 @@ _CONFIDENCE_ORDER = {"high": 2, "medium": 1, "low": 0}
 # the estimate is capped to MEDIUM with a "methods disagree" caveat.
 _MATCHED_SOLD_CORROBORATE = 0.12
 _MATCHED_SOLD_CONFLICT = 0.20
+# Cycle 3 sanity gate: when our valuation diverges from the asking price beyond
+# these ratios, the listing is almost certainly non-standard (shared ownership,
+# short lease, auction guide, mis-listing, wrong type) — see E9 0CC (+130%) and
+# CF63 (−88%). Normal over/under-pricing never reaches these bounds, so the gate
+# only catches genuine anomalies. Such listings are capped to LOW + flagged.
+_ASKING_ANOMALY_HIGH_RATIO = 1.5   # our value > 1.5× asking
+_ASKING_ANOMALY_LOW_RATIO = 0.6    # our value < 0.6× asking
 
 def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
                         comp_count, sale_type, is_new_build, has_value,
-                        matched_sold_value=None, weighted_midpoint=None):
+                        matched_sold_value=None, weighted_midpoint=None,
+                        asking_anomaly=False):
     """Single source of truth for the PUBLISHED confidence score + caveat. We always
     return a valuation for any listing with a usable postcode — this only encodes how
     much to trust it and why.
@@ -1862,6 +1870,17 @@ def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
         reasons.append("property type unclear — estimate is less precise as a result")
 
     caveats = []
+    # Cycle 3 sanity gate: a valuation far from the asking price is a red flag for a
+    # non-standard listing even when our comps are good (E9 0CC: bedroom-matched
+    # comps said £495k, asking £215k — an undetected shared-ownership share).
+    if asking_anomaly:
+        score = downgrade("low")
+        reasons.append("asking price is far from the comparable evidence")
+        caveats.append(
+            "The asking price is very different from the sold-price evidence we found. "
+            "That usually means a non-standard listing — shared ownership, a short "
+            "lease, an auction guide price, or a mis-listing — so treat this estimate "
+            "with particular caution.")
     if sale_type:
         score = downgrade("medium")
         label = {
@@ -2577,6 +2596,13 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     # One resolver combines the comparable tier, type certainty, thin-set, special
     # tenure and new-build into a high/medium/low score and a buyer-facing caveat.
     # We still publish a number for every listing with a usable postcode.
+    # Cycle 3 sanity gate: flag a valuation that diverges wildly from the asking
+    # price (probable special tenure / lease / mis-listing) — drives the caveat below.
+    asking_anomaly = False
+    if asking_price and weighted_midpoint:
+        ratio = weighted_midpoint / asking_price
+        asking_anomaly = (ratio > _ASKING_ANOMALY_HIGH_RATIO
+                          or ratio < _ASKING_ANOMALY_LOW_RATIO)
     confidence_score, confidence_reasons, confidence_caveat = _resolve_confidence(
         comparable_tier=comparable_tier,
         comparable_confidence=comparable_confidence,
@@ -2587,6 +2613,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         has_value=weighted_midpoint is not None,
         matched_sold_value=matched_sold_value,
         weighted_midpoint=weighted_midpoint,
+        asking_anomaly=asking_anomaly,
     )
     # Divergence between the independent matched-sold signal and the published
     # midpoint — surfaced for the QC layer and the batch test (drives the HIGH gate).
@@ -2628,6 +2655,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "confidence_caveat": confidence_caveat,
         "comparable_tier": comparable_tier,
         "sale_type": sale_type,
+        # Cycle 3: valuation diverged far from asking (probable non-standard listing).
+        "asking_anomaly": asking_anomaly,
         "comparable_count_size_matched": comparable_count_size_matched,
         # P2: where the comparable set came from and how it was matched.
         "comparable_source": comparable_source,
@@ -3874,7 +3903,7 @@ def _valuation_test_row(url, label=None):
         "valuation_high": None, "gap_vs_asking_pct": None, "verdict": None,
         "comparable_confidence": None, "comparables_count": None,
         "confidence_score": None, "comparable_tier": None, "sale_type": None,
-        "confidence_caveat": None,
+        "confidence_caveat": None, "asking_anomaly": None,
         "size_matched_count": None, "floor_area_sqm": None,
         "floor_area_source": None, "floor_area_confidence": None,
         "methods_available": None, "error": None,
@@ -3906,6 +3935,7 @@ def _valuation_test_row(url, label=None):
             "comparable_tier": report.get("comparable_tier"),
             "sale_type": report.get("sale_type"),
             "confidence_caveat": report.get("confidence_caveat"),
+            "asking_anomaly": report.get("asking_anomaly"),
             "comparable_source": report.get("comparable_source"),
             "comparable_outlier_excluded": report.get("comparable_outlier_excluded"),
             "matched_sold_value": report.get("matched_sold_value"),
@@ -3990,6 +4020,7 @@ def _summarise_valuation_results(results, n, outlier_threshold):
         st = r.get("sale_type")
         if st:
             sale_type_hist[st] = sale_type_hist.get(st, 0) + 1
+    asking_anomaly_count = sum(1 for r in ok if r.get("asking_anomaly"))
     outliers = sorted(
         [r for r in ok if r["gap_vs_asking_pct"] is not None
          and abs(r["gap_vs_asking_pct"]) >= outlier_threshold],
@@ -4006,6 +4037,7 @@ def _summarise_valuation_results(results, n, outlier_threshold):
         "confidence_score_histogram": score_hist,
         "comparable_tier_histogram": tier_hist,
         "sale_type_histogram": sale_type_hist,
+        "asking_anomaly_count": asking_anomaly_count,
         "confidence_histogram": conf_hist,
         "outlier_threshold_pct": outlier_threshold,
         "outlier_count": len(outliers), "outliers": outliers,

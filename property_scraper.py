@@ -53,9 +53,15 @@ DEFAULT_RESULT = {
 # also quotes a "guide price" should read as shared_ownership, not auction.
 _SALE_TYPE_PATTERNS = [
     ("shared_ownership", re.compile(
-        r"\bshared\s+ownership\b|\b\d{1,3}\s*%\s*share\b|\bshare\s+of\s+freehold\b"
+        r"\bshared\s+ownership\b|\b\d{1,3}\s*%\s*share\b"
         r"|\bpart[\s\-]?buy\b|\bpart[\s\-]?(?:buy|own)[\s/\-]+part[\s\-]?rent\b"
-        r"|\bshared\s+equity\b", re.IGNORECASE)),
+        r"|\bshared\s+equity\b"
+        # Sub-market discount schemes (Cycle 3) — these price below open market the
+        # same way shared ownership does (the E9 0CC miss was one of these).
+        r"|\bdiscount(?:ed)?\s+market\s+(?:sale|value|home)\b"
+        r"|\bfirst\s+homes?\s+scheme\b"
+        r"|\b\d{1,3}\s*%\s*of\s*(?:the\s+)?(?:full\s+)?market\s+value\b",
+        re.IGNORECASE)),
     ("retirement", re.compile(
         r"\bretirement\b|\bover[\s\-]?(?:55|60)s?\b|\bage[\s\-]?(?:restricted|exclusive)\b"
         r"|\bassisted\s+living\b|\bsheltered\s+(?:housing|accommodation)\b"
