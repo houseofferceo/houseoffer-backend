@@ -78,17 +78,19 @@ def detect_sale_type(*texts):
             return label
     return None
 
+# Cycle 2: tightened to property-level new-build phrasing only. The old pattern
+# matched bare "brand new" and "new development", which fire on "brand new kitchen",
+# "brand new boiler" or "close to a new development" and produced false new-build
+# caveats (HU18/LE13/BL9 in the random-40 test). Rightmove's own new-home tag
+# (infoReelItems, handled below) remains a second, reliable signal.
 _NEW_BUILD_RE = re.compile(
     r"\bnew[\s\-]?build\b"
-    r"|\bbrand[\s\-]?new\s+development\b"
-    r"|\bbrand[\s\-]?new\b"
-    r"|\bnewly\s+built\b"
-    r"|\bnew\s+development\b"
+    r"|\bnewly\s+(?:built|constructed)\b"
     r"|\bnew\s+homes?\b"
-    r"|\bepc\s+to\s+follow\b"
-    r"|\bepc\s+(?:rating\s+)?to\s+be\s+(?:confirmed|provided|issued)\b"
+    r"|\bshow\s+home\b"
     r"|\boff[\s\-]?plan\b"
-    r"|\bnewly\s+(?:constructed|developed)\b",
+    r"|\bepc\s+to\s+follow\b"
+    r"|\bepc\s+(?:rating\s+)?to\s+be\s+(?:confirmed|provided|issued)\b",
     re.IGNORECASE,
 )
 

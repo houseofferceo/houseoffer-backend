@@ -1798,36 +1798,52 @@ def _method_dict(name, low, high, midpoint, source, available, weight=1):
 
 
 _CONFIDENCE_ORDER = {"high": 2, "medium": 1, "low": 0}
+# Independent matched-sold corroboration thresholds (Cycle 2). HIGH requires the
+# bedroom/size/distance-matched SOLD comps (psqf feed) to agree with the published
+# midpoint within CORROBORATE; a gap above CONFLICT means the methods disagree and
+# the estimate is capped to MEDIUM with a "methods disagree" caveat.
+_MATCHED_SOLD_CORROBORATE = 0.12
+_MATCHED_SOLD_CONFLICT = 0.20
 
 def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
-                        comp_count, sale_type, is_new_build, has_value):
-    """Single source of truth for the PUBLISHED confidence score + caveat
-    (Cycle 1, item 3). We always return a valuation for any listing with a usable
-    postcode — this only encodes how much to trust it and why. Combines:
-      - which comparable tier matched (postcode→high / sector·district→medium /
-        region→low), with a stronger bedroom/size match overriding to high;
-      - whether the property type was confidently parsed (item 5);
-      - whether the comparable set is thin;
-      - special tenure (item 4) and new-build, which add a caveat and cap trust.
-    Returns (score, reasons, caveat). reasons = plain-English drivers; caveat = a
-    single buyer-facing sentence (or None when high confidence with no caveats)."""
+                        comp_count, sale_type, is_new_build, has_value,
+                        matched_sold_value=None, weighted_midpoint=None):
+    """Single source of truth for the PUBLISHED confidence score + caveat. We always
+    return a valuation for any listing with a usable postcode — this only encodes how
+    much to trust it and why.
+
+    Cycle 2 fix: HIGH no longer means "enough comps at the postcode" (that gave HIGH
+    to bedroom/size-BLIND averages — the flat misses N19/B1/N8/EH10/B23). HIGH now
+    requires EITHER a genuinely bedroom/size-matched headline set OR independent
+    matched-sold comps that AGREE with the published number. When the headline set is
+    only area-matched it is MEDIUM, and when an available matched-sold signal
+    DISAGREES sharply the estimate is capped to MEDIUM and flagged.
+
+    Returns (score, reasons, caveat)."""
     reasons = []
-    # A bedroom/size/distance-matched set is the strongest signal we have,
-    # regardless of the geographic tier it was drawn from.
-    strong = comparable_confidence in (
+    # The headline comparable SET was itself bedroom/size matched (FIX 2 path).
+    headline_matched = comparable_confidence in (
         "bedroom_matched", "size_matched", "bedroom_distance", "bedroom_distance_wide")
-    if strong:
+    # Independent corroboration / conflict from the matched-sold (psqf) signal.
+    corroborated = conflict = False
+    if matched_sold_value and weighted_midpoint:
+        div = abs(matched_sold_value - weighted_midpoint) / weighted_midpoint
+        corroborated = div <= _MATCHED_SOLD_CORROBORATE
+        conflict = div > _MATCHED_SOLD_CONFLICT
+
+    if headline_matched or corroborated:
         score = "high"
-    elif comparable_tier == "postcode":
-        if comp_count >= MIN_COMPARABLES:
-            score = "high"
-        else:
-            score = "medium"
-            reasons.append("based on a small number of sales in this exact postcode")
-    elif comparable_tier in ("sector", "district"):
+        if corroborated and not headline_matched:
+            reasons.append("recent sales of similar (bedroom-matched) homes corroborate this estimate")
+    elif comparable_tier in ("postcode", "sector", "district"):
         score = "medium"
-        reasons.append("limited sales in the immediate postcode — estimate based on "
-                       f"the wider {comparable_tier} area")
+        if comparable_tier == "postcode" and comp_count >= MIN_COMPARABLES:
+            reasons.append("based on local sold prices, but not bedroom- or size-matched")
+        elif comparable_tier == "postcode":
+            reasons.append("based on a small number of sales in this exact postcode")
+        else:
+            reasons.append("limited sales in the immediate postcode — estimate based on "
+                           f"the wider {comparable_tier} area")
     elif comparable_tier == "region":
         score = "low"
         reasons.append("very few like-for-like sales nearby — estimate based on "
@@ -1838,6 +1854,9 @@ def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
     def downgrade(to):
         return to if _CONFIDENCE_ORDER[to] < _CONFIDENCE_ORDER[score] else score
 
+    if conflict:
+        score = downgrade("medium")
+        reasons.append("valuation methods disagree on this property — treat the estimate with caution")
     if type_unknown:
         score = downgrade("low")
         reasons.append("property type unclear — estimate is less precise as a result")
@@ -2566,7 +2585,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         sale_type=sale_type,
         is_new_build=is_new_build,
         has_value=weighted_midpoint is not None,
+        matched_sold_value=matched_sold_value,
+        weighted_midpoint=weighted_midpoint,
     )
+    # Divergence between the independent matched-sold signal and the published
+    # midpoint — surfaced for the QC layer and the batch test (drives the HIGH gate).
+    matched_sold_divergence_pct = None
+    if matched_sold_value and weighted_midpoint:
+        matched_sold_divergence_pct = round(
+            (weighted_midpoint - matched_sold_value) / matched_sold_value * 100, 1)
 
     return {
         "postcode": formatted,
@@ -2620,6 +2647,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "matched_sold_value": matched_sold_value,
         "matched_sold_count": matched_sold_count,
         "matched_sold_confidence": matched_sold_confidence,
+        # Cycle 2: agreement between the independent matched-sold signal and the
+        # published midpoint (drives the HIGH gate; large gap = methods disagree).
+        "matched_sold_divergence_pct": matched_sold_divergence_pct,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
@@ -3881,6 +3911,7 @@ def _valuation_test_row(url, label=None):
             "matched_sold_value": report.get("matched_sold_value"),
             "matched_sold_count": report.get("matched_sold_count"),
             "matched_sold_confidence": report.get("matched_sold_confidence"),
+            "matched_sold_divergence_pct": report.get("matched_sold_divergence_pct"),
             "bedroom_local_avg_asking": report.get("bedroom_local_avg_asking"),
             "bedroom_implied_value": report.get("bedroom_implied_value"),
             "comparable_radius_miles": report.get("comparable_radius_miles"),
