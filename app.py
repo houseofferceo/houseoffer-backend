@@ -1811,11 +1811,16 @@ _MATCHED_SOLD_CONFLICT = 0.20
 # only catches genuine anomalies. Such listings are capped to LOW + flagged.
 _ASKING_ANOMALY_HIGH_RATIO = 1.5   # our value > 1.5× asking
 _ASKING_ANOMALY_LOW_RATIO = 0.6    # our value < 0.6× asking
+# Cycle 4b premium-property guard: a would-be-HIGH whose value sits this far BELOW
+# asking is almost always an under-captured premium/larger home (the area comps and
+# the matched-sold are both biased low and corroborate each other) rather than
+# genuine confidence — seen on NW3/CO4/W6 prime stock. Demote such rows to MEDIUM.
+_PREMIUM_UNDERVALUE_RATIO = 0.75   # our value < 0.75× asking (i.e. >25% below)
 
 def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
                         comp_count, sale_type, is_new_build, has_value,
                         matched_sold_value=None, weighted_midpoint=None,
-                        asking_anomaly=False):
+                        asking_anomaly=False, asking_price=None):
     """Single source of truth for the PUBLISHED confidence score + caveat. We always
     return a valuation for any listing with a usable postcode — this only encodes how
     much to trust it and why.
@@ -1868,6 +1873,17 @@ def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
     if type_unknown:
         score = downgrade("low")
         reasons.append("property type unclear — estimate is less precise as a result")
+
+    # Premium-property guard (Cycle 4b): don't claim HIGH when our value sits well
+    # below asking on a non-anomaly. That gap is usually a premium/larger home our
+    # comparables under-capture (both methods biased low, corroborating each other),
+    # not real confidence. Demote to MEDIUM with a plain reason. (Extreme gaps are
+    # already LOW via the anomaly gate.)
+    if (score == "high" and asking_price and weighted_midpoint
+            and weighted_midpoint < asking_price * _PREMIUM_UNDERVALUE_RATIO):
+        score = "medium"
+        reasons.append("our valuation is well below the asking price — often a premium "
+                       "or larger property that local comparable sales under-capture")
 
     caveats = []
     # Cycle 3 sanity gate: a valuation far from the asking price is a red flag for a
@@ -2614,6 +2630,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         matched_sold_value=matched_sold_value,
         weighted_midpoint=weighted_midpoint,
         asking_anomaly=asking_anomaly,
+        asking_price=asking_price,
     )
     # Divergence between the independent matched-sold signal and the published
     # midpoint — surfaced for the QC layer and the batch test (drives the HIGH gate).
