@@ -527,10 +527,12 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
         <div class="crowd-avg-val" id="crowd-avg"></div>
       </div>
 
-      <a class="crowd-paid-hook" href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}">
-        <div class="crowd-paid-icon">🔓</div>
-        <div class="crowd-paid-text"><strong>See how everyone's number compares to the actual data</strong> — full crowd vs. expert breakdown in the £29 report.</div>
-      </a>
+      {% if weighted_midpoint %}
+      <div class="crowd-paid-hook">
+        <div class="crowd-paid-icon">📊</div>
+        <div class="crowd-paid-text" id="crowd-vs-data">As votes come in, watch how everyone's number compares with the data valuation of <strong>{{ weighted_midpoint_formatted }}</strong>.</div>
+      </div>
+      {% endif %}
     </div>
 
     <button class="share-btn" onclick="HO.shareForVotes(this)">📲 Share with friends &amp; family to get their estimate</button>
@@ -883,6 +885,14 @@ var HO = {
     }
     if (d.crowd_avg) {
       document.getElementById("crowd-avg").textContent = "£" + Number(d.crowd_avg).toLocaleString();
+      var cmp = document.getElementById("crowd-vs-data");
+      if (cmp && HO.ourMid) {
+        var diff = Math.round((d.crowd_avg - HO.ourMid) / HO.ourMid * 100);
+        var rel = diff > 0 ? diff + "% above" : diff < 0 ? (-diff) + "% below" : "right on";
+        cmp.innerHTML = "The crowd's average of <strong>£" + Number(d.crowd_avg).toLocaleString() +
+                        "</strong> is <strong>" + rel + "</strong> the data valuation of <strong>£" +
+                        Number(HO.ourMid).toLocaleString() + "</strong>.";
+      }
     }
     var feed = document.getElementById("crowd-feed");
     if (d.votes && d.votes.length) {
