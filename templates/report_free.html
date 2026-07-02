@@ -30,6 +30,12 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 .logo { font-size: 18px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; }
 .logo-mark { width: 26px; height: 26px; flex-shrink: 0; }
 .nav-tag { font-size: 11px; font-weight: 600; color: var(--teal); background: var(--teal-light); border: 1px solid var(--teal-border); padding: 3px 10px; border-radius: 20px; }
+.nav-right { display: flex; align-items: center; gap: 7px; }
+.nav-share-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 20px; text-decoration: none; border: 1px solid var(--sand-border); background: var(--white); color: var(--ink-mid); cursor: pointer; white-space: nowrap; font-family: inherit; }
+.nav-share-btn:hover { border-color: var(--teal-border); color: var(--teal); }
+.nav-share-btn.whatsapp { background: #25D366; border-color: #25D366; color: #fff; }
+.nav-share-btn.whatsapp:hover { background: #1eb457; color: #fff; }
+@media (max-width: 560px) { .nav-tag { display: none; } }
 
 .wrapper { max-width: 700px; margin: 0 auto; padding: 28px 20px 80px; display: flex; flex-direction: column; gap: 14px; }
 
@@ -41,15 +47,6 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 .report-sub { font-size: 13px; color: var(--ink-mid); margin-bottom: 14px; }
 .meta-pills { display: flex; flex-wrap: wrap; gap: 7px; }
 .pill { background: var(--sand); border: 1px solid var(--sand-border); border-radius: 7px; padding: 5px 11px; font-size: 12px; font-weight: 500; color: var(--ink-mid); }
-
-/* SHARE ROW */
-.share-row { display: flex; gap: 10px; flex-wrap: wrap; }
-.share-row-btn { flex: 1; min-width: 160px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 10px; padding: 12px 16px; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit; border: none; }
-.share-row-primary { background: var(--purple); color: white; }
-.share-row-primary:hover { background: #5f74b8; }
-.share-row-secondary { background: var(--white); color: var(--ink-mid); border: 1.5px solid var(--sand-border) !important; }
-.share-row-secondary:hover { background: var(--sand); }
-.share-row-icon { font-size: 15px; }
 
 /* A: VALUATION + HOOK */
 .valuation-card { background: var(--white); border: 1.5px solid var(--teal-border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
@@ -136,8 +133,8 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 .feed-name { font-weight: 600; color: var(--ink); flex: 1; }
 .feed-val { font-weight: 700; color: var(--purple); }
 
-.share-btn { width: 100%; background: white; border: 1.5px solid var(--purple-border); color: var(--purple); border-radius: 10px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 14px; }
-.share-btn:hover { background: var(--purple-light); }
+.share-btn { width: 100%; background: var(--purple); border: none; color: white; border-radius: 10px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; }
+.share-btn:hover { background: #5f74b8; }
 
 .crowd-avg-strip { background: var(--purple-light); border: 1px solid var(--purple-border); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
 .crowd-avg-label { font-size: 12px; color: var(--ink-mid); }
@@ -166,10 +163,12 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 .ff-row-clear { display: flex; align-items: center; gap: 14px; margin-bottom: 11px; position: relative; }
 .ff-row-clear.ff-behind { opacity: 0.5; }
 .ff-label-clear { font-size: 12.5px; color: var(--ink-mid); width: 150px; flex-shrink: 0; text-align: right; font-weight: 500; }
-.ff-fake-track { flex: 1; height: 20px; background: var(--sand-dark); border-radius: 4px; position: relative; }
-.ff-fake-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #b8dfd5, var(--teal-mid)); }
+.ff-fake-track { flex: 1; height: 20px; background: var(--sand-dark); border-radius: 4px; position: relative; overflow: hidden; }
+.ff-fake-fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #b8dfd5, var(--teal-mid)); }
 .ff-fake-fill.ff-muted { background: linear-gradient(90deg, #e3d5c4, #c9a98a); }
 .ff-blur-only { filter: blur(5px); }
+.ff-fig { font-size: 12.5px; font-weight: 700; color: var(--teal); width: 70px; flex-shrink: 0; font-family: 'Lora', serif; }
+.ff-fig.muted { color: #8a6a1f; }
 .ff-asking-figure { font-size: 13px; font-weight: 700; color: var(--red); width: 70px; flex-shrink: 0; }
 .locked-ff-overlay-inline { text-align: center; padding: 22px 20px; margin: 6px 0 18px; position: relative; }
 .lock-icon { font-size: 26px; margin-bottom: 8px; }
@@ -218,7 +217,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 .upgrade-sub { font-size: 13.5px; color: var(--ink-mid); margin-bottom: 18px; line-height: 1.6; }
 .upgrade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .upgrade-card { border: 1.5px solid var(--sand-border); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px; min-height: 320px; }
-.upgrade-card.u-report { border-color: var(--teal-border); }
+.upgrade-card.u-report { background: linear-gradient(155deg, var(--teal-light), #d3ece4); border-color: var(--teal-border); }
 .upgrade-card.u-playbook { background: linear-gradient(155deg, var(--teal), #145346); border-color: var(--teal); }
 .upg-eye { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .u-report .upg-eye { color: var(--teal); }
@@ -335,7 +334,13 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       </svg>
       HouseOffer
     </div>
-    <div class="nav-tag">Free Report</div>
+    <div class="nav-right">
+      {% if report_id is defined and report_id %}
+      <a class="nav-share-btn whatsapp" href="https://wa.me/?text={{ ("I ran this property through HouseOffer — free report with real Land Registry data: " ~ (report_url|default('https://houseoffer.uk', true)))|urlencode }}" target="_blank" rel="noopener">WhatsApp</a>
+      <button class="nav-share-btn" onclick="HO.copyReportLink(this)">🔗 Copy report link</button>
+      {% endif %}
+      <div class="nav-tag">Free Report</div>
+    </div>
   </div>
 </nav>
 
@@ -353,18 +358,6 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       {% if floor_area_sqm %}<span class="pill">📐 {{ floor_area_sqm|round|int }} m²</span>{% endif %}
     </div>
   </div>
-
-  <!-- 2. SHARE ROW -->
-  {% if report_id is defined and report_id %}
-  <div class="share-row">
-    <button class="share-row-btn share-row-primary" onclick="HO.shareForVotes(this)">
-      <span class="share-row-icon">📲</span> Share &amp; get their number
-    </button>
-    <button class="share-row-btn share-row-secondary" onclick="HO.copyReportLink(this)">
-      <span class="share-row-icon">🔗</span> Copy report link
-    </button>
-  </div>
-  {% endif %}
 
   <!-- NEW-BUILD NOTICE -->
   {% if is_new_build %}
@@ -529,8 +522,6 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
         <div class="feed-row"><div class="feed-avatar" style="background:#7a8fd0;">Y</div><div class="feed-name">You</div><div class="feed-val" id="feed-you-val"></div></div>
       </div>
 
-      <button class="share-btn" onclick="HO.shareForVotes(this)">📲 Share with family &amp; friends for their number</button>
-
       <div class="crowd-avg-strip">
         <div class="crowd-avg-label">Everyone's average so far (<span id="voter-count">1</span> vote<span id="voter-plural"></span>)</div>
         <div class="crowd-avg-val" id="crowd-avg"></div>
@@ -541,6 +532,8 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
         <div class="crowd-paid-text"><strong>See how everyone's number compares to the actual data</strong> — full crowd vs. expert breakdown in the £29 report.</div>
       </a>
     </div>
+
+    <button class="share-btn" onclick="HO.shareForVotes(this)">📲 Share with friends &amp; family to get their estimate</button>
   </div>
   {% endif %}
 
@@ -593,9 +586,34 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       </div>
     </div>
     <div class="locked-ff-body">
-      <div class="ff-row-clear"><div class="ff-label-clear">Comparable sales (adj.)</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only" style="width:62%"></div></div></div>
-      <div class="ff-row-clear"><div class="ff-label-clear">Comparable sales (raw)</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:56%"></div></div></div>
-      <div class="ff-row-clear"><div class="ff-label-clear">HPI-adjusted last sale</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only" style="width:65%"></div></div></div>
+      {# Free-tier methods (comparables adj/raw, HPI last sale) are computed and their
+         averages already appear free on this page — so their bars render REAL and
+         unblurred from the report's own football_field data. Paid-tier methods stay
+         blurred placeholders. #}
+      {% set ffmap = {} %}
+      {% for m in football_field|default([], true) %}{% if ffmap.update({m.name: m}) %}{% endif %}{% endfor %}
+      {% set cmin = chart_price_min|default(none, true) %}
+      {% set cmax = chart_price_max|default(none, true) %}
+      {% set cspan = (cmax - cmin) if (cmin is not none and cmax is not none and cmax > cmin) else none %}
+
+      {% for label, name, muted in [("Comparable sales (adj.)", "Comparable sales (HPI-adjusted)", false),
+                                    ("Comparable sales (raw)", "Comparable sales (unadjusted)", true),
+                                    ("HPI-adjusted last sale", "HPI-adjusted last sale", false)] %}
+      {% set m = ffmap.get(name) %}
+      <div class="ff-row-clear">
+        <div class="ff-label-clear">{{ label }}</div>
+        <div class="ff-fake-track">
+          {% if m and m.available and cspan %}
+          {% set bar_left = ((m.low - cmin) / cspan * 100)|round(1) %}
+          {% set bar_width = [((m.high - m.low) / cspan * 100)|round(1), 2]|max %}
+          <div class="ff-fake-fill{% if muted %} ff-muted{% endif %}" style="left:{{ bar_left }}%;width:{{ bar_width }}%;"></div>
+          {% else %}
+          <div class="ff-fake-fill ff-blur-only{% if muted %} ff-muted{% endif %}" style="width:60%"></div>
+          {% endif %}
+        </div>
+        <div class="ff-fig{% if muted %} muted{% endif %}">{% if m and m.available and cspan %}{{ m.midpoint_formatted }}{% endif %}</div>
+      </div>
+      {% endfor %}
 
       <div class="locked-ff-overlay-inline">
         <div class="lock-icon">🔒</div>
@@ -604,11 +622,11 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
         <a class="lock-cta" href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}">Unlock for £29</a>
       </div>
 
-      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Price per m²</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:57%"></div></div></div>
-      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Area price trend</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:60%"></div></div></div>
-      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Automated valuation</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:60%"></div></div></div>
-      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Rental yield</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:58%"></div></div></div>
-      <div class="ff-row-clear" style="margin-top:14px;"><div class="ff-label-clear" style="color:var(--red);font-weight:600;">Asking price</div><div class="ff-fake-track"><div class="ff-fake-fill" style="width:79%;background:linear-gradient(90deg,#f0c98a,#c06a1a);"></div></div><div class="ff-asking-figure">{{ asking_price_formatted }}</div></div>
+      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Price per m²</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:57%"></div></div><div class="ff-fig"></div></div>
+      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Area price trend</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:60%"></div></div><div class="ff-fig"></div></div>
+      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Automated valuation</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:60%"></div></div><div class="ff-fig"></div></div>
+      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Rental yield</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:58%"></div></div><div class="ff-fig"></div></div>
+      <div class="ff-row-clear" style="margin-top:14px;"><div class="ff-label-clear" style="color:var(--red);font-weight:600;">Asking price</div><div class="ff-fake-track"><div class="ff-fake-fill" style="width:{% if cspan %}{{ [((asking_price - cmin) / cspan * 100)|round(1), 4]|max }}{% else %}79{% endif %}%;background:linear-gradient(90deg,#f0c98a,#c06a1a);"></div></div><div class="ff-asking-figure">{{ asking_price_formatted }}</div></div>
 
       <div class="ff-fake-offer-strip">
         <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Open with</div><div class="ff-fake-offer-val">£305,000</div></div>
