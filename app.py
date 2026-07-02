@@ -3188,6 +3188,55 @@ def resolve_by_sale(report_id):
     return redirect(f"/r/{report_id}")
 
 
+# Cap on rebuild-triggering address corrections per report: each free-tier
+# rebuild costs ~3-5 PropertyData calls, so this bounds the spend per report.
+MAX_ADDRESS_CORRECTIONS = 2
+
+
+@app.route("/r/<report_id>/confirm-address", methods=["POST"])
+def confirm_address(report_id):
+    """Address-confirmation modal on the report page. A plain confirmation is
+    logged and costs nothing (it also validates the address-resolution
+    pipeline). A corrected address triggers a background rebuild — the same
+    path as the sold-candidates picker — capped per report."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    corrected = (data.get("address") or "").strip()
+
+    if not corrected:
+        stored["address_confirmed"] = True
+        save_report(report_id, stored)
+        report = stored.get("report") or {}
+        log_event(report_id, "address_confirmed", {
+            "address": report.get("resolved_address") or report.get("address"),
+        })
+        return jsonify({"status": "confirmed", "rebuilding": False})
+
+    if len(corrected) > 200:
+        return jsonify({"error": "address too long"}), 400
+    if stored.get("status") == "building":
+        return jsonify({"error": "report is already rebuilding"}), 409
+    corrections = int(stored.get("address_corrections") or 0)
+    if corrections >= MAX_ADDRESS_CORRECTIONS:
+        log_event(report_id, "address_correction_capped", {"address": corrected})
+        return jsonify({"error": "correction limit reached", "rebuilding": False}), 429
+
+    stored["address_corrections"] = corrections + 1
+    stored["status"] = "building"
+    stored["build_started_at"] = _now_iso()
+    save_report(report_id, stored)
+    log_event(report_id, "address_corrected",
+              {"address": corrected, "correction_n": corrections + 1})
+    _start_rebuild(report_id, stored, address=corrected,
+                   tier="paid" if stored.get("paid") else "free")
+    return jsonify({"status": "rebuilding", "rebuilding": True})
+
+
 @app.route("/admin/unlock/<report_id>")
 def admin_unlock(report_id):
     """Set paid=True for a given report UUID (manual unlock until Stripe is live)."""
