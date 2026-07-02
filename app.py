@@ -2363,13 +2363,14 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             )
             if hpi_adjustment:
                 hpi_adjusted_value = hpi_adjustment["adjusted_price"]
-        else:
-            # No confident match - build candidates list for the dropdown
-            # on both tiers so the user can pick their address
-            try:
-                last_sale_candidates = get_last_sale_candidates(postcode)
-            except Exception:
-                pass
+        # Candidates power the confirm-address modal dropdown on BOTH paths —
+        # even a confident match can be the wrong property, and picking from
+        # the sold list is the cheapest correction (Land Registry SPARQL
+        # first, so normally no PropertyData spend).
+        try:
+            last_sale_candidates = get_last_sale_candidates(postcode)
+        except Exception:
+            pass
     except Exception as e:
         print(f"HPI section error: {e}")
 
