@@ -4747,6 +4747,33 @@ def submit():
                            "buyer_estimate": _be, "anchor_bias": anchor_bias})
             save_report(_rid, stored)
 
+            # Seed the buyer's own estimate (given on the request form, before
+            # they saw any data) as the first crowd vote, so friends arriving
+            # via the share link always see the number that started it.
+            try:
+                seed_est = int(str(_be or "").replace(",", "").replace("£", "").replace(" ", ""))
+                if 1_000 <= seed_est <= 100_000_000:
+                    with _votes_lock:
+                        votes = _load_votes(_rid)
+                        if not any(v.get("token") == f"owner-{_rid}" for v in votes):
+                            votes.append({"token": f"owner-{_rid}", "name": "The buyer",
+                                          "estimate": seed_est, "source": "owner_seed",
+                                          "created_at": _now_iso()})
+                            _save_votes(_rid, votes)
+                            post_to_sheets({
+                                "type": "vote", "timestamp": _now_iso(),
+                                "uuid": _rid, "slug": "", "source": "owner_seed",
+                                "voter_name": "The buyer", "estimate": seed_est,
+                                "updated": False,
+                                "asking_price": report.get("asking_price"),
+                                "our_valuation": report.get("weighted_midpoint"),
+                                "verdict": report.get("verdict"),
+                                "postcode": report.get("postcode"),
+                                "property_url": _url, "report_url": _ru,
+                            })
+            except (ValueError, TypeError):
+                pass
+
             post_to_sheets({
                 "type": "submission",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
