@@ -40,6 +40,9 @@ DEFAULT_RESULT = {
     "latitude": None,
     "longitude": None,
     "epc_cert_url": None,
+    # Portal's own og:image for the listing — used by the crowd-voting share
+    # page and WhatsApp preview cards. Hotlinks the portal CDN; never required.
+    "main_photo_url": None,
     "is_new_build": False,
     # Special tenure / sale type detected from listing text — None for standard
     # open-market stock, else "shared_ownership" | "auction" | "retirement".
@@ -731,6 +734,21 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
             result["description_house_number"] = num
 
 
+def _extract_og_image(html: str) -> Optional[str]:
+    """Pull the portal's own og:image URL out of the listing HTML (both
+    attribute orders). Used for share-page previews; None when absent."""
+    for pattern in (
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+    ):
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            url = m.group(1).strip()
+            if url.startswith("http"):
+                return url
+    return None
+
+
 def scrape_rightmove(url: str) -> dict:
     result = _empty_result()
     result["source"] = "rightmove"
@@ -738,6 +756,7 @@ def scrape_rightmove(url: str) -> dict:
     html = _fetch_html(url, referer="https://www.rightmove.co.uk/")
     if not html:
         return result
+    result["main_photo_url"] = _extract_og_image(html)
 
     model = _parse_rightmove_page_model(html)
     if model:
@@ -995,6 +1014,7 @@ def scrape_zoopla(url: str) -> dict:
     html = _fetch_html(url, referer="https://www.zoopla.co.uk/")
     if not html:
         return result
+    result["main_photo_url"] = _extract_og_image(html)
 
     next_match = re.search(
         r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',

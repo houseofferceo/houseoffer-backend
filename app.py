@@ -79,6 +79,84 @@ def log_event(report_id, event_type, extra=None):
         print(f"log_event error: {e}")
         return False
 
+# ── CROWD VOTING STORAGE ──────────────────────────────────────────────────────
+# Votes live as JSON files per report (fast local reads for the live feed) and
+# every vote ALSO streams to the Google Sheets webhook, which is the durable
+# copy: on a redeploy the live feed resets but no vote data is lost.
+# Share slugs map a short public code (/v/xk29p) to a report_id.
+VOTES_DIR = "/tmp/houseoffer_votes"
+SLUGS_DIR = "/tmp/houseoffer_slugs"
+os.makedirs(VOTES_DIR, exist_ok=True)
+os.makedirs(SLUGS_DIR, exist_ok=True)
+_votes_lock = threading.Lock()
+MAX_VOTES_PER_REPORT = 500
+_SLUG_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/O/1/l/i lookalikes
+
+
+def _load_votes(report_id):
+    try:
+        path = os.path.join(VOTES_DIR, f"{report_id}.json")
+        if not os.path.exists(path):
+            return []
+        with open(path) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"_load_votes error: {e}")
+        return []
+
+
+def _save_votes(report_id, votes):
+    try:
+        with open(os.path.join(VOTES_DIR, f"{report_id}.json"), "w") as f:
+            json.dump(votes, f)
+        return True
+    except Exception as e:
+        print(f"_save_votes error: {e}")
+        return False
+
+
+def _vote_summary(votes, exclude_token=None):
+    """Feed payload for the report + voting pages. count/average cover ALL
+    votes; the visible feed excludes the requester's own vote (the page
+    renders that as a local "You" row) and caps the list."""
+    count = len(votes)
+    crowd_avg = round(sum(v["estimate"] for v in votes) / count) if count else None
+    feed = [{"name": v.get("name") or None, "estimate": v["estimate"]}
+            for v in reversed(votes) if v.get("token") != exclude_token][:50]
+    return {"count": count, "crowd_avg": crowd_avg, "votes": feed}
+
+
+def _slug_path(slug):
+    return os.path.join(SLUGS_DIR, f"{slug}.json")
+
+
+def _mint_vote_slug(report_id):
+    """Create (or reuse) the short public voting slug for a report."""
+    import secrets
+    for _ in range(20):
+        slug = "".join(secrets.choice(_SLUG_ALPHABET) for _ in range(5))
+        if not os.path.exists(_slug_path(slug)):
+            with open(_slug_path(slug), "w") as f:
+                json.dump({"report_id": report_id,
+                           "created_at": datetime.utcnow().isoformat() + "Z"}, f)
+            return slug
+    raise RuntimeError("could not mint a unique vote slug")
+
+
+def _resolve_vote_slug(slug):
+    """slug -> report_id, or None."""
+    if not re.fullmatch(r"[a-z0-9]{4,10}", slug or ""):
+        return None
+    try:
+        path = _slug_path(slug)
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            return (json.load(f) or {}).get("report_id")
+    except Exception as e:
+        print(f"_resolve_vote_slug error: {e}")
+        return None
+
 # ── DEDUP ─────────────────────────────────────────────────────────────────────
 # Simple in-memory dedup cache: {hash: timestamp}
 # Prevents same email+URL submission within 60s causing duplicate report emails
@@ -309,6 +387,8 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "longitude": scraped.get("longitude"),
         # Subject bathrooms — scraped from the listing, feeds the AVM.
         "bathrooms": scraped.get("bathrooms"),
+        # Portal og:image — powers the voting share page and WhatsApp previews.
+        "main_photo_url": scraped.get("main_photo_url"),
     }
 
     # Full-address resolution (sold-record coordinate match). Enhancement only:
@@ -1951,7 +2031,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       bedrooms_source="unknown", property_type_source="unknown",
                       floor_area_source="unknown",
                       latitude=None, longitude=None, bathrooms=None,
-                      sale_type=None, epc_cert_url=None,
+                      sale_type=None, epc_cert_url=None, main_photo_url=None,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -2792,6 +2872,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "property_url": property_url,
         "tier": tier,
         "is_new_build": is_new_build,
+        "main_photo_url": main_photo_url,
     }
 
 # ── BACKGROUND REPORT BUILDS ──────────────────────────────────────────────────
@@ -2872,6 +2953,7 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
                 latitude=report.get("latitude"),
                 longitude=report.get("longitude"),
                 bathrooms=report.get("bathrooms"),
+                main_photo_url=report.get("main_photo_url"),
                 tier=tier,
             )
             latest = load_report(report_id) or {}
@@ -3235,6 +3317,137 @@ def confirm_address(report_id):
     _start_rebuild(report_id, stored, address=corrected,
                    tier="paid" if stored.get("paid") else "free")
     return jsonify({"status": "rebuilding", "rebuilding": True})
+
+
+# ── CROWD VOTING ROUTES ───────────────────────────────────────────────────────
+
+@app.route("/r/<report_id>/share-link", methods=["POST"])
+def create_share_link(report_id):
+    """Mint (or reuse) the short public voting link for a report. Recipients
+    land on /v/<slug> — a lightweight page that costs no PropertyData calls."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+    slug = stored.get("vote_slug")
+    if not slug or not os.path.exists(_slug_path(slug)):
+        slug = _mint_vote_slug(report_id)
+        stored["vote_slug"] = slug
+        save_report(report_id, stored)
+        log_event(report_id, "share_link_created", {"slug": slug})
+    return jsonify({"slug": slug, "url": f"{BASE_URL.rstrip('/')}/v/{slug}"})
+
+
+@app.route("/api/vote", methods=["POST"])
+def submit_vote():
+    """Record a crowd vote against a report — from the report page (report_id)
+    or a share link (slug). One vote per voter token per property; voting
+    again updates the existing vote. Every vote streams to the Sheets webhook
+    as its own row (type=vote), the durable copy of this data asset."""
+    data = request.get_json(silent=True) or {}
+    report_id = (data.get("report_id") or "").strip()
+    source = "report"
+    slug = (data.get("slug") or "").strip()
+    if not report_id and slug:
+        report_id = _resolve_vote_slug(slug) or ""
+        source = "share"
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+    report = stored.get("report") or {}
+
+    try:
+        estimate = int(str(data.get("estimate", "")).replace(",", "").replace("£", "").strip())
+    except (ValueError, TypeError):
+        return jsonify({"error": "estimate must be a number"}), 400
+    if not (1_000 <= estimate <= 100_000_000):
+        return jsonify({"error": "estimate out of range"}), 400
+    name = re.sub(r"[<>\"&]", "", str(data.get("name") or "")).strip()[:30]
+
+    token = request.cookies.get("ho_voter") or uuid.uuid4().hex
+    now = _now_iso()
+    with _votes_lock:
+        votes = _load_votes(report_id)
+        existing = next((v for v in votes if v.get("token") == token), None)
+        if existing:
+            existing.update({"estimate": estimate, "name": name or existing.get("name"),
+                             "updated_at": now})
+        elif len(votes) >= MAX_VOTES_PER_REPORT:
+            return jsonify({"error": "vote limit reached for this property"}), 429
+        else:
+            votes.append({"token": token, "name": name, "estimate": estimate,
+                          "source": source, "created_at": now})
+        _save_votes(report_id, votes)
+
+    # Durable copy: one Sheets row per vote, tagged for later analysis
+    # (crowd vs. expert vs. eventual sold price — backlog items 63/64).
+    post_to_sheets({
+        "type": "vote",
+        "timestamp": now,
+        "uuid": report_id,
+        "slug": slug or stored.get("vote_slug") or "",
+        "source": source,
+        "voter_name": name,
+        "estimate": estimate,
+        "updated": bool(existing),
+        "asking_price": report.get("asking_price"),
+        "our_valuation": report.get("weighted_midpoint"),
+        "verdict": report.get("verdict"),
+        "postcode": report.get("postcode"),
+        "property_url": report.get("property_url") or stored.get("property_url", ""),
+        "report_url": f"{BASE_URL.rstrip('/')}/r/{report_id}",
+    })
+    log_event(report_id, "vote_cast", {"source": source, "estimate": estimate,
+                                       "updated": bool(existing)})
+
+    resp = jsonify(_vote_summary(votes, exclude_token=token))
+    resp.set_cookie("ho_voter", token, max_age=180 * 24 * 3600, samesite="Lax")
+    return resp
+
+
+@app.route("/api/votes/<report_id>")
+def get_votes(report_id):
+    """Live vote feed for a report. The requester's own vote is excluded from
+    the visible list (pages render it locally as "You")."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    token = request.cookies.get("ho_voter")
+    return jsonify(_vote_summary(_load_votes(report_id), exclude_token=token))
+
+
+@app.route("/v/<slug>")
+def voting_page(slug):
+    """Lightweight crowd-voting page behind a share link. Serves entirely from
+    the stored report — no scraping, no PropertyData calls, no signup. The
+    asking price is only revealed AFTER the visitor locks in their number, so
+    their estimate stays unanchored."""
+    report_id = _resolve_vote_slug(slug)
+    stored = load_report(report_id) if report_id else None
+    report = (stored or {}).get("report") or {}
+    if not report:
+        return render_template("vote_page.html", expired=True, slug=slug), 404
+    log_event(report_id, "vote_page_viewed", {
+        "slug": slug, "referer": request.headers.get("Referer", "")[:200]})
+    return render_template(
+        "vote_page.html",
+        expired=False,
+        slug=slug,
+        report_id=report_id,
+        vote_url=f"{BASE_URL.rstrip('/')}/v/{slug}",
+        report_url=f"{BASE_URL.rstrip('/')}/r/{report_id}",
+        address=report.get("address") or report.get("postcode"),
+        postcode=report.get("postcode"),
+        property_type=report.get("property_type"),
+        bedrooms=report.get("bedrooms"),
+        main_photo_url=report.get("main_photo_url"),
+        asking_price=report.get("asking_price"),
+        asking_price_formatted=report.get("asking_price_formatted"),
+        weighted_midpoint=report.get("weighted_midpoint"),
+        weighted_midpoint_formatted=report.get("weighted_midpoint_formatted"),
+    )
 
 
 @app.route("/admin/unlock/<report_id>")
