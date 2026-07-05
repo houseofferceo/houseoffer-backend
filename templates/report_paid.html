@@ -181,6 +181,28 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .crowd-paid-text { flex: 1; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.5; }
 .crowd-paid-text strong { color: white; }
 
+/* OFFER FRONTIER */
+.ff2-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 20px; }
+.ff2-head { padding: 18px 24px 14px; border-bottom: 1px solid var(--sand-border); }
+.ff2-title { font-family: 'Lora', serif; font-size: 17px; font-weight: 700; }
+.ff2-sub { font-size: 12.5px; color: var(--ink-light); margin-top: 2px; }
+.ff2-body { padding: 18px 22px 22px; }
+.pos-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 16px; }
+.pos-card { border: 1.5px solid var(--sand-border); border-radius: 10px; padding: 14px 14px 12px; background: var(--sand); position: relative; }
+.pos-card.emph { background: var(--amber-light); border-color: var(--amber-border); box-shadow: 0 2px 10px rgba(192,106,26,0.12); }
+.pos-card.emph::after { content: "Suggested for you"; position: absolute; top: -9px; right: 10px; background: var(--amber); color: white; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
+.pos-name { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+.pos-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.pos-secure .pos-name { color: var(--teal); } .pos-secure .pos-dot { background: var(--teal); }
+.pos-balanced .pos-name { color: var(--amber); } .pos-balanced .pos-dot { background: var(--amber); }
+.pos-aggressive .pos-name { color: var(--ink); } .pos-aggressive .pos-dot { background: var(--ink); }
+.pos-range { font-family: 'Lora', serif; font-size: 15.5px; font-weight: 700; margin-bottom: 1px; }
+.pos-pct { font-size: 11.5px; color: var(--ink-mid); margin-bottom: 7px; }
+.pos-risk { font-size: 11.5px; color: var(--ink-mid); line-height: 1.5; }
+.ff2-note { margin-top: 14px; font-size: 12px; color: var(--ink-light); line-height: 1.55; padding-top: 12px; border-top: 1px solid var(--sand-border); }
+.fallback-pill { display: inline-flex; align-items: flex-start; gap: 6px; background: var(--amber-light); border: 1px solid var(--amber-border); color: #8a5416; font-size: 11.5px; font-weight: 600; border-radius: 12px; padding: 6px 12px; margin-top: 12px; line-height: 1.45; }
+@media (max-width: 560px) { .pos-grid { grid-template-columns: 1fr; gap: 14px; } }
+
 /* SELLER MOTIVATION */
 .signal-card { border-radius: var(--radius); padding: 18px 22px; margin-bottom: 14px; border: 1.5px solid; box-shadow: var(--shadow-sm); }
 .signal-strong { background: var(--teal-light); border-color: var(--teal-border); }
@@ -192,8 +214,6 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .signal-weak .signal-badge { background: var(--ink-light); }
 .signal-summary { font-size: 14px; color: var(--ink-mid); line-height: 1.6; }
 .signal-note { font-size: 12.5px; color: var(--ink-light); background: var(--sand); border: 1px dashed var(--sand-border); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; line-height: 1.5; }
-.dom-shift-strip { margin-top: 10px; background: var(--teal-light); border: 1px solid var(--teal-border); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--ink-mid); line-height: 1.55; }
-.dom-shift-strip strong { color: var(--teal); }
 
 /* NEGOTIATION APPROACH (buyer profile) */
 .approach-card { background: var(--white); border: 1.5px solid var(--teal-border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
@@ -404,10 +424,14 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <li><strong>Flexibility is an underrated card.</strong> Ask the agent what completion timing suits the seller, then offer it — matched timing can be worth as much as a small price concession.</li>
       {% endif %}
     </ul>
-    {% if offer_stance == 'aggressive' %}
-    <div class="approach-stance">Because you're comparing options from a strong buying position, the opening offer above stretches lower within the same data-justified range. Your target and walk-away are unchanged.</div>
-    {% elif offer_stance == 'tight' %}
-    <div class="approach-stance">Because this is the one you want and your own sale isn't settled, the opening offer above sits closer to target — fewer rounds, less risk of losing it. Your walk-away is unchanged: it never rises, whatever your answers.</div>
+    {% if offer_frontier is defined and offer_frontier and buyer_profile.attachment %}
+    {% if offer_frontier.emphasis == 'aggressive' %}
+    <div class="approach-stance">Because you're comparing several options, we've highlighted the <strong>Aggressive</strong> position on your offer frontier below — you can afford to test this seller. Your walk-away never rises, whatever position you play.</div>
+    {% elif offer_frontier.emphasis == 'secure' %}
+    <div class="approach-stance">Because this is the one you don't want to lose, we've highlighted the <strong>Secure</strong> position on your offer frontier below — protect the purchase, but never above your walk-away.</div>
+    {% else %}
+    <div class="approach-stance">We've highlighted the <strong>Balanced</strong> position on your offer frontier below — in line with what actually clears in this market.</div>
+    {% endif %}
     {% endif %}
   </div>
   {% endif %}
@@ -800,16 +824,6 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         {% elif dom_signal == 'medium' %}It has not been on long enough to signal desperation, but it is not flying off the shelf either.
         {% elif dom_signal == 'low' %}This is moving at a normal pace. Competition may be real.
         {% else %}Use this as context when assessing seller motivation.{% endif %}
-        {% if dom_shift_high_pct is defined and dom_shift_high_pct %}
-        <div class="dom-shift-strip">
-          {% if dom_shift_low_pct %}
-          Properties on the market this long typically sell <strong>{{ dom_shift_low_pct }}–{{ dom_shift_high_pct }}% below asking</strong>{% if dom_shift_low_formatted and dom_shift_high_formatted %} — roughly <strong>{{ dom_shift_low_formatted }}–{{ dom_shift_high_formatted }}</strong> on this asking price{% endif %}.
-          {% else %}
-          Properties at this stage typically sell <strong>0–{{ dom_shift_high_pct }}% below asking</strong>{% if dom_shift_high_formatted %} — up to roughly <strong>{{ dom_shift_high_formatted }}</strong> on this asking price{% endif %}.
-          {% endif %}
-          This is the typical range for this time on market, not a prediction — your recommended numbers come from the valuation methods, not the clock.
-        </div>
-        {% endif %}
       </div>
     </div>
   </div>
@@ -837,7 +851,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 
   <!-- LOCAL ASKING-VS-SOLD (evidence) -->
   {% if seller_signal_score %}
-    {% if local_sold_discount_pct is not none %}
+    {% if local_sold_discount_pct is defined and local_sold_discount_pct is not none %}
     <div class="dom-card">
       <div class="dom-icon">🤝</div>
       <div>
@@ -852,6 +866,76 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     {% else %}
     <div class="signal-note">🤝 No local asking-vs-sold data available for this area — that signal isn't part of the score above.</div>
     {% endif %}
+  {% endif %}
+
+  <!-- OFFER POSITIONING FRONTIER (Frontier v2) -->
+  {% if offer_frontier is defined and offer_frontier %}
+  <div class="section-title">The efficient frontier — where to position your offer</div>
+  <div class="ff2-card">
+    <div class="ff2-head">
+      <div class="ff2-title">Discount sought vs risk of losing it</div>
+      <div class="ff2-sub">
+        {% if offer_frontier.is_fallback %}Built from national asking-to-sold patterns{% else %}Built from this area's actual asking-to-sold discounts{% endif %}{% if offer_frontier.dom_shifted %}, shifted by {{ offer_frontier.days_on_market }} days on the market{% endif %}. You can't seek a bigger saving without accepting more risk — pick your position deliberately.
+      </div>
+    </div>
+    <div class="ff2-body">
+      <svg viewBox="0 0 640 240" style="width:100%;display:block;" role="img" aria-label="Offer positioning curve: discount sought against qualitative risk of losing the property">
+        <line x1="60" y1="200" x2="610" y2="200" stroke="#e0d9ce" stroke-width="1.5"/>
+        <line x1="60" y1="200" x2="60" y2="20" stroke="#e0d9ce" stroke-width="1.5"/>
+        <text x="335" y="228" text-anchor="middle" font-size="11" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif">Discount sought below asking →</text>
+        <text x="26" y="110" text-anchor="middle" font-size="11" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif" transform="rotate(-90 26 110)">Risk of losing it →</text>
+        <text x="54" y="196" text-anchor="end" font-size="10" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif">Low</text>
+        <text x="54" y="34" text-anchor="end" font-size="10" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif">High</text>
+
+        {% if offer_frontier.dom_shifted %}
+        <path d="M 60 196 Q 200 190 300 120 T 430 30" fill="none" stroke="#c9c2b4" stroke-width="2" stroke-dasharray="6,5"/>
+        <text x="240" y="105" font-size="10.5" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif">fresh listing</text>
+        <line x1="330" y1="150" x2="416" y2="150" stroke="#c06a1a" stroke-width="1.5" marker-end="url(#ff2arr)"/>
+        <defs><marker id="ff2arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#c06a1a"/></marker></defs>
+        <text x="373" y="166" text-anchor="middle" font-size="10" fill="#c06a1a" font-weight="600" font-family="Plus Jakarta Sans,sans-serif">time on market shifts the curve your way</text>
+        {% endif %}
+
+        <path d="M 60 197 Q 280 192 420 110 T 590 26" fill="none" stroke="#1a6b5a" stroke-width="3"/>
+
+        {% set ff2_dots = {'secure': (215, 188, '#1a6b5a'), 'balanced': (400, 128, '#c06a1a'), 'aggressive': (530, 58, '#1e1c18')} %}
+        {% for p in offer_frontier.positions %}
+        {% set dx, dy, dc = ff2_dots[p.key] %}
+        {% set emph = p.key == offer_frontier.emphasis %}
+        <circle cx="{{ dx }}" cy="{{ dy }}" r="{{ 10 if emph else 7 }}" fill="{{ dc }}" stroke="white" stroke-width="{{ 3 if emph else 2.5 }}"/>
+        <text x="{{ dx }}" y="{{ dy - (16 if emph else 13) }}" text-anchor="middle" font-size="10.5" font-weight="700" fill="{{ dc }}" font-family="Plus Jakarta Sans,sans-serif">{{ p.name | upper }}</text>
+        {% endfor %}
+      </svg>
+
+      <div class="pos-grid">
+        {% for p in offer_frontier.positions %}
+        <div class="pos-card pos-{{ p.key }}{% if p.key == offer_frontier.emphasis %} emph{% endif %}">
+          <div class="pos-name"><span class="pos-dot"></span>{{ p.name }}</div>
+          <div class="pos-range">{{ p.price_label }}</div>
+          <div class="pos-pct">
+            {% if p.collapsed == 'floor' %}at the data floor
+            {% elif p.collapsed == 'ceiling' %}at your walk-away ceiling
+            {% else %}{{ p.pct_label }} below asking{% endif %}
+          </div>
+          <div class="pos-risk">
+            {% if p.collapsed == 'floor' %}The sold evidence can't credibly support opening lower than this. Real chance of rejection — only with a walk-away mindset.
+            {% elif p.collapsed == 'ceiling' %}Your walk-away ceiling caps this position — paying more than {{ offer_frontier.walk_away_formatted }} isn't "secure", it's overpaying.
+            {% else %}{{ p.risk }}{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="ff2-note">
+        Positions come from {% if offer_frontier.is_fallback %}national{% else %}this area's{% endif %} asking-to-sold discounts{% if offer_frontier.dom_shifted %}, shifted by time on market{% endif %}. They never go below the valuation floor or above your walk-away ceiling of <strong>{{ offer_frontier.walk_away_formatted }}</strong> — whichever position you play, the ceiling doesn't move. Qualitative risk only: nobody can honestly give you an acceptance percentage, so we don't.
+      </div>
+      {% if offer_frontier.is_fallback %}
+      <div class="fallback-pill">ⓘ Based on national patterns — local asking-to-sold data unavailable. Ranges widened accordingly.</div>
+      {% endif %}
+      {% if not offer_frontier.dom_shifted %}
+      <div class="fallback-pill">ⓘ We couldn't compare time on market with the local average, so the curve hasn't been shifted for it.</div>
+      {% endif %}
+    </div>
+  </div>
   {% endif %}
 
   <!-- FULL COMPARABLES TABLE -->
