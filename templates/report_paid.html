@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Your Property Report — HouseOffer</title>
+<meta property="og:title" content="Property report — {{ address or postcode }}">
+<meta property="og:description" content="Full independent valuation — recommended opening offer, walk-away price and comparable sold evidence from HM Land Registry.">
+<meta property="og:image" content="{{ main_photo_url|default('https://houseoffer.uk/og-image.png', true) }}">
+<meta property="og:type" content="website">
+{% if report_url is defined and report_url %}<meta property="og:url" content="{{ report_url }}">{% endif %}
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -13,6 +18,7 @@
   --teal: #1a6b5a; --teal-mid: #238f77; --teal-light: #e3f4ef; --teal-border: #b8dfd5;
   --amber: #c06a1a; --amber-light: #fdf0e3; --amber-border: #f0c98a;
   --red: #b83232; --red-light: #fdf0f0; --white: #ffffff;
+  --purple: #7a8fd0; --purple-light: #eaedf9; --purple-border: #b9c4e8;
   --shadow-sm: 0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);
   --radius: 14px;
 }
@@ -118,21 +124,142 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .attribution { text-align: center; font-size: 12px; color: var(--ink-light); padding-top: 8px; }
 .attribution a { color: var(--ink-light); }
 
+/* NAV: logo mark + share buttons */
+.logo-mark { width: 26px; height: 26px; flex-shrink: 0; }
+.nav-right { display: flex; align-items: center; gap: 7px; }
+.nav-share-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 20px; text-decoration: none; border: 1px solid var(--sand-border); background: var(--white); color: var(--ink-mid); cursor: pointer; white-space: nowrap; font-family: inherit; }
+.nav-share-btn:hover { border-color: var(--teal-border); color: var(--teal); }
+.nav-share-btn.whatsapp { background: #25D366; border-color: #25D366; color: #fff; }
+.nav-share-btn.whatsapp:hover { background: #1eb457; color: #fff; }
+
+/* ADDRESS CONFIRMATION */
+.conf-addr-btn { font-size: 12px; font-weight: 600; color: var(--teal); background: var(--teal-light); border: 1px solid var(--teal-border); padding: 5px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; font-family: inherit; margin-left: auto; }
+.conf-addr-btn:hover { background: var(--teal-border); }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(30,28,24,0.45); z-index: 200; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--white); border-radius: var(--radius); padding: 28px; max-width: 460px; width: calc(100% - 40px); box-shadow: 0 8px 40px rgba(30,28,24,0.18); max-height: 85vh; overflow-y: auto; }
+.modal-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.modal-sub { font-size: 13px; color: var(--ink-mid); margin-bottom: 18px; line-height: 1.6; }
+.modal-match { background: var(--sand); border: 1px solid var(--sand-border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+.modal-match-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-light); margin-bottom: 4px; }
+.modal-match-val { font-size: 14px; font-weight: 600; }
+.modal-input, .modal-select { width: 100%; border: 1.5px solid var(--sand-border); border-radius: 9px; padding: 10px 14px; font-size: 14px; outline: none; margin-bottom: 12px; font-family: inherit; }
+.modal-btns { display: flex; gap: 10px; }
+.btn-confirm { flex: 1; background: var(--teal); color: white; border: none; border-radius: 9px; padding: 11px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.btn-cancel { background: var(--sand); color: var(--ink-mid); border: 1px solid var(--sand-border); border-radius: 9px; padding: 11px 16px; cursor: pointer; font-family: inherit; }
+
+/* CROWD VOTING */
+.crowd-card { background: linear-gradient(155deg, #ffffff, #faf7ff); border: 1.5px solid var(--purple-border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow-sm); margin-bottom: 20px; }
+.crowd-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; }
+.crowd-title { font-family: 'Lora', serif; font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 6px; line-height: 1.3; }
+.crowd-sub { font-size: 13px; color: var(--ink-mid); margin-bottom: 18px; line-height: 1.55; }
+.crowd-input-row { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.crowd-input { flex: 1; min-width: 160px; border: 1.5px solid var(--purple-border); border-radius: 10px; padding: 12px 16px; font-size: 16px; font-weight: 600; outline: none; font-family: inherit; background: white; }
+.crowd-input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(122,143,208,0.15); }
+.crowd-submit { background: var(--purple); color: white; border: none; border-radius: 10px; padding: 12px 22px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.crowd-submit:hover { background: #5f74b8; }
+.crowd-results { display: none; }
+.crowd-results.show { display: block; }
+.crowd-chart { position: relative; height: 64px; background: var(--sand); border-radius: 10px; margin-bottom: 14px; overflow: visible; }
+.crowd-track { position: absolute; top: 26px; left: 20px; right: 20px; height: 4px; background: var(--sand-border); border-radius: 2px; }
+.crowd-mkr { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.crowd-mkr-label { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; color: white; white-space: nowrap; margin-bottom: 20px; }
+.crowd-mkr-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; position: absolute; top: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+.crowd-feed { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.feed-row { display: flex; align-items: center; gap: 10px; background: white; border: 1px solid var(--sand-border); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; animation: slideIn 0.3s ease; }
+@keyframes slideIn { from { opacity:0; transform: translateY(-6px);} to {opacity:1; transform:translateY(0);} }
+.feed-avatar { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: white; flex-shrink: 0; }
+.feed-name { font-weight: 600; color: var(--ink); flex: 1; }
+.feed-val { font-weight: 700; color: var(--purple); }
+.share-btn { width: 100%; background: var(--purple); border: none; color: white; border-radius: 10px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; }
+.share-btn:hover { background: #5f74b8; }
+.crowd-avg-strip { background: var(--purple-light); border: 1px solid var(--purple-border); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+.crowd-avg-label { font-size: 12px; color: var(--ink-mid); }
+.crowd-avg-val { font-size: 18px; font-weight: 700; color: var(--purple); }
+.crowd-paid-hook { background: var(--ink); border-radius: 10px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+.crowd-paid-icon { font-size: 20px; }
+.crowd-paid-text { flex: 1; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.5; }
+.crowd-paid-text strong { color: white; }
+
+/* PLAYBOOK UPSELL */
+.playbook-card { background: var(--white); border: 1.5px solid var(--teal-border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow-sm); margin-bottom: 20px; }
+.playbook-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 8px; }
+.playbook-title { font-family: 'Lora', serif; font-size: 19px; font-weight: 700; color: var(--ink); margin-bottom: 8px; line-height: 1.3; }
+.playbook-sub { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; margin-bottom: 14px; }
+.playbook-feats { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.playbook-feat { font-size: 13px; color: var(--ink-mid); padding-left: 22px; position: relative; }
+.playbook-feat::before { content: "✓"; position: absolute; left: 0; color: var(--teal); font-weight: 700; }
+.playbook-cta { display: inline-block; background: var(--teal); color: white; border-radius: 24px; padding: 12px 28px; font-size: 14.5px; font-weight: 700; text-decoration: none; }
+.playbook-cta:hover { background: var(--teal-mid); }
+
 @media (max-width: 560px) {
   .wrapper { padding: 20px 16px 60px; }
   .data-row { grid-template-columns: 1fr; }
   .report-address { font-size: 18px; }
   .offer-amount { font-size: 32px; }
   .offer-trio { grid-template-columns: 1fr; gap: 8px; }
+  .nav-tag { display: none; }
 }
 </style>
 </head>
 <body>
 
+<!-- ADDRESS CONFIRMATION MODAL -->
+{% if report_id is defined and report_id %}
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title">📍 Confirm your property address</div>
+    <div class="modal-sub">We matched your Rightmove link to the address below. Confirming helps us find the exact Land Registry record and improve your valuation accuracy.</div>
+    <div class="modal-match">
+      <div class="modal-match-label">We matched</div>
+      <div class="modal-match-val">{{ resolved_address or address or postcode }}</div>
+    </div>
+
+    {% if last_sale_candidates %}
+    <div style="font-size:12px;color:var(--ink-light);margin-bottom:8px;">Is it one of these sold properties at the same postcode?</div>
+    <form method="get" action="/r/{{ report_id }}/select-address">
+      <select name="address" class="modal-select">
+        <option value="" disabled selected>Select your property…</option>
+        {% for c in last_sale_candidates %}
+        <option value="{{ c.address }}">{{ c.address }}{% if c.last_date %} · sold {{ c.last_date[:7] }}{% endif %}{% if c.last_price %} · £{{ "{:,}".format(c.last_price) }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-confirm" style="width:100%;margin-bottom:14px;">Use selected address</button>
+    </form>
+    {% endif %}
+
+    <div style="font-size:12px;color:var(--ink-light);margin-bottom:8px;">Not right? Correct it below:</div>
+    <input class="modal-input" id="corrected-address" type="text" placeholder="e.g. Flat 3, 14 Elmwood Avenue, {{ postcode }}">
+    <div class="modal-btns">
+      <button class="btn-confirm" onclick="HO.confirmAddress()">✓ Confirm — improve accuracy</button>
+      <button class="btn-cancel" onclick="HO.closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <nav>
   <div class="nav-inner">
-    <a href="https://houseoffer.netlify.app" class="logo"><span class="logo-dot"></span>HouseOffer</a>
-    <span class="nav-tag">Full Report</span>
+    <div class="logo">
+      <svg class="logo-mark" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="56" y="0" width="14" height="22" rx="2" fill="#c9dfd8"/>
+        <polygon points="44,6 84,30 4,30" fill="#b8dfd5"/>
+        <polygon points="44,6 84,30 84,78 4,78 4,30" fill="#1a6b5a"/>
+        <rect x="8" y="36" width="20" height="18" rx="2" fill="#238f77"/>
+        <rect x="60" y="36" width="20" height="18" rx="2" fill="#238f77"/>
+        <rect x="31" y="48" width="26" height="30" rx="3" fill="#e3f4ef"/>
+        <circle cx="70" cy="16" r="17" fill="#e3f4ef" stroke="#1a6b5a" stroke-width="2"/>
+        <text x="70" y="23" text-anchor="middle" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#1a6b5a">£</text>
+      </svg>
+      HouseOffer
+    </div>
+    <div class="nav-right">
+      {% if report_id is defined and report_id %}
+      <a class="nav-share-btn whatsapp" href="https://wa.me/?text={{ ("Full HouseOffer valuation report for this property — recommended offer and real Land Registry evidence: " ~ (report_url|default('https://houseoffer.uk', true)))|urlencode }}" target="_blank" rel="noopener">WhatsApp</a>
+      <button class="nav-share-btn" onclick="HO.copyReportLink(this)">🔗 Copy report link</button>
+      {% endif %}
+      <span class="nav-tag">Full Report</span>
+    </div>
   </div>
 </nav>
 
@@ -147,6 +274,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <div class="meta-pill">🏷️ Asking price: <strong>&nbsp;{{ asking_price_formatted }}</strong></div>
       <div class="meta-pill">🏠 {{ property_type|title if property_type else "Type not stated" }}</div>
       {% if bedrooms %}<div class="meta-pill">🛏️ {{ bedrooms }} bedrooms</div>{% endif %}
+      {% if floor_area_sqm %}<div class="meta-pill">📐 {{ floor_area_sqm|round|int }} m²</div>{% endif %}
       <span class="paid-badge">Full Report</span>
     </div>
   </div>
@@ -255,18 +383,77 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   {% if confidence_score %}
   <div class="confidence-card confidence-{{ confidence_score }}">
     <span class="confidence-badge">Confidence: {{ confidence_score | upper }}</span>
-    {% if confidence_caveat %}<span class="confidence-text">{{ confidence_caveat }}</span>{% endif %}
+    <span class="confidence-text">{{ confidence_caveat or (comparables_count ~ " comparable sales · " ~ ("area-matched" if search_broadened else "postcode-matched") if comparables_count else "Limited local sold data for this property") }}</span>
+    {% if report_id is defined and report_id %}
+    <button class="conf-addr-btn" onclick="HO.openModal()">📍 Confirm address</button>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- CROWD VOTING -->
+  {% if report_id is defined and report_id %}
+  <div class="crowd-card">
+    <div class="crowd-eyebrow">🎯 The crowd vs the data</div>
+    <div class="crowd-title">What do the people around you think it's worth?</div>
+    <div class="crowd-sub">Your report has the data verdict. Now bring in your partner, parents or friends — their honest numbers appear here live, next to the asking price and the data valuation.</div>
+
+    <div class="crowd-input-row" id="crowd-input-row">
+      <input class="crowd-input" type="text" id="crowd-input" inputmode="numeric" placeholder="e.g. £340,000" aria-label="Your estimate in pounds">
+      <button class="crowd-submit" onclick="HO.submitVote()">Lock in my number</button>
+    </div>
+
+    <div class="crowd-results" id="crowd-results">
+      <div class="crowd-chart" id="crowd-chart">
+        <div class="crowd-track"></div>
+        {% if weighted_midpoint %}
+        <div class="crowd-mkr" data-marker="data">
+          <div class="crowd-mkr-label" style="background:var(--teal)">Data</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--teal)"></div>
+        </div>
+        {% endif %}
+        <div class="crowd-mkr" data-marker="asking">
+          <div class="crowd-mkr-label" style="background:var(--red)">Asking</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--red)"></div>
+        </div>
+        <div class="crowd-mkr" data-marker="you">
+          <div class="crowd-mkr-label" style="background:var(--purple)">You</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--purple)"></div>
+        </div>
+      </div>
+
+      <div class="crowd-feed" id="crowd-feed">
+        <div class="feed-row"><div class="feed-avatar" style="background:#7a8fd0;">Y</div><div class="feed-name">You</div><div class="feed-val" id="feed-you-val"></div></div>
+      </div>
+
+      <div class="crowd-avg-strip">
+        <div class="crowd-avg-label">Everyone's average so far (<span id="voter-count">1</span> vote<span id="voter-plural"></span>)</div>
+        <div class="crowd-avg-val" id="crowd-avg"></div>
+      </div>
+
+      {% if weighted_midpoint %}
+      <div class="crowd-paid-hook">
+        <div class="crowd-paid-icon">📊</div>
+        <div class="crowd-paid-text" id="crowd-vs-data">As votes come in, watch how everyone's number compares with the data valuation of <strong>{{ weighted_midpoint_formatted }}</strong>.</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <button class="share-btn" onclick="HO.shareForVotes(this)">📲 Share with friends &amp; family to get their estimate</button>
   </div>
   {% endif %}
 
   <!-- FOOTBALL FIELD CHART -->
-  {% set ff_avail = football_field | selectattr('available') | list %}
+  {# Chart shows only the methods that count toward the weighted range (weight > 0).
+     Context-only methods are computed against a different comparable pool, so their
+     ranges can sit outside the chart axis (which is bounded by the weighted methods)
+     and would draw over the labels — they appear in the table below instead. #}
+  {% set ff_avail = football_field | selectattr('available') | selectattr('weight') | list %}
   {% if ff_avail and chart_price_min and chart_price_max %}
-  <div class="section-title">Valuation range — seven methods</div>
+  <div class="section-title">Valuation range — {{ ff_avail | length }} methods</div>
   <div class="ff-card">
     <div class="ff-card-header">
       <div class="ff-card-title">Football field valuation — {{ ff_avail | length }} methods</div>
-      <div class="ff-card-sub">Each bar shows the low-to-high range for that method. The teal band is the weighted range. Weighted by data quality.</div>
+      <div class="ff-card-sub">Each bar shows the low-to-high range for that method. The teal band is the weighted range. Weighted by data quality. Context-only methods are listed in the table below.</div>
     </div>
     <div class="ff-chart-wrap">
       {% set ch_w = 460 %}
@@ -364,7 +551,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   <div class="comp-table-section" style="margin-bottom:20px;">
     <div class="comp-table-header">
       <div class="comp-table-title">Valuation method breakdown</div>
-      <div class="comp-table-sub">All {{ ff_avail | length }} methods used to calculate your range</div>
+      <div class="comp-table-sub">Every method we ran — greyed rows had no data for this property; "context only" rows are shown for transparency but excluded from the weighted range</div>
     </div>
     <table class="comp-table">
       <thead>
@@ -587,6 +774,19 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
+  <!-- PLAYBOOK UPSELL -->
+  <div class="playbook-card">
+    <div class="playbook-eyebrow">Take it into the room</div>
+    <div class="playbook-title">Want backup when you make the offer?</div>
+    <div class="playbook-sub">You have the numbers. The Full Playbook turns them into the words — and puts a real buying agent in your corner for the negotiation itself.</div>
+    <div class="playbook-feats">
+      <div class="playbook-feat">Word-for-word offer email, built around your {{ recommended_offer_formatted or "opening" }} number</div>
+      <div class="playbook-feat">Counter-offer strategy for every response the agent can give</div>
+      <div class="playbook-feat">Expert buying agent support through to acceptance</div>
+    </div>
+    <a class="playbook-cta" href="https://houseoffer-backend.onrender.com/track?tier=99&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}">Get the playbook — £99</a>
+  </div>
+
   <div class="attribution">
     Contains HM Land Registry data &copy; Crown copyright and database right 2026.
     Licensed under the Open Government Licence v3.0 ·
@@ -601,6 +801,185 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
 
 </div>
+
+<script>
+var HO = {
+  backend: "https://houseoffer-backend.onrender.com",
+  reportId: {{ report_id|default('', true)|tojson }},
+  reportUrl: {{ report_url|default('', true)|tojson }},
+  ourMid: {{ weighted_midpoint|default(none, true)|tojson }},
+  asking: {{ asking_price|tojson }},
+  voteShareUrl: null,
+  pollTimer: null,
+
+  // ── Share ──────────────────────────────────────────────────────────────────
+  getVoteLink: function() {
+    // Mint (or fetch) the short voting link; fall back to the report link
+    var self = this;
+    if (self.voteShareUrl) return Promise.resolve(self.voteShareUrl);
+    if (!self.reportId) return Promise.resolve(self.reportUrl || "https://houseoffer.uk");
+    return fetch(self.backend + "/r/" + self.reportId + "/share-link", {method: "POST"})
+      .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function(d) { self.voteShareUrl = d.url; return d.url; })
+      .catch(function() { return self.reportUrl || "https://houseoffer.uk"; });
+  },
+  shareForVotes: function(btn) {
+    var original = btn.innerHTML;
+    this.getVoteLink().then(function(url) {
+      var text = "What do you reckon this place is actually worth? Drop your number — no signup:";
+      if (navigator.share) {
+        navigator.share({title: "What's your number?", text: text, url: url}).catch(function() {});
+      } else {
+        navigator.clipboard.writeText(text + " " + url).then(function() {
+          btn.innerHTML = "✓ Link copied — send it on";
+          setTimeout(function() { btn.innerHTML = original; }, 2500);
+        });
+      }
+    });
+  },
+  copyReportLink: function(btn) {
+    var url = this.reportUrl || window.location.href;
+    var original = btn.innerHTML;
+    navigator.clipboard.writeText(url).then(function() {
+      btn.innerHTML = "✓ Copied";
+      setTimeout(function() { btn.innerHTML = original; }, 2000);
+    });
+  },
+
+  // ── Crowd voting ───────────────────────────────────────────────────────────
+  submitVote: function() {
+    var self = this;
+    var input = document.getElementById("crowd-input");
+    var raw = (input.value || "").replace(/[^0-9]/g, "");
+    var estimate = parseInt(raw, 10);
+    if (!estimate || estimate < 1000) { input.focus(); input.style.borderColor = "var(--red)"; return; }
+    fetch(self.backend + "/api/vote", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({report_id: self.reportId, estimate: estimate})
+    }).then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function(d) { self.renderFeed(d); })
+      .catch(function() {});
+    try { localStorage.setItem("ho_vote_" + self.reportId, String(estimate)); } catch(e) {}
+    self.revealResults(estimate);
+  },
+  revealResults: function(estimate) {
+    var self = this;
+    document.getElementById("crowd-input-row").style.display = "none";
+    document.getElementById("crowd-results").classList.add("show");
+    document.getElementById("feed-you-val").textContent = "£" + estimate.toLocaleString();
+    document.getElementById("crowd-avg").textContent = "£" + estimate.toLocaleString();
+    self.renderMarkers(estimate);
+    // Live feed: poll while the page is open (bounded)
+    if (self.pollTimer) clearInterval(self.pollTimer);
+    var polls = 0;
+    self.pollTimer = setInterval(function() {
+      if (++polls > 60) { clearInterval(self.pollTimer); return; }
+      fetch(self.backend + "/api/votes/" + self.reportId)
+        .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function(d) { self.renderFeed(d); })
+        .catch(function() {});
+    }, 6000);
+  },
+  renderMarkers: function(estimate) {
+    var vals = [estimate, this.asking];
+    if (this.ourMid) vals.push(this.ourMid);
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var span = (max - min) || max * 0.1 || 1;
+    min -= span * 0.2; max += span * 0.2;
+    var chart = document.getElementById("crowd-chart");
+    function pct(v) { return (8 + (v - min) / (max - min) * 84).toFixed(1) + "%"; }
+    function setPos(name, v) {
+      var m = chart.querySelector('[data-marker="' + name + '"]');
+      if (m) m.style.left = pct(v);
+    }
+    if (this.ourMid) setPos("data", this.ourMid);
+    setPos("you", estimate);
+    setPos("asking", this.asking);
+  },
+  renderFeed: function(d) {
+    if (!d) return;
+    if (d.count) {
+      document.getElementById("voter-count").textContent = d.count;
+      document.getElementById("voter-plural").textContent = d.count === 1 ? "" : "s";
+    }
+    if (d.crowd_avg) {
+      document.getElementById("crowd-avg").textContent = "£" + Number(d.crowd_avg).toLocaleString();
+      var cmp = document.getElementById("crowd-vs-data");
+      if (cmp && HO.ourMid) {
+        var diff = Math.round((d.crowd_avg - HO.ourMid) / HO.ourMid * 100);
+        var rel = diff > 0 ? diff + "% above" : diff < 0 ? (-diff) + "% below" : "right on";
+        cmp.innerHTML = "The crowd's average of <strong>£" + Number(d.crowd_avg).toLocaleString() +
+                        "</strong> is <strong>" + rel + "</strong> the data valuation of <strong>£" +
+                        Number(HO.ourMid).toLocaleString() + "</strong>.";
+      }
+    }
+    var feed = document.getElementById("crowd-feed");
+    if (d.votes && d.votes.length) {
+      var palette = ["#c06a1a", "#1a6b5a", "#238f77", "#b83232", "#7a8fd0", "#5f74b8"];
+      // Keep the "You" row, replace the rest with the live feed (self excluded server-side)
+      var youRow = feed.firstElementChild;
+      feed.innerHTML = "";
+      feed.appendChild(youRow);
+      d.votes.forEach(function(v, i) {
+        var name = v.name || "Anonymous";
+        var c = palette[i % palette.length];
+        var row = document.createElement("div");
+        row.className = "feed-row";
+        row.innerHTML = '<div class="feed-avatar" style="background:' + c + ';">' + name.charAt(0).toUpperCase() + '</div>' +
+                        '<div class="feed-name"></div>' +
+                        '<div class="feed-val" style="color:' + c + ';">£' + Number(v.estimate).toLocaleString() + '</div>';
+        row.querySelector(".feed-name").textContent = name;
+        feed.appendChild(row);
+      });
+    }
+  },
+
+  // ── Address confirmation ───────────────────────────────────────────────────
+  openModal: function() { document.getElementById("modal").classList.add("open"); },
+  closeModal: function() { document.getElementById("modal").classList.remove("open"); },
+  confirmAddress: function() {
+    var self = this;
+    var corrected = (document.getElementById("corrected-address").value || "").trim();
+    var body = corrected ? {address: corrected} : {confirmed: true};
+    fetch(self.backend + "/r/" + self.reportId + "/confirm-address", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    }).then(function(r) { return r.json().catch(function() { return {}; }); })
+      .then(function(d) {
+        if (corrected && d.rebuilding) { window.location.reload(); }
+        else {
+          var btn = document.querySelector(".conf-addr-btn");
+          if (btn) btn.innerHTML = "✓ Address confirmed";
+          self.closeModal();
+        }
+      })
+      .catch(function() { self.closeModal(); });
+  }
+};
+
+// Close modal on backdrop click
+(function() {
+  var modal = document.getElementById("modal");
+  if (modal) modal.addEventListener("click", function(e) { if (e.target === this) HO.closeModal(); });
+})();
+
+// Restore a previous vote so the reveal persists across visits (including a vote
+// cast on the free report before the upgrade — same report id, same storage key)
+(function() {
+  if (!HO.reportId) return;
+  try {
+    var prev = localStorage.getItem("ho_vote_" + HO.reportId);
+    if (prev && document.getElementById("crowd-input-row")) {
+      HO.revealResults(parseInt(prev, 10));
+      fetch(HO.backend + "/api/votes/" + HO.reportId)
+        .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function(d) { HO.renderFeed(d); }).catch(function() {});
+    }
+  } catch(e) {}
+})();
+</script>
 
 {% if report_id %}
 <script>
