@@ -2021,6 +2021,93 @@ def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
     return score, reasons, caveat
 
 
+def _resolve_seller_signal(days_on_market, local_avg_dom, dom_signal,
+                           price_reduced, reduction_pct, reduction_date,
+                           discount_pct):
+    """Single source of truth for the published seller-motivation signal on the
+    paid report. Mirrors _resolve_confidence: combines the public pressure
+    signals (time on market vs local average, recorded price reductions, the
+    local asking-vs-sold discount) into a strong/moderate/weak score plus
+    plain-English evidence lines. Missing inputs are stated honestly and cap
+    how high the score can go — they are never silently skipped.
+
+    Weighting rationale (2026-07-05 session): time on market is the strongest
+    single public signal (0-2 pts, negative when the listing is moving at or
+    faster than the local pace — that actively counters a pressure read); a
+    recorded price reduction is direct evidence the seller has already moved
+    (0-2 pts by size); the area asking-vs-sold discount is area-level context,
+    not property-specific, so it only nudges (±1 pt).
+
+    Returns (score, reasons, summary)."""
+    reasons = []
+    points = 0
+    dom_comparable = bool(days_on_market and local_avg_dom)
+
+    if dom_comparable:
+        if dom_signal == "high":
+            points += 2
+            reasons.append(f"listed {days_on_market} days vs a local average of "
+                           f"{local_avg_dom} — well past the point most sellers get nervous")
+        elif dom_signal == "medium":
+            points += 1
+            reasons.append(f"listed {days_on_market} days vs a local average of "
+                           f"{local_avg_dom} — starting to sit")
+        else:
+            points -= 1
+            reasons.append(f"only {days_on_market} days on the market vs a local average of "
+                           f"{local_avg_dom} — no time pressure on the seller yet")
+    elif days_on_market:
+        reasons.append(f"listed {days_on_market} days, but we couldn't fetch the local "
+                       "average to compare against")
+    else:
+        reasons.append("we couldn't read how long this listing has been on the market")
+
+    if price_reduced:
+        if reduction_pct and reduction_pct >= 5:
+            points += 2
+            reasons.append(f"the price has already been cut by {reduction_pct}% — "
+                           "the seller's position has publicly softened")
+        else:
+            points += 1
+            reasons.append("the price has already been reduced once — "
+                           "the seller has publicly moved")
+    else:
+        reasons.append("no price reduction recorded — the seller hasn't publicly moved yet")
+
+    if discount_pct is not None:
+        if discount_pct >= 5:
+            points += 1
+            reasons.append(f"buyers in this area achieve on average {discount_pct}% "
+                           "below asking — local sellers expect to negotiate")
+        elif discount_pct <= 2:
+            points -= 1
+            reasons.append(f"local sales complete close to asking (avg {discount_pct}% "
+                           "discount) — sellers around here tend to hold firm")
+        else:
+            reasons.append(f"buyers in this area achieve on average {discount_pct}% "
+                           "below asking — a typical negotiating margin")
+    else:
+        reasons.append("no local asking-vs-sold data available for this area")
+
+    score = "strong" if points >= 3 else ("moderate" if points >= 1 else "weak")
+    # Honesty cap: without the time-on-market comparison (the primary signal)
+    # we never claim STRONG on secondary evidence alone.
+    if score == "strong" and not dom_comparable:
+        score = "moderate"
+        reasons.append("score capped: without the time-on-market comparison we "
+                       "won't claim strong motivation on secondary signals alone")
+
+    summary = {
+        "strong": "Multiple public signals point to a seller under pressure. "
+                  "Negotiate with confidence — the clock is on your side.",
+        "moderate": "Some pressure signals are present, but this is not a seller who "
+                    "has to sell. Negotiate on the evidence, not on urgency.",
+        "weak": "Little public evidence of seller pressure. Your leverage here is "
+                "the data below, not the clock.",
+    }[score]
+    return score, reasons, summary
+
+
 def build_report_data(property_url, asking_price, bedrooms, property_type,
                       postcode, floor_area_sqm=None, address=None,
                       scraper_days_on_market=None, scraper_floor_area_sqm=None,
@@ -2381,6 +2468,32 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         ratio = days_on_market / local_avg_dom
         dom_signal = "high" if ratio > 1.5 else ("medium" if ratio > 1.0 else "low")
 
+    # DOM → typical-discount RANGE (2026-07-05, paid-tier context). Keyed off
+    # dom_signal so the buckets can never drift from the ratio thresholds above.
+    # Deliberately a range, never a precise figure, and deliberately NOT an
+    # input to the open/target/walk_away calculation — market context only.
+    # Bucket values anchor on the observed asking-vs-sold discounts (national
+    # avg ~4.5%, method 7 uses ±1%): at/below local pace 0-3%, moderately
+    # above 2-5%, well above 3-7%.
+    dom_shift_low_pct = dom_shift_high_pct = None
+    dom_shift_low_amount = dom_shift_high_amount = None
+    if dom_signal:
+        dom_shift_low_pct, dom_shift_high_pct = {
+            "high": (3, 7), "medium": (2, 5), "low": (0, 3)}[dom_signal]
+        if asking_price:
+            # Nearest £500: precise-looking pounds would contradict "range".
+            dom_shift_low_amount = round(asking_price * dom_shift_low_pct / 100 / 500) * 500
+            dom_shift_high_amount = round(asking_price * dom_shift_high_pct / 100 / 500) * 500
+
+    # Seller-motivation signal (2026-07-05, paid-tier section). Uses the RAW
+    # local discount_pct — method 7 below substitutes a national fallback into
+    # this variable, which must not masquerade as local evidence here.
+    seller_signal_score, seller_signal_reasons, seller_signal_summary = (
+        _resolve_seller_signal(days_on_market, local_avg_dom, dom_signal,
+                               price_reduced, reduction_pct, reduction_date,
+                               discount_pct))
+    local_sold_discount_pct = discount_pct
+
     verdict = sold_verdict or psqm_verdict or "unknown"
     diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
 
@@ -2520,7 +2633,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     else:
         methods.append(_method_dict("Automated valuation", 0, 0, 0, "Automated valuation model", False))
 
-    # Method 6: Lender valuation band
+    # Method 6: Estimated lender range — SYNTHETIC (min of our other methods
+    # x 0.90-0.97, no independent data source). Labelled "(modelled)" so it is
+    # never mistaken for actual lender data alongside the sourced methods.
     base_candidates = [v for v in (local_avg_sold, hpi_adjusted_value, psqm_implied_value) if v]
     if base_candidates:
         lender_base = min(base_candidates)
@@ -2528,11 +2643,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         m6_high = round(lender_base * 0.97)
         m6_mid = round((m6_low + m6_high) / 2)
         methods.append(_method_dict(
-            "Lender valuation band", m6_low, m6_high, m6_mid,
-            "Estimated lender valuation", True
+            "Estimated lender range (modelled)", m6_low, m6_high, m6_mid,
+            "Modelled — not sourced from lender data", True
         ))
     else:
-        methods.append(_method_dict("Lender valuation band", 0, 0, 0, "Estimated lender valuation", False))
+        methods.append(_method_dict("Estimated lender range (modelled)", 0, 0, 0,
+                                    "Modelled — not sourced from lender data", False))
 
     # Method 6b: Rental yield implied value (rent fetched in the parallel phase
     # using the FULL postcode - the broadened district postcode breaks /rents).
@@ -2843,6 +2959,16 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "days_on_market": days_on_market,
         "local_avg_dom": local_avg_dom,
         "dom_signal": dom_signal,
+        # Seller-motivation signal + DOM discount range (paid-tier section).
+        # Context/display only — none of these feed the offer calculation.
+        "seller_signal_score": seller_signal_score,
+        "seller_signal_reasons": seller_signal_reasons,
+        "seller_signal_summary": seller_signal_summary,
+        "local_sold_discount_pct": local_sold_discount_pct,
+        "dom_shift_low_pct": dom_shift_low_pct,
+        "dom_shift_high_pct": dom_shift_high_pct,
+        "dom_shift_low_formatted": _fmt(dom_shift_low_amount),
+        "dom_shift_high_formatted": _fmt(dom_shift_high_amount),
         "price_reduced": price_reduced,
         "original_asking_price": original_asking_price,
         "original_asking_price_formatted": original_asking_price_formatted,
@@ -3144,6 +3270,145 @@ def track():
     from flask import redirect
     return redirect("https://houseoffer.netlify.app/#pricing")
 
+# ── POST-UNLOCK BUYER PROFILE (2026-07-05) ───────────────────────────────────
+# Three single-choice questions shown after unlock, before the paid report
+# renders. Always skippable — a paying customer is never blocked from their
+# report. Answers personalise the report at DISPLAY TIME only: the stored
+# open/target/walk_away values are never modified.
+
+BUYER_PROFILE_FIELDS = {
+    "position": {"first_time", "sold_stc", "need_to_sell", "cash", "investor"},
+    "attachment": {"several", "this_one", "the_one"},
+    "timeline": {"fast", "one_three", "flexible"},
+}
+
+# Positions that make a buyer fully proceedable (chain-free or sale agreed).
+_PROCEEDABLE_POSITIONS = {"cash", "investor", "sold_stc", "first_time"}
+
+
+def _personalised_offer_display(report, profile):
+    """Task 5(B): render-time presentation of the offer numbers, shaped by the
+    buyer's answers. Returns template-context OVERRIDES only — the stored
+    report dict is never touched, and the calculation itself is unchanged.
+
+    Movement rules (documented in SESSION_LOG_2026-07-05.md):
+    - Proceedable buyer comparing several options → the displayed opening
+      stretches DOWN by half the open→target gap, floored at weighted_low
+      (never outside the data-justified range).
+    - "THE one" + a chain still to settle → displayed opening moves UP by half
+      the open→target gap (fewer rounds, less risk), capped below target.
+    - Everything else → numbers exactly as stored.
+
+    HARD GUARDRAIL: the displayed walk-away NEVER exceeds the stored
+    data-derived walk_away. Answers move where you play WITHIN the range;
+    they never raise the ceiling."""
+    if not profile:
+        return {}
+    open_v = report.get("open_offer")
+    target = report.get("target_price")
+    walk = report.get("walk_away")
+    if not (open_v and target and walk):
+        return {}
+
+    position = profile.get("position")
+    attachment = profile.get("attachment")
+    stance = None
+    display_open = open_v
+
+    if position in _PROCEEDABLE_POSITIONS and attachment == "several":
+        # Floor at weighted_low (the bottom of the data-justified range) — but
+        # never ABOVE the stored opening, which the asking-price caps can
+        # already have pushed below weighted_low. An "aggressive" answer must
+        # never display a higher opening than the neutral one.
+        floor = min(report.get("weighted_low") or open_v, open_v)
+        display_open = max(floor, open_v - round(0.5 * (target - open_v)))
+        display_open = round(display_open / 1000) * 1000
+        stance = "aggressive"
+    elif attachment == "the_one" and position == "need_to_sell":
+        display_open = min(target - 1000, open_v + round(0.5 * (target - open_v)))
+        display_open = round(display_open / 1000) * 1000
+        stance = "tight"
+
+    # Re-enforce the universal caps after rounding: below target, below asking.
+    display_open = min(display_open, target - 1000)
+    asking = report.get("asking_price")
+    if asking:
+        display_open = min(display_open, asking - 1000)
+
+    # Personalisation never proposes a different ceiling today, but the cap is
+    # enforced in code so no future stance can breach it:
+    display_walk_candidate = walk
+    # HARD GUARDRAIL (explicit cap, not a convention): whatever the profile
+    # says, the displayed walk-away NEVER exceeds the stored data-derived value.
+    display_walk = min(display_walk_candidate, walk)
+
+    if stance is None and display_open == open_v:
+        return {"offer_stance": None}
+
+    overrides = {
+        "offer_stance": stance,
+        "open_offer": display_open,
+        "open_offer_formatted": _fmt(display_open),
+        "recommended_offer": display_open,
+        "recommended_offer_formatted": _fmt(display_open),
+        "walk_away": display_walk,
+        "walk_away_formatted": _fmt(display_walk),
+    }
+    if asking:
+        overrides["open_offer_vs_asking_pct"] = round((asking - display_open) / asking * 100, 1)
+    if report.get("local_avg_sold"):
+        overrides["open_offer_vs_comps_pct"] = round(
+            (report["local_avg_sold"] - display_open) / report["local_avg_sold"] * 100, 1)
+    return overrides
+
+
+@app.route("/r/<report_id>/buyer-profile", methods=["POST"])
+def buyer_profile(report_id):
+    """Store the post-unlock questionnaire answers (or an explicit skip) on the
+    report, then send the buyer to their report. Invalid values are dropped
+    per-field; a submission with no usable answer counts as a skip so the
+    report always renders with neutral defaults."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return "Report not found", 404
+    stored = load_report(report_id)
+    if not stored:
+        return "Report not found", 404
+
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    if data.get("skip"):
+        stored["buyer_profile_skipped"] = True
+        save_report(report_id, stored)
+        log_event(report_id, "buyer_profile_skipped", {})
+        return redirect(f"/r/{report_id}")
+
+    answers = {}
+    for field, allowed in BUYER_PROFILE_FIELDS.items():
+        v = (data.get(field) or "").strip()
+        answers[field] = v if v in allowed else None
+    if not any(answers.values()):
+        stored["buyer_profile_skipped"] = True
+        save_report(report_id, stored)
+        log_event(report_id, "buyer_profile_skipped", {"reason": "no_valid_answers"})
+        return redirect(f"/r/{report_id}")
+
+    answers["answered_at"] = _now_iso()
+    stored["buyer_profile"] = answers
+    stored.pop("buyer_profile_skipped", None)
+    save_report(report_id, stored)
+    log_event(report_id, "buyer_profile", answers)
+    report = stored.get("report") or {}
+    post_to_sheets({
+        "type": "buyer_profile", "timestamp": _now_iso(), "uuid": report_id,
+        "position": answers.get("position") or "",
+        "attachment": answers.get("attachment") or "",
+        "timeline": answers.get("timeline") or "",
+        "postcode": report.get("postcode"), "verdict": report.get("verdict"),
+        "asking_price": report.get("asking_price"),
+        "report_url": f"{BASE_URL.rstrip('/')}/r/{report_id}",
+    })
+    return redirect(f"/r/{report_id}")
+
+
 @app.route("/r/<report_id>")
 def view_report(report_id):
     """Serve a previously generated report by its UUID."""
@@ -3194,8 +3459,25 @@ def view_report(report_id):
     report = stored.get("report", {})
     report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
     paid = stored.get("paid", False)
+
+    # Post-unlock questions: paid reports ask three quick single-choice
+    # questions before first render, so the report is written for the buyer's
+    # situation. Always skippable — never blocks a paying customer.
+    if paid and not stored.get("buyer_profile") and not stored.get("buyer_profile_skipped"):
+        log_event(report_id, "buyer_questions_shown", {})
+        return render_template(
+            "buyer_questions.html", report_id=report_id,
+            address=report.get("resolved_address") or report.get("address"),
+            postcode=report.get("postcode"))
+
     template = "report_paid.html" if paid else "report_free.html"
-    return render_template(template, report_url=report_url, report_id=report_id, **report)
+    ctx = dict(report)
+    profile = stored.get("buyer_profile") if paid else None
+    if profile:
+        # Display layer only: overrides how the stored numbers are presented.
+        ctx.update(_personalised_offer_display(report, profile))
+    return render_template(template, report_url=report_url, report_id=report_id,
+                           buyer_profile=profile, **ctx)
 
 
 @app.route("/r/<report_id>/status")

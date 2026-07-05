@@ -181,6 +181,28 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .crowd-paid-text { flex: 1; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.5; }
 .crowd-paid-text strong { color: white; }
 
+/* SELLER MOTIVATION */
+.signal-card { border-radius: var(--radius); padding: 18px 22px; margin-bottom: 14px; border: 1.5px solid; box-shadow: var(--shadow-sm); }
+.signal-strong { background: var(--teal-light); border-color: var(--teal-border); }
+.signal-moderate { background: var(--amber-light); border-color: var(--amber-border); }
+.signal-weak { background: var(--sand-dark); border-color: var(--sand-border); }
+.signal-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 8px; color: white; }
+.signal-strong .signal-badge { background: var(--teal); }
+.signal-moderate .signal-badge { background: var(--amber); }
+.signal-weak .signal-badge { background: var(--ink-light); }
+.signal-summary { font-size: 14px; color: var(--ink-mid); line-height: 1.6; }
+.signal-note { font-size: 12.5px; color: var(--ink-light); background: var(--sand); border: 1px dashed var(--sand-border); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; line-height: 1.5; }
+.dom-shift-strip { margin-top: 10px; background: var(--teal-light); border: 1px solid var(--teal-border); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--ink-mid); line-height: 1.55; }
+.dom-shift-strip strong { color: var(--teal); }
+
+/* NEGOTIATION APPROACH (buyer profile) */
+.approach-card { background: var(--white); border: 1.5px solid var(--teal-border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.approach-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; }
+.approach-list { list-style: none; display: flex; flex-direction: column; gap: 9px; margin: 0; padding: 0; }
+.approach-list li { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; background: var(--sand); border-radius: 8px; padding: 10px 14px; border-left: 3px solid var(--teal-border); }
+.approach-list li strong { color: var(--ink); }
+.approach-stance { margin-top: 12px; font-size: 12.5px; color: var(--ink-light); line-height: 1.55; padding-top: 10px; border-top: 1px solid var(--sand-border); }
+
 /* PLAYBOOK UPSELL */
 .playbook-card { background: var(--white); border: 1.5px solid var(--teal-border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow-sm); margin-bottom: 20px; }
 .playbook-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 8px; }
@@ -347,6 +369,49 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
+  <!-- YOUR NEGOTIATION APPROACH (buyer profile personalisation) -->
+  {% if buyer_profile and (buyer_profile.position or buyer_profile.attachment or buyer_profile.timeline) %}
+  <div class="approach-card">
+    <div class="approach-eyebrow">🎯 Your negotiation approach</div>
+    <ul class="approach-list">
+      {% if buyer_profile.position == 'cash' %}
+      <li><strong>Say you're a cash buyer — explicitly.</strong> No chain, no mortgage risk: your offer is worth more than a higher offer from a buyer in a chain. Make the agent write "cash buyer" next to your number.</li>
+      {% elif buyer_profile.position == 'investor' %}
+      <li><strong>Negotiate like the investor you are.</strong> You're chain-free and unemotional — the two things sellers pay for in a buyer. Anchor on the data and be visibly ready to walk.</li>
+      {% elif buyer_profile.position == 'sold_stc' %}
+      <li><strong>You're proceedable — lead with it.</strong> Sold subject to contract is the strongest position after cash. A proceedable buyer's offer is worth more than a higher offer from someone still stuck in a chain, so say so when you offer.</li>
+      {% elif buyer_profile.position == 'first_time' %}
+      <li><strong>You're chain-free.</strong> First-time buyers carry no chain risk, and sellers value that certainty. Make sure the agent records you as chain-free the moment you offer — it strengthens a below-asking number.</li>
+      {% elif buyer_profile.position == 'need_to_sell' %}
+      <li><strong>Be straight about your chain.</strong> Until your own sale is agreed, agents will treat your offer as not fully proceedable — expect that to count against you. Price competitiveness matters more in your position, and getting your own home under offer will do more for your negotiating power than anything else on this page.</li>
+      {% endif %}
+
+      {% if buyer_profile.attachment == 'several' %}
+      <li><strong>Comparing several properties is leverage.</strong> Sellers and agents can tell when a buyer has options. Stay visibly willing to walk away — it makes every number on this page more credible.</li>
+      {% elif buyer_profile.attachment == 'this_one' %}
+      <li><strong>You want this one at the right price — so hold the line.</strong> The walk-away figure above is where "the right price" ends. Decide now that you'll honour it.</li>
+      {% elif buyer_profile.attachment == 'the_one' %}
+      <li><strong>Careful: "THE one" is how buyers overpay.</strong> Emotional attachment is the most expensive thing in property. For you the walk-away number matters more, not less — write it down before you offer, tell someone you trust, and don't cross it in the heat of the moment.</li>
+      {% endif %}
+
+      {% if buyer_profile.timeline == 'fast' and seller_signal_score == 'strong' %}
+      <li><strong>Your speed is a bargaining chip — and this seller looks under pressure.</strong> Offer a fast exchange explicitly in return for price. Speed traded for money is the cleanest deal in negotiation; don't give it away for free.</li>
+      {% elif buyer_profile.timeline == 'fast' %}
+      <li><strong>Your speed is worth money — trade it, don't gift it.</strong> Tell the agent you can move quickly, but only alongside your number: fast completion in exchange for the price you want.</li>
+      {% elif buyer_profile.timeline == 'one_three' %}
+      <li><strong>A 1–3 month timeline is standard</strong> — it neither strengthens nor weakens your hand. Let the evidence on this page do the negotiating.</li>
+      {% elif buyer_profile.timeline == 'flexible' %}
+      <li><strong>Flexibility is an underrated card.</strong> Ask the agent what completion timing suits the seller, then offer it — matched timing can be worth as much as a small price concession.</li>
+      {% endif %}
+    </ul>
+    {% if offer_stance == 'aggressive' %}
+    <div class="approach-stance">Because you're comparing options from a strong buying position, the opening offer above stretches lower within the same data-justified range. Your target and walk-away are unchanged.</div>
+    {% elif offer_stance == 'tight' %}
+    <div class="approach-stance">Because this is the one you want and your own sale isn't settled, the opening offer above sits closer to target — fewer rounds, less risk of losing it. Your walk-away is unchanged: it never rises, whatever your answers.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- VERDICT -->
   <div class="verdict-card {{ verdict }}">
     <div class="verdict-eyebrow">
@@ -481,9 +546,10 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         {% set bar_color = "#1a6b5a" if m.weight == 2 else "#9b9488" %}
         {% set bar_opacity = "0.85" if m.weight == 2 else "0.65" %}
 
-        <!-- Label -->
+        <!-- Label (chart column is ~169px: abbreviate the long lender label;
+             the table below carries the full name) -->
         <text x="{{ ch_x0 - 6 }}" y="{{ row_y + 11 }}" text-anchor="end" font-size="11.5"
-              font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">{{ m.name }}</text>
+              font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">{{ m.name | replace('Estimated lender range', 'Est. lender range') }}</text>
 
         <!-- Bar track background -->
         <rect x="{{ ch_x0 }}" y="{{ row_y }}" width="{{ ch_w }}" height="18" fill="#f7f3ed" rx="3"/>
@@ -584,6 +650,11 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         {% endif %}
       </tbody>
     </table>
+    {% if football_field | selectattr('name', 'equalto', 'Estimated lender range (modelled)') | selectattr('available') | list %}
+    <div style="padding:10px 22px 14px; font-size:11.5px; color:var(--ink-light); border-top:1px solid var(--sand-border); line-height:1.55;">
+      <strong style="color:var(--ink-mid);">Estimated lender range (modelled):</strong> this row models the typical conservatism of lender valuations relative to our other methods (90–97% of our lowest independent estimate). It is not an actual lender assessment.
+    </div>
+    {% endif %}
   </div>
 
   {% endif %}
@@ -701,7 +772,16 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
-  <!-- DAYS ON MARKET -->
+  <!-- SELLER MOTIVATION — signal score header, then the evidence rows -->
+  {% if seller_signal_score %}
+  <div class="section-title">Seller motivation</div>
+  <div class="signal-card signal-{{ seller_signal_score }}">
+    <span class="signal-badge">{{ seller_signal_score }} seller motivation</span>
+    <div class="signal-summary">{{ seller_signal_summary }}</div>
+  </div>
+  {% endif %}
+
+  <!-- DAYS ON MARKET (evidence) -->
   {% if days_on_market %}
   <div class="dom-card">
     <div class="dom-icon">&#9200;</div>
@@ -720,12 +800,24 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         {% elif dom_signal == 'medium' %}It has not been on long enough to signal desperation, but it is not flying off the shelf either.
         {% elif dom_signal == 'low' %}This is moving at a normal pace. Competition may be real.
         {% else %}Use this as context when assessing seller motivation.{% endif %}
+        {% if dom_shift_high_pct is defined and dom_shift_high_pct %}
+        <div class="dom-shift-strip">
+          {% if dom_shift_low_pct %}
+          Properties on the market this long typically sell <strong>{{ dom_shift_low_pct }}–{{ dom_shift_high_pct }}% below asking</strong>{% if dom_shift_low_formatted and dom_shift_high_formatted %} — roughly <strong>{{ dom_shift_low_formatted }}–{{ dom_shift_high_formatted }}</strong> on this asking price{% endif %}.
+          {% else %}
+          Properties at this stage typically sell <strong>0–{{ dom_shift_high_pct }}% below asking</strong>{% if dom_shift_high_formatted %} — up to roughly <strong>{{ dom_shift_high_formatted }}</strong> on this asking price{% endif %}.
+          {% endif %}
+          This is the typical range for this time on market, not a prediction — your recommended numbers come from the valuation methods, not the clock.
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
+  {% elif seller_signal_score %}
+  <div class="signal-note">&#9200; We couldn't read how long this listing has been on the market, so time-on-market pressure isn't part of the score above.</div>
   {% endif %}
 
-  <!-- PRICE DROP -->
+  <!-- PRICE DROP (evidence) -->
   {% if price_reduced and original_asking_price %}
   <div class="dom-card" style="border-left: 3px solid var(--amber); background: var(--amber-light);">
     <div class="dom-icon" style="background: var(--amber-light);">📉</div>
@@ -739,6 +831,27 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </div>
     </div>
   </div>
+  {% elif seller_signal_score %}
+  <div class="signal-note">📉 No price reduction recorded — the seller hasn't publicly moved on price yet.</div>
+  {% endif %}
+
+  <!-- LOCAL ASKING-VS-SOLD (evidence) -->
+  {% if seller_signal_score %}
+    {% if local_sold_discount_pct is not none %}
+    <div class="dom-card">
+      <div class="dom-icon">🤝</div>
+      <div>
+        <div class="dom-title">Buyers around here agree deals at {{ local_sold_discount_pct }}% below asking on average</div>
+        <div class="dom-body">
+          {% if local_sold_discount_pct >= 5 %}Sellers in this market expect to negotiate — an offer below asking is normal here, not an insult.
+          {% elif local_sold_discount_pct <= 2 %}Local sales complete close to asking, so lean on the property-specific evidence above rather than the area norm.
+          {% else %}A typical negotiating margin for the area — the property-specific signals above carry more weight than this average.{% endif %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="signal-note">🤝 No local asking-vs-sold data available for this area — that signal isn't part of the score above.</div>
+    {% endif %}
   {% endif %}
 
   <!-- FULL COMPARABLES TABLE -->

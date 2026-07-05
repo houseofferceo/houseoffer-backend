@@ -712,7 +712,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       {% if local_avg_dom and days_on_market > local_avg_dom %}
         Because this listing has sat <strong>{{ days_on_market - local_avg_dom }} days longer</strong> than average, the full report widens your negotiating range — a lower opening offer and a higher walk-away ceiling both make sense here.
       {% else %}
-        The full report calculates exactly how time on market shifts your opening offer and walk-away numbers for this property.
+        The full report shows the typical discount range for properties on the market this long — and how to use it in your offer.
       {% endif %}
       <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}">Unlock the exact numbers →</a>
     </div>

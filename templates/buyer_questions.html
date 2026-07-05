@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Report — Three Quick Questions — HouseOffer</title>
+<meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --sand: #f7f3ed; --sand-dark: #ece7de; --sand-border: #e0d9ce;
+  --ink: #1e1c18; --ink-mid: #5c5849; --ink-light: #9b9488;
+  --teal: #1a6b5a; --teal-mid: #238f77; --teal-light: #e3f4ef; --teal-border: #b8dfd5;
+  --white: #ffffff; --radius: 14px;
+  --shadow-sm: 0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);
+}
+body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; min-height: 100vh; }
+nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--sand-border); padding: 0 24px; position: sticky; top: 0; z-index: 100; }
+.nav-inner { max-width: 640px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 58px; }
+.logo { font-family: 'Lora', serif; font-size: 20px; font-weight: 700; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+.logo-mark { width: 26px; height: 26px; flex-shrink: 0; }
+.nav-tag { font-size: 12px; font-weight: 600; color: var(--white); background: var(--teal); border: 1px solid var(--teal); padding: 4px 10px; border-radius: 20px; }
+.wrapper { max-width: 640px; margin: 0 auto; padding: 36px 24px 80px; }
+
+.q-header { text-align: center; margin-bottom: 26px; }
+.q-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; }
+.q-title { font-family: 'Lora', serif; font-size: 26px; font-weight: 700; line-height: 1.25; margin-bottom: 8px; }
+.q-sub { font-size: 14px; color: var(--ink-mid); max-width: 440px; margin: 0 auto; }
+
+.q-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
+.q-question { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
+.q-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--teal-light); color: var(--teal); font-size: 12px; font-weight: 700; margin-right: 8px; }
+.q-options { display: flex; flex-direction: column; gap: 8px; }
+.q-option input { position: absolute; opacity: 0; pointer-events: none; }
+.q-option { position: relative; display: block; cursor: pointer; }
+.q-pill { display: block; border: 1.5px solid var(--sand-border); background: var(--sand); border-radius: 10px; padding: 11px 16px; font-size: 14px; color: var(--ink-mid); transition: border-color .12s, background .12s; }
+.q-option:hover .q-pill { border-color: var(--teal-border); }
+.q-option input:checked + .q-pill { border-color: var(--teal); background: var(--teal-light); color: var(--teal); font-weight: 600; }
+.q-option input:focus-visible + .q-pill { outline: 2px solid var(--teal-mid); outline-offset: 2px; }
+
+.q-actions { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.q-submit { width: 100%; background: var(--teal); color: white; border: none; border-radius: 24px; padding: 15px; font-size: 15.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.q-submit:hover { background: var(--teal-mid); }
+.q-skip { background: none; border: none; font-size: 13px; color: var(--ink-light); text-decoration: underline; cursor: pointer; font-family: inherit; padding: 6px; }
+.q-skip:hover { color: var(--ink-mid); }
+.q-note { text-align: center; font-size: 12px; color: var(--ink-light); margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="logo">
+      <svg class="logo-mark" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="56" y="0" width="14" height="22" rx="2" fill="#c9dfd8"/>
+        <polygon points="44,6 84,30 4,30" fill="#b8dfd5"/>
+        <polygon points="44,6 84,30 84,78 4,78 4,30" fill="#1a6b5a"/>
+        <rect x="8" y="36" width="20" height="18" rx="2" fill="#238f77"/>
+        <rect x="60" y="36" width="20" height="18" rx="2" fill="#238f77"/>
+        <rect x="31" y="48" width="26" height="30" rx="3" fill="#e3f4ef"/>
+        <circle cx="70" cy="16" r="17" fill="#e3f4ef" stroke="#1a6b5a" stroke-width="2"/>
+        <text x="70" y="23" text-anchor="middle" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#1a6b5a">£</text>
+      </svg>
+      HouseOffer
+    </div>
+    <span class="nav-tag">Full Report</span>
+  </div>
+</nav>
+
+<div class="wrapper">
+  <div class="q-header">
+    <div class="q-eyebrow">Your report is ready</div>
+    <div class="q-title">Three quick questions</div>
+    <div class="q-sub">So your report{% if address %} for <strong>{{ address }}</strong>{% elif postcode %} for <strong>{{ postcode }}</strong>{% endif %} is written for your exact situation — your position changes how you should negotiate.</div>
+  </div>
+
+  <form method="post" action="/r/{{ report_id }}/buyer-profile">
+    <div class="q-card">
+      <div class="q-question"><span class="q-num">1</span>What's your buying position?</div>
+      <div class="q-options">
+        <label class="q-option"><input type="radio" name="position" value="first_time"><span class="q-pill">First-time buyer (nothing to sell)</span></label>
+        <label class="q-option"><input type="radio" name="position" value="sold_stc"><span class="q-pill">Sold / under offer on my current home</span></label>
+        <label class="q-option"><input type="radio" name="position" value="need_to_sell"><span class="q-pill">Still need to sell my current home</span></label>
+        <label class="q-option"><input type="radio" name="position" value="cash"><span class="q-pill">Cash buyer</span></label>
+        <label class="q-option"><input type="radio" name="position" value="investor"><span class="q-pill">Investor / second home</span></label>
+      </div>
+    </div>
+
+    <div class="q-card">
+      <div class="q-question"><span class="q-num">2</span>How do you feel about this property?</div>
+      <div class="q-options">
+        <label class="q-option"><input type="radio" name="attachment" value="several"><span class="q-pill">One of several I'm considering</span></label>
+        <label class="q-option"><input type="radio" name="attachment" value="this_one"><span class="q-pill">I want this one — at the right price</span></label>
+        <label class="q-option"><input type="radio" name="attachment" value="the_one"><span class="q-pill">It's THE one — I don't want to lose it</span></label>
+      </div>
+    </div>
+
+    <div class="q-card">
+      <div class="q-question"><span class="q-num">3</span>When do you want to complete?</div>
+      <div class="q-options">
+        <label class="q-option"><input type="radio" name="timeline" value="fast"><span class="q-pill">As fast as possible</span></label>
+        <label class="q-option"><input type="radio" name="timeline" value="one_three"><span class="q-pill">1–3 months</span></label>
+        <label class="q-option"><input type="radio" name="timeline" value="flexible"><span class="q-pill">3+ months / flexible</span></label>
+      </div>
+    </div>
+
+    <div class="q-actions">
+      <button type="submit" class="q-submit">Show my report →</button>
+      <button type="submit" name="skip" value="1" class="q-skip" formnovalidate>Skip — take me straight to my report</button>
+    </div>
+    <div class="q-note">Your answers shape the negotiation advice in your report. They never change the underlying valuation.</div>
+  </form>
+</div>
+
+</body>
+</html>
