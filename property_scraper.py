@@ -40,21 +40,66 @@ DEFAULT_RESULT = {
     "latitude": None,
     "longitude": None,
     "epc_cert_url": None,
+    # Portal's own og:image for the listing — used by the crowd-voting share
+    # page and WhatsApp preview cards. Hotlinks the portal CDN; never required.
+    "main_photo_url": None,
     "is_new_build": False,
+    # Special tenure / sale type detected from listing text — None for standard
+    # open-market stock, else "shared_ownership" | "auction" | "retirement".
+    # Asking price for these is NOT directly comparable to open-market value, so
+    # app.py attaches an explicit caveat (it still returns a valuation).
+    "sale_type": None,
     "description_house_number": None,
 }
 
+# Special-tenure / sale-type detection. Ordered: a shared-ownership listing that
+# also quotes a "guide price" should read as shared_ownership, not auction.
+_SALE_TYPE_PATTERNS = [
+    ("shared_ownership", re.compile(
+        r"\bshared\s+ownership\b|\b\d{1,3}\s*%\s*share\b"
+        r"|\bpart[\s\-]?buy\b|\bpart[\s\-]?(?:buy|own)[\s/\-]+part[\s\-]?rent\b"
+        r"|\bshared\s+equity\b"
+        # Sub-market discount schemes (Cycle 3) — these price below open market the
+        # same way shared ownership does (the E9 0CC miss was one of these).
+        r"|\bdiscount(?:ed)?\s+market\s+(?:sale|value|home)\b"
+        r"|\bfirst\s+homes?\s+scheme\b"
+        r"|\b\d{1,3}\s*%\s*of\s*(?:the\s+)?(?:full\s+)?market\s+value\b",
+        re.IGNORECASE)),
+    ("retirement", re.compile(
+        r"\bretirement\b|\bover[\s\-]?(?:55|60)s?\b|\bage[\s\-]?(?:restricted|exclusive)\b"
+        r"|\bassisted\s+living\b|\bsheltered\s+(?:housing|accommodation)\b"
+        r"|\bmccarthy\s*(?:&|and)?\s*stone\b|\bretirement\s+(?:living|village|apartment)\b",
+        re.IGNORECASE)),
+    ("auction", re.compile(
+        r"\bauction\b|\bguide\s+price\b|\bfor\s+sale\s+by\s+(?:modern\s+|online\s+)?auction\b"
+        r"|\b(?:un)?conditional\s+auction\b", re.IGNORECASE)),
+]
+
+
+def detect_sale_type(*texts):
+    """Return a special-tenure/sale-type label from any listing text, or None for
+    standard open-market stock. Best-effort keyword match."""
+    blob = " ".join(str(t) for t in texts if t)
+    if not blob:
+        return None
+    for label, rx in _SALE_TYPE_PATTERNS:
+        if rx.search(blob):
+            return label
+    return None
+
+# Cycle 2: tightened to property-level new-build phrasing only. The old pattern
+# matched bare "brand new" and "new development", which fire on "brand new kitchen",
+# "brand new boiler" or "close to a new development" and produced false new-build
+# caveats (HU18/LE13/BL9 in the random-40 test). Rightmove's own new-home tag
+# (infoReelItems, handled below) remains a second, reliable signal.
 _NEW_BUILD_RE = re.compile(
     r"\bnew[\s\-]?build\b"
-    r"|\bbrand[\s\-]?new\s+development\b"
-    r"|\bbrand[\s\-]?new\b"
-    r"|\bnewly\s+built\b"
-    r"|\bnew\s+development\b"
+    r"|\bnewly\s+(?:built|constructed)\b"
     r"|\bnew\s+homes?\b"
-    r"|\bepc\s+to\s+follow\b"
-    r"|\bepc\s+(?:rating\s+)?to\s+be\s+(?:confirmed|provided|issued)\b"
+    r"|\bshow\s+home\b"
     r"|\boff[\s\-]?plan\b"
-    r"|\bnewly\s+(?:constructed|developed)\b",
+    r"|\bepc\s+to\s+follow\b"
+    r"|\bepc\s+(?:rating\s+)?to\s+be\s+(?:confirmed|provided|issued)\b",
     re.IGNORECASE,
 )
 
@@ -500,6 +545,17 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
     if normalised_type:
         result["property_type"] = normalised_type
         result["property_type_source"] = "scraped"
+    else:
+        # Hardening (Cycle 1, item 5): the structured type fields gave us nothing
+        # recognisable — try the key features (often "Semi-Detached Family Home")
+        # before giving up. We deliberately do NOT scan the free description, which
+        # is noisy ("detached garage" etc.) and would re-introduce wrong defaults.
+        kf = prop.get("keyFeatures")
+        if isinstance(kf, list) and kf:
+            nt = normalise_property_type(" ".join(str(f) for f in kf))
+            if nt:
+                result["property_type"] = nt
+                result["property_type_source"] = "scraped"
 
     addr = prop.get("address") or {}
     pc = _postcode_from_address(addr if isinstance(addr, dict) else {})
@@ -658,12 +714,39 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
             result["is_new_build"] = True
             break
 
+    # Special-tenure / sale-type detection (Cycle 1, item 4). Scan the listing
+    # text, type description, key features and price string (auction listings often
+    # show "Guide Price"). Drives a caveat in app.py — the listing still gets valued.
+    kf_blob = ""
+    kf = prop.get("keyFeatures")
+    if isinstance(kf, list):
+        kf_blob = " ".join(str(f) for f in kf)
+    result["sale_type"] = detect_sale_type(
+        description, kf_blob, str(ptype),
+        str(prop.get("propertyTypeFullDescription") or ""), price_str,
+    )
+
     # Extract house number from description when displayAddress omits it
     addr = result.get("address") or ""
     if description and addr and not re.match(r"\s*\d", addr):
         num = _house_number_from_description(description, addr)
         if num:
             result["description_house_number"] = num
+
+
+def _extract_og_image(html: str) -> Optional[str]:
+    """Pull the portal's own og:image URL out of the listing HTML (both
+    attribute orders). Used for share-page previews; None when absent."""
+    for pattern in (
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+    ):
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            url = m.group(1).strip()
+            if url.startswith("http"):
+                return url
+    return None
 
 
 def scrape_rightmove(url: str) -> dict:
@@ -673,6 +756,7 @@ def scrape_rightmove(url: str) -> dict:
     html = _fetch_html(url, referer="https://www.rightmove.co.uk/")
     if not html:
         return result
+    result["main_photo_url"] = _extract_og_image(html)
 
     model = _parse_rightmove_page_model(html)
     if model:
@@ -930,6 +1014,7 @@ def scrape_zoopla(url: str) -> dict:
     html = _fetch_html(url, referer="https://www.zoopla.co.uk/")
     if not html:
         return result
+    result["main_photo_url"] = _extract_og_image(html)
 
     next_match = re.search(
         r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',

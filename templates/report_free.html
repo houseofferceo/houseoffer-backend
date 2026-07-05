@@ -4,7 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Your Free Property Report — HouseOffer</title>
-<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<meta property="og:title" content="Property report — {{ address or postcode }}">
+<meta property="og:description" content="Independent valuation of this property, backed by real HM Land Registry sold data. See if the asking price is fair — free.">
+<meta property="og:image" content="{{ main_photo_url|default('https://houseoffer.uk/og-image.png', true) }}">
+<meta property="og:type" content="website">
+{% if report_url is defined and report_url %}<meta property="og:url" content="{{ report_url }}">{% endif %}
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -12,208 +17,256 @@
   --ink: #1e1c18; --ink-mid: #5c5849; --ink-light: #9b9488;
   --teal: #1a6b5a; --teal-mid: #238f77; --teal-light: #e3f4ef; --teal-border: #b8dfd5;
   --amber: #c06a1a; --amber-light: #fdf0e3; --amber-border: #f0c98a;
-  --red: #b83232; --red-light: #fdf0f0; --white: #ffffff;
-  --shadow-sm: 0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);
-  --radius: 14px;
+  --red: #b83232; --red-light: #fdf0f0;
+  --purple: #7a8fd0; --purple-light: #eaedf9; --purple-border: #b9c4e8;
+  --white: #ffffff; --radius: 14px;
+  --shadow: 0 2px 16px rgba(30,28,24,0.08);
 }
-body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; min-height: 100vh; }
-nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--sand-border); padding: 0 24px; position: sticky; top: 0; z-index: 100; }
-.nav-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 58px; gap: 12px; }
-.logo { font-family: 'Lora', serif; font-size: 20px; font-weight: 700; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 8px; }
-.logo-mark { width: 28px; height: 28px; flex-shrink: 0; }
-.nav-tag { font-size: 12px; font-weight: 600; color: var(--teal); background: var(--teal-light); border: 1px solid var(--teal-border); padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
-.nav-share { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.nav-share-label { font-size: 11.5px; color: var(--ink-light); white-space: nowrap; }
-.nav-share-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; text-decoration: none; border: 1px solid var(--sand-border); background: var(--white); color: var(--ink-mid); cursor: pointer; white-space: nowrap; }
+body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; font-size: 14px; }
+.val-number, .report-address, .verdict-headline, .crowd-title, .lock-title, .upg-price, .val-asking-number, .upgrade-title, .dom-headline, .ammo-headline { font-family: 'Lora', serif; }
+
+nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-border); padding: 0 24px; position: sticky; top: 0; z-index: 100; }
+.nav-inner { max-width: 700px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 54px; }
+.logo { font-size: 18px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+.logo-mark { width: 26px; height: 26px; flex-shrink: 0; }
+.nav-tag { font-size: 11px; font-weight: 600; color: var(--teal); background: var(--teal-light); border: 1px solid var(--teal-border); padding: 3px 10px; border-radius: 20px; }
+.nav-right { display: flex; align-items: center; gap: 7px; }
+.nav-share-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 20px; text-decoration: none; border: 1px solid var(--sand-border); background: var(--white); color: var(--ink-mid); cursor: pointer; white-space: nowrap; font-family: inherit; }
 .nav-share-btn:hover { border-color: var(--teal-border); color: var(--teal); }
-@media (max-width: 480px) { .nav-share-label { display: none; } }
-.wrapper { max-width: 720px; margin: 0 auto; padding: 36px 24px 80px; }
+.nav-share-btn.whatsapp { background: #25D366; border-color: #25D366; color: #fff; }
+.nav-share-btn.whatsapp:hover { background: #1eb457; color: #fff; }
+@media (max-width: 560px) { .nav-tag { display: none; } }
 
-.report-header { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 28px 28px 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
-.report-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; display: flex; align-items: center; gap: 7px; }
-.report-label-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal-mid); animation: pulse 2s infinite; }
+.wrapper { max-width: 700px; margin: 0 auto; padding: 28px 20px 80px; display: flex; flex-direction: column; gap: 14px; }
+
+.report-header { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow); }
+.report-label { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--teal-mid); animation: pulse 2s infinite; display: inline-block; }
 @keyframes pulse { 0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.5;transform:scale(0.85);} }
-.report-address { font-family: 'Lora', serif; font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.25; margin-bottom: 6px; }
-.report-sub { font-size: 14px; color: var(--ink-mid); margin-bottom: 20px; }
-.report-meta { display: flex; flex-wrap: wrap; gap: 8px; }
-.meta-pill { display: flex; align-items: center; gap: 5px; background: var(--sand); border: 1px solid var(--sand-border); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 500; color: var(--ink-mid); }
+.report-address { font-size: 20px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+.report-sub { font-size: 13px; color: var(--ink-mid); margin-bottom: 14px; }
+.meta-pills { display: flex; flex-wrap: wrap; gap: 7px; }
+.pill { background: var(--sand); border: 1px solid var(--sand-border); border-radius: 7px; padding: 5px 11px; font-size: 12px; font-weight: 500; color: var(--ink-mid); }
 
-/* VERDICT CARD */
-.verdict-card { border-radius: var(--radius); padding: 24px 28px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1.5px solid; }
-.verdict-card.overpriced { background: var(--red-light); border-color: #e8b4b4; }
-.verdict-card.fair { background: var(--amber-light); border-color: var(--amber-border); }
-.verdict-card.value { background: var(--teal-light); border-color: var(--teal-border); }
-.verdict-card.unknown { background: var(--sand-dark); border-color: var(--sand-border); }
-.verdict-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
-.verdict-card.overpriced .verdict-eyebrow { color: var(--red); }
-.verdict-card.fair .verdict-eyebrow { color: var(--amber); }
-.verdict-card.value .verdict-eyebrow, .verdict-card.unknown .verdict-eyebrow { color: var(--teal); }
-.verdict-headline { font-family: 'Lora', serif; font-size: 26px; font-weight: 700; line-height: 1.2; margin-bottom: 10px; }
-.verdict-card.overpriced .verdict-headline { color: var(--red); }
-.verdict-card.fair .verdict-headline { color: var(--amber); }
-.verdict-card.value .verdict-headline, .verdict-card.unknown .verdict-headline { color: var(--teal); }
-.verdict-body { font-size: 14.5px; color: var(--ink-mid); line-height: 1.65; }
+/* A: VALUATION + HOOK */
+.valuation-card { background: var(--white); border: 1.5px solid var(--teal-border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+.val-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 12px; }
+.val-main { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; margin-bottom: 16px; }
+.val-our { flex: 1; min-width: 160px; }
+.val-label { font-size: 11px; color: var(--ink-light); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 2px; }
+.val-number { font-size: 40px; font-weight: 700; color: var(--teal); line-height: 1; margin-bottom: 4px; }
+.val-range { font-size: 13px; color: var(--ink-mid); }
+.val-asking { flex: 1; min-width: 140px; padding-left: 28px; border-left: 1px solid var(--sand-border); }
+.val-asking-number { font-size: 28px; font-weight: 600; color: var(--ink-mid); line-height: 1; margin-bottom: 6px; }
+.diff-badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 6px; }
+.diff-over { background: #fdf0e3; color: #b0561a; }
+.diff-under { background: var(--teal-light); color: var(--teal); }
+.diff-fair { background: var(--amber-light); color: var(--amber); }
 
-/* ANCHOR BIAS CALLOUT */
-.anchor-card { background: var(--amber-light); border: 1.5px solid var(--amber-border); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 20px; }
-.anchor-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber); margin-bottom: 6px; }
-.anchor-headline { font-family: 'Lora', serif; font-size: 17px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
-.anchor-body { font-size: 14px; color: var(--ink-mid); line-height: 1.65; }
+.hook-line { border-radius: 10px; padding: 14px 18px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; background: linear-gradient(90deg, #fdf6e3, #fdf0e3); border: 1px solid var(--amber-border); }
+.hook-icon { font-size: 22px; flex-shrink: 0; }
+.hook-text { font-size: 14.5px; font-weight: 600; line-height: 1.4; color: #8a5416; }
+.hook-text .num { font-weight: 800; color: var(--amber); }
 
-.section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 12px; margin-top: 4px; }
+.confidence-row { display: flex; align-items: center; gap: 10px; padding-top: 14px; border-top: 1px solid var(--sand-border); flex-wrap: wrap; }
+.conf-badge { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+.conf-badge.confidence-high { background: var(--teal-light); color: var(--teal); border-color: var(--teal-border); }
+.conf-badge.confidence-medium { background: var(--amber-light); color: var(--amber); border-color: var(--amber-border); }
+.conf-badge.confidence-low { background: var(--red-light); color: var(--red); border-color: #e8b4b4; }
+.conf-reason { font-size: 12.5px; color: var(--ink-mid); flex: 1; min-width: 140px; }
+.conf-addr-btn { font-size: 12px; font-weight: 600; color: var(--teal); background: var(--teal-light); border: 1px solid var(--teal-border); padding: 5px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 5px; font-family: inherit; }
+.conf-addr-btn:hover { background: var(--teal-border); }
 
-/* BEFORE / AFTER DATA CARDS */
-.data-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 6px; }
-.data-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 20px 22px; box-shadow: var(--shadow-sm); position: relative; }
-.data-card.before { border-top: 3px solid #e8b4b4; }
-.data-card.after { border-top: 3px solid var(--teal-border); }
-.data-card-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 6px; }
-.data-card-value { font-family: 'Lora', serif; font-size: 24px; font-weight: 700; color: var(--ink); margin-bottom: 4px; line-height: 1.1; }
-.data-card-sub { font-size: 12.5px; color: var(--ink-mid); line-height: 1.5; }
-.data-card-sub strong { color: var(--ink); font-weight: 600; }
-.diff-badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; margin-top: 6px; }
-.diff-badge.over { background: var(--red-light); color: var(--red); }
-.diff-badge.under { background: var(--teal-light); color: var(--teal); }
-.diff-badge.fair { background: var(--amber-light); color: var(--amber); }
-.ba-arrow { text-align: center; font-size: 22px; color: var(--ink-light); margin-bottom: 14px; line-height: 1; }
+/* ADDRESS MODAL */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(30,28,24,0.45); z-index: 200; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--white); border-radius: var(--radius); padding: 28px; max-width: 460px; width: calc(100% - 40px); box-shadow: 0 8px 40px rgba(30,28,24,0.18); max-height: 85vh; overflow-y: auto; }
+.modal-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.modal-sub { font-size: 13px; color: var(--ink-mid); margin-bottom: 18px; line-height: 1.6; }
+.modal-match { background: var(--sand); border: 1px solid var(--sand-border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+.modal-match-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-light); margin-bottom: 4px; }
+.modal-match-val { font-size: 14px; font-weight: 600; }
+.modal-input, .modal-select { width: 100%; border: 1.5px solid var(--sand-border); border-radius: 9px; padding: 10px 14px; font-size: 14px; outline: none; margin-bottom: 12px; font-family: inherit; }
+.modal-btns { display: flex; gap: 10px; }
+.btn-confirm { flex: 1; background: var(--teal); color: white; border: none; border-radius: 9px; padding: 11px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.btn-cancel { background: var(--sand); color: var(--ink-mid); border: 1px solid var(--sand-border); border-radius: 9px; padding: 11px 16px; cursor: pointer; font-family: inherit; }
 
-.source-note { font-size: 12px; color: var(--ink-light); background: var(--sand-dark); border-radius: 8px; padding: 8px 14px; margin-bottom: 24px; display: flex; align-items: center; gap: 6px; }
+/* B: VERDICT */
+.verdict-card { border-radius: var(--radius); padding: 20px 24px; box-shadow: var(--shadow); border: 1.5px solid; }
+.v-over { background: var(--red-light); border-color: #e8b4b4; }
+.v-fair { background: var(--amber-light); border-color: var(--amber-border); }
+.v-val { background: var(--teal-light); border-color: var(--teal-border); }
+.v-unknown { background: var(--sand-dark); border-color: var(--sand-border); }
+.verdict-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
+.verdict-headline { font-size: 21px; font-weight: 700; line-height: 1.25; margin-bottom: 8px; }
+.v-over .verdict-eyebrow, .v-over .verdict-headline { color: var(--red); }
+.v-fair .verdict-eyebrow, .v-fair .verdict-headline { color: var(--amber); }
+.v-val .verdict-eyebrow, .v-val .verdict-headline, .v-unknown .verdict-eyebrow, .v-unknown .verdict-headline { color: var(--teal); }
+.verdict-body { font-size: 13.5px; color: var(--ink-mid); line-height: 1.65; }
 
-.dom-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 20px; box-shadow: var(--shadow-sm); display: flex; align-items: flex-start; gap: 16px; }
-.dom-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; background: var(--amber-light); }
-.dom-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
-.dom-body { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; }
+/* C: CROWD VOTING */
+.crowd-card { background: linear-gradient(155deg, #ffffff, #faf7ff); border: 1.5px solid var(--purple-border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+.crowd-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; }
+.crowd-title { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 6px; line-height: 1.3; }
+.crowd-sub { font-size: 13px; color: var(--ink-mid); margin-bottom: 18px; line-height: 1.55; }
+.anchor-note { display: flex; gap: 10px; align-items: flex-start; background: #fdf6e3; border: 1px solid var(--amber-border); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; color: #6b4a12; line-height: 1.55; }
+.anchor-note-icon { font-size: 15px; flex-shrink: 0; }
+.anchor-note strong { color: var(--ink); }
+.crowd-input-row { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.crowd-input { flex: 1; min-width: 160px; border: 1.5px solid var(--purple-border); border-radius: 10px; padding: 12px 16px; font-size: 16px; font-weight: 600; outline: none; font-family: inherit; background: white; }
+.crowd-input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(122,143,208,0.15); }
+.crowd-submit { background: var(--purple); color: white; border: none; border-radius: 10px; padding: 12px 22px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.crowd-submit:hover { background: #5f74b8; }
 
-/* ─── BRIDGE SECTION (new) ─── */
-.bridge-section { border-radius: var(--radius); padding: 24px 28px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1.5px solid; }
-.bridge-section.overpriced { background: #fff8f8; border-color: #e8b4b4; }
-.bridge-section.fair      { background: var(--amber-light); border-color: var(--amber-border); }
-.bridge-section.value     { background: var(--teal-light); border-color: var(--teal-border); }
-.bridge-section.unknown   { background: var(--sand-dark); border-color: var(--sand-border); }
-.bridge-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
-.bridge-section.overpriced .bridge-eyebrow { color: var(--red); }
-.bridge-section.fair      .bridge-eyebrow { color: var(--amber); }
-.bridge-section.value     .bridge-eyebrow { color: var(--teal); }
-.bridge-section.unknown   .bridge-eyebrow { color: var(--ink-light); }
-.bridge-headline { font-family: 'Lora', serif; font-size: 19px; font-weight: 700; color: var(--ink); margin-bottom: 10px; line-height: 1.3; }
-.bridge-body { font-size: 14px; color: var(--ink-mid); line-height: 1.7; }
-.bridge-body strong { color: var(--ink); }
-.bridge-body p { margin-bottom: 12px; }
-.bridge-body p:last-child { margin-bottom: 0; }
-.bridge-body em { color: var(--ink); font-style: italic; }
-.bridge-weapons { list-style: none; margin: 10px 0 14px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.bridge-weapons li { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; padding: 10px 14px; background: rgba(255,255,255,0.6); border-radius: 8px; border-left: 3px solid currentColor; }
-.bridge-section.overpriced .bridge-weapons li { border-color: #e8b4b4; }
-.bridge-section.fair      .bridge-weapons li { border-color: var(--amber-border); }
-.bridge-section.value     .bridge-weapons li { border-color: var(--teal-border); }
-.bridge-section.unknown   .bridge-weapons li { border-color: var(--sand-border); }
+.crowd-results { display: none; }
+.crowd-results.show { display: block; }
+.crowd-chart { position: relative; height: 64px; background: var(--sand); border-radius: 10px; margin-bottom: 14px; overflow: visible; }
+.crowd-track { position: absolute; top: 26px; left: 20px; right: 20px; height: 4px; background: var(--sand-border); border-radius: 2px; }
+.crowd-mkr { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.crowd-mkr-label { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; color: white; white-space: nowrap; margin-bottom: 20px; }
+.crowd-mkr-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; position: absolute; top: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
 
-/* ─── LOCKED SECTIONS (improved) ─── */
-.locked-section { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
-.locked-header { padding: 18px 24px 14px; border-bottom: 1px solid var(--sand-border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.locked-header-left { flex: 1; min-width: 0; }
-.locked-header-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 3px; }
-.locked-header-title { font-family: 'Lora', serif; font-size: 16px; font-weight: 600; color: var(--ink); }
-.locked-price-badge { background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
-.locked-price-badge.premium { background: var(--teal); }
-.locked-body { position: relative; overflow: hidden; }
-.locked-blur { padding: 20px 24px; filter: blur(4px); pointer-events: none; user-select: none; opacity: 0.7; }
+.crowd-feed { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.feed-row { display: flex; align-items: center; gap: 10px; background: white; border: 1px solid var(--sand-border); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; animation: slideIn 0.3s ease; }
+@keyframes slideIn { from { opacity:0; transform: translateY(-6px);} to {opacity:1; transform:translateY(0);} }
+.feed-avatar { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: white; flex-shrink: 0; }
+.feed-name { font-weight: 600; color: var(--ink); flex: 1; }
+.feed-val { font-weight: 700; color: var(--purple); }
 
-/* Range teaser (replaces ███ blocks) */
-.range-teaser { padding: 20px 24px 16px; }
-.range-bar-wrap { margin-bottom: 18px; }
-.range-bar-labels { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 8px; }
-.range-bar-track { height: 12px; background: var(--sand-dark); border-radius: 6px; position: relative; }
-.range-bar-fill { position: absolute; top: 0; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--teal-light), var(--teal-mid)); left: 12%; right: 18%; }
-.range-bar-pin { position: absolute; top: -7px; width: 26px; height: 26px; border-radius: 50%; background: var(--teal); border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.2); left: calc(48% - 13px); }
-.range-values { display: flex; justify-content: space-between; margin-top: 10px; }
-.range-val { text-align: center; }
-.range-val-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-light); font-weight: 600; margin-bottom: 2px; }
-.range-val-num { font-family: 'Lora', serif; font-size: 18px; font-weight: 700; color: var(--ink); }
-.range-val-num.target { color: var(--teal); font-size: 22px; }
-.range-val-num.blurred { filter: blur(6px); user-select: none; letter-spacing: 0.05em; }
-.range-hint { font-size: 12.5px; color: var(--ink-mid); line-height: 1.55; background: var(--sand); border-radius: 8px; padding: 10px 14px; margin-top: 4px; }
-.range-hint strong { color: var(--ink); }
+.share-btn { width: 100%; background: var(--purple); border: none; color: white; border-radius: 10px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; }
+.share-btn:hover { background: #5f74b8; }
 
-/* FOOTBALL FIELD (blurred version in lock) */
-.ff-wrapper { padding: 4px 0 16px; }
-.ff-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-light); margin-bottom: 6px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
-.ff-track { height: 12px; background: var(--sand-dark); border-radius: 6px; position: relative; margin-bottom: 8px; }
-.ff-fill { position: absolute; top: 0; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--teal-light), var(--teal-mid)); left: 12%; right: 18%; }
-.ff-pin { position: absolute; top: -8px; width: 26px; height: 26px; border-radius: 50%; background: var(--teal); border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.2); left: 48%; }
-.ff-values { display: flex; justify-content: space-between; font-size: 13px; }
-.ff-val { font-family: 'Lora', serif; font-weight: 700; color: var(--ink); }
-.ff-val.center { color: var(--teal); font-size: 15px; }
-.ff-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
-.ff-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sand-dark); flex-shrink: 0; }
-.ff-line { height: 10px; border-radius: 3px; background: var(--sand-dark); }
+.crowd-avg-strip { background: var(--purple-light); border: 1px solid var(--purple-border); border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+.crowd-avg-label { font-size: 12px; color: var(--ink-mid); }
+.crowd-avg-val { font-size: 18px; font-weight: 700; color: var(--purple); }
 
-/* NEGOTIATION EMAIL PREVIEW */
-.email-preview { background: var(--sand); border: 1px solid var(--sand-border); border-radius: 8px; padding: 14px 16px; }
-.email-header-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--sand-border); }
-.email-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--teal-mid); flex-shrink: 0; }
-.email-meta { flex: 1; }
-.email-from { height: 8px; border-radius: 3px; background: var(--sand-dark); width: 120px; margin-bottom: 4px; }
-.email-subject { height: 8px; border-radius: 3px; background: var(--sand-dark); width: 200px; }
-.email-body-line { height: 8px; border-radius: 3px; background: var(--sand-dark); margin-bottom: 8px; }
-.strategy-steps { margin-top: 12px; }
-.strategy-step { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--teal-light); flex-shrink: 0; }
-.step-line { height: 9px; border-radius: 3px; background: var(--sand-dark); flex: 1; }
+.crowd-paid-hook { background: var(--ink); border-radius: 10px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.crowd-paid-icon { font-size: 20px; }
+.crowd-paid-text { flex: 1; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.5; }
+.crowd-paid-text strong { color: white; }
 
-/* LOCK OVERLAY */
-.lock-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(247,243,237,0.75); backdrop-filter: blur(3px); padding: 16px; }
-.lock-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--ink); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
-.lock-text { font-size: 14px; font-weight: 600; color: var(--ink); text-align: center; }
-.lock-sub { font-size: 12.5px; color: var(--ink-mid); text-align: center; max-width: 260px; line-height: 1.5; }
-.lock-btn { background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 10px 24px; border-radius: 20px; text-decoration: none; margin-top: 4px; display: inline-block; }
-.lock-btn.teal { background: var(--teal); }
+/* AMMUNITION BOX */
+.ammo-card { background: var(--white); border: 1.5px solid var(--sand-border); border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow); }
+.ammo-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 8px; }
+.ammo-headline { font-size: 16.5px; font-weight: 700; color: var(--ink); margin-bottom: 14px; line-height: 1.35; }
+.ammo-list { list-style: none; display: flex; flex-direction: column; gap: 9px; margin-bottom: 14px; }
+.ammo-list li { font-size: 13px; color: var(--ink-mid); line-height: 1.6; background: var(--sand); border-radius: 8px; padding: 10px 14px; border-left: 3px solid var(--teal-border); }
+.ammo-list li strong { color: var(--ink); }
+.ammo-close { font-size: 13px; color: var(--ink-mid); line-height: 1.65; padding-top: 12px; border-top: 1px solid var(--sand-border); }
 
-/* ─── UPGRADE SECTION (improved) ─── */
-.upgrade-section { margin-bottom: 20px; }
-.upgrade-intro { font-size: 14px; color: var(--ink-mid); line-height: 1.65; margin-bottom: 16px; padding: 16px 20px; background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
-.upgrade-intro strong { color: var(--ink); }
+/* D: FOOTBALL FIELD — labels visible, bars/numbers blurred */
+.locked-ff { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.locked-ff-header { padding: 16px 22px 13px; border-bottom: 1px solid var(--sand-border); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.locked-ff-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 4px; }
+.locked-ff-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+.locked-ff-body { padding: 18px 22px 20px; }
+.ff-row-clear { display: flex; align-items: center; gap: 14px; margin-bottom: 11px; position: relative; }
+.ff-row-clear.ff-behind { opacity: 0.5; }
+.ff-label-clear { font-size: 12.5px; color: var(--ink-mid); width: 150px; flex-shrink: 0; text-align: right; font-weight: 500; }
+.ff-fake-track { flex: 1; height: 20px; background: var(--sand-dark); border-radius: 4px; position: relative; overflow: hidden; }
+.ff-fake-fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #b8dfd5, var(--teal-mid)); }
+.ff-fake-fill.ff-muted { background: linear-gradient(90deg, #e3d5c4, #c9a98a); }
+.ff-blur-only { filter: blur(5px); }
+.ff-fig { font-size: 12.5px; font-weight: 700; color: var(--teal); width: 70px; flex-shrink: 0; font-family: 'Lora', serif; }
+.ff-fig.muted { color: #8a6a1f; }
+.ff-asking-figure { font-size: 13px; font-weight: 700; color: var(--red); width: 70px; flex-shrink: 0; }
+.locked-ff-overlay-inline { text-align: center; padding: 22px 20px; margin: 6px 0 18px; position: relative; }
+.lock-icon { font-size: 26px; margin-bottom: 8px; }
+.lock-title { font-size: 17px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.lock-sub { font-size: 13px; color: var(--ink-mid); line-height: 1.55; margin-bottom: 16px; max-width: 360px; margin-left: auto; margin-right: auto; }
+.lock-cta { display: inline-block; background: var(--teal); color: white; border: none; border-radius: 24px; padding: 12px 30px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
+.lock-cta:hover { background: var(--teal-mid); }
+.ff-fake-offer-strip { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--sand-border); border: 1px solid var(--sand-border); border-radius: 10px; overflow: hidden; margin-top: 16px; }
+.ff-fake-offer-cell { background: var(--sand); text-align: center; padding: 14px 10px; }
+.ff-fake-offer-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-light); margin-bottom: 4px; }
+.ff-fake-offer-val { font-size: 17px; font-weight: 700; color: var(--ink); filter: blur(5px); user-select: none; }
+.comp-table-wrap { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--sand-border); }
+.comp-table-title-row { font-size: 12.5px; font-weight: 700; color: var(--ink); margin-bottom: 10px; }
+.comp-table-mini { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.comp-table-mini th { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-light); padding: 6px 10px; text-align: left; background: var(--sand); }
+.comp-table-mini td { padding: 8px 10px; border-bottom: 1px solid var(--sand-border); color: var(--ink-mid); }
+.comp-table-mini td:last-child { font-weight: 700; color: var(--ink); font-family: 'Lora', serif; }
+.comp-table-mini tr.comp-blur td { filter: blur(4px); user-select: none; pointer-events: none; }
+.ff-source-note { font-size: 11px; color: var(--ink-light); text-align: center; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--sand-border); line-height: 1.6; }
+
+/* E: DOM / EFFICIENT FRONTIER */
+.dom-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow); }
+.dom-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); margin-bottom: 10px; }
+.dom-headline { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 10px; line-height: 1.3; }
+.frontier-track { position: relative; height: 8px; background: linear-gradient(90deg, var(--teal-light), var(--amber-light), var(--red-light)); border-radius: 4px; margin: 22px 10px 8px; }
+.frontier-mkr { position: absolute; top: -22px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.frontier-mkr-label { font-size: 10px; font-weight: 700; color: var(--ink); white-space: nowrap; margin-bottom: 2px; }
+.frontier-mkr-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--amber); border: 3px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.2); margin-top: -3px; }
+.frontier-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-light); margin: 0 10px 14px; }
+.dom-body { font-size: 13.5px; color: var(--ink-mid); line-height: 1.65; margin-bottom: 16px; }
+.dom-body strong { color: var(--ink); }
+.leverage-strip { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; background: var(--amber-light); border: 1px solid var(--amber-border); border-radius: 10px; padding: 14px 16px; }
+.leverage-cell { text-align: center; }
+.leverage-cell-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-light); margin-bottom: 3px; }
+.leverage-cell-val { font-size: 16px; font-weight: 700; color: var(--ink); }
+.leverage-cell-was { font-size: 10.5px; color: var(--ink-light); text-decoration: line-through; }
+.leverage-blur { filter: blur(5px); user-select: none; }
+.leverage-arrow { font-size: 18px; color: var(--amber); }
+.leverage-note { font-size: 11.5px; color: var(--ink-mid); text-align: center; margin-top: 10px; line-height: 1.5; }
+.leverage-note strong { color: var(--amber); }
+.leverage-note a { color: var(--teal); font-weight: 700; }
+
+/* UPGRADE */
+.upgrade-section { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+.upgrade-title { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+.upgrade-sub { font-size: 13.5px; color: var(--ink-mid); margin-bottom: 18px; line-height: 1.6; }
 .upgrade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.upgrade-card { border-radius: var(--radius); padding: 24px 20px; }
-.upgrade-card.report { background: var(--ink); }
-.upgrade-card.playbook { background: var(--teal); }
-.upgrade-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.6); margin-bottom: 6px; }
-.upgrade-title { font-family: 'Lora', serif; font-size: 18px; font-weight: 700; color: white; margin-bottom: 6px; }
-.upgrade-price-big { font-family: 'Lora', serif; font-size: 32px; font-weight: 700; color: white; margin-bottom: 8px; line-height: 1; }
-.upgrade-body { font-size: 13px; color: rgba(255,255,255,0.75); line-height: 1.55; margin-bottom: 16px; }
-.upgrade-features { text-align: left; margin-bottom: 16px; }
-.upgrade-feature { font-size: 12.5px; color: rgba(255,255,255,0.85); margin-bottom: 5px; display: flex; align-items: flex-start; gap: 6px; }
-.upgrade-feature::before { content: "✓"; font-weight: 700; flex-shrink: 0; color: white; }
-.btn-upgrade { display: block; background: white; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 14px; font-weight: 700; padding: 12px 20px; border-radius: 10px; text-decoration: none; transition: transform 0.1s; box-shadow: 0 4px 16px rgba(0,0,0,0.2); text-align: center; }
-.btn-upgrade.report { color: var(--ink); }
-.btn-upgrade.playbook { color: var(--teal); }
-.btn-upgrade:hover { transform: translateY(-1px); }
-.upgrade-note { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 8px; text-align: center; }
+.upgrade-card { border: 1.5px solid var(--sand-border); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px; min-height: 320px; }
+.upgrade-card.u-report { background: linear-gradient(155deg, var(--teal-light), #d3ece4); border-color: var(--teal-border); }
+.upgrade-card.u-playbook { background: linear-gradient(155deg, var(--teal), #145346); border-color: var(--teal); }
+.upg-eye { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.u-report .upg-eye { color: var(--teal); }
+.u-playbook .upg-eye { color: rgba(255,255,255,0.5); }
+.upg-price { font-size: 32px; font-weight: 700; }
+.u-report .upg-price { color: var(--ink); }
+.u-playbook .upg-price { color: white; }
+.upg-desc { font-size: 13px; line-height: 1.55; flex: 1; }
+.u-report .upg-desc { color: var(--ink-mid); }
+.u-playbook .upg-desc { color: rgba(255,255,255,0.7); }
+.upg-feats { display: flex; flex-direction: column; gap: 5px; }
+.upg-feat { font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+.u-report .upg-feat { color: var(--ink-mid); }
+.u-playbook .upg-feat { color: rgba(255,255,255,0.8); }
+.upg-feat::before { content: '✓'; font-weight: 700; }
+.u-report .upg-feat::before { color: var(--teal); }
+.u-playbook .upg-feat::before { color: rgba(255,255,255,0.5); }
+.btn-upg { display: block; text-align: center; border: none; border-radius: 9px; padding: 11px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; margin-top: auto; }
+.btn-upg.u-report { background: var(--teal); color: white; }
+.btn-upg.u-playbook { background: white; color: var(--ink); }
+.upg-note { text-align: center; font-size: 11px; }
+.u-report .upg-note { color: var(--ink-light); }
+.u-playbook .upg-note { color: rgba(255,255,255,0.35); }
 
-.attribution { text-align: center; font-size: 12px; color: var(--ink-light); padding-top: 8px; }
-.attribution a { color: var(--ink-light); }
+.attr { text-align: center; font-size: 11px; color: var(--ink-light); line-height: 1.8; padding: 0 20px; }
+.attr a { color: var(--ink-light); }
 
-/* ─── MOBILE ─── */
+/* NEW-BUILD NOTICE */
+.newbuild-card { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 10px; padding: 16px 20px; }
+
+/* MOBILE */
 @media (max-width: 560px) {
-  .wrapper { padding: 20px 16px 80px; }
-  .data-row { grid-template-columns: 1fr; }
+  .wrapper { padding: 20px 14px 80px; }
   .report-address { font-size: 18px; }
-  .report-header { padding: 20px 18px; }
-  .verdict-card { padding: 20px 18px; }
-  .verdict-headline { font-size: 22px; }
-  .bridge-section { padding: 20px 18px; }
-  .anchor-card { padding: 18px 18px; }
+  .val-number { font-size: 32px; }
+  .val-asking { padding-left: 0; border-left: none; }
+  .verdict-headline { font-size: 19px; }
   .upgrade-grid { grid-template-columns: 1fr; }
-  .locked-header { flex-direction: column; align-items: flex-start; gap: 8px; }
-  .locked-price-badge { align-self: flex-start; }
-  /* Sticky CTA on mobile */
+  .upgrade-card { min-height: 0; }
+  .ff-label-clear { width: 108px; font-size: 11px; }
+  .leverage-strip { grid-template-columns: 1fr; }
+  .leverage-arrow { transform: rotate(90deg); }
   .mobile-sticky-cta { display: flex; }
 }
 @media (min-width: 561px) {
   .mobile-sticky-cta { display: none; }
 }
 .mobile-sticky-cta {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 150;
   padding: 12px 16px; gap: 10px;
   background: rgba(247,243,237,0.97); backdrop-filter: blur(12px);
   border-top: 1px solid var(--sand-border);
@@ -222,23 +275,6 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .mobile-cta-btn { flex: 1; text-align: center; padding: 13px 10px; border-radius: 10px; font-size: 14px; font-weight: 700; text-decoration: none; }
 .mobile-cta-btn.report { background: var(--ink); color: white; }
 .mobile-cta-btn.playbook { background: var(--teal); color: white; }
-
-/* ─── COMPARABLE TABLE ─── */
-.comp-table-section { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
-.comp-table-header { padding: 16px 22px 12px; border-bottom: 1px solid var(--sand-border); }
-.comp-table-title { font-size: 13px; font-weight: 600; color: var(--ink); }
-.comp-table-sub { font-size: 12px; color: var(--ink-light); margin-top: 2px; }
-.comp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.comp-table th { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-light); padding: 8px 16px; text-align: left; background: var(--sand); border-bottom: 1px solid var(--sand-border); }
-.comp-table td { padding: 9px 16px; border-bottom: 1px solid var(--sand-border); color: var(--ink-mid); vertical-align: middle; }
-.comp-table tr:last-child td { border-bottom: none; }
-.comp-table td.price { font-family: 'Lora', serif; font-weight: 600; color: var(--ink); }
-.comp-table td.date { color: var(--ink-light); font-size: 12px; white-space: nowrap; }
-.comp-table tr.blurred td { filter: blur(2.5px); user-select: none; pointer-events: none; }
-.comp-table-footer { padding: 14px 22px 16px; border-top: 1px solid var(--sand-border); text-align: center; }
-.comp-table-cta { display: inline-block; background: var(--ink); color: white; font-size: 13px; font-weight: 700; padding: 10px 22px; border-radius: 20px; text-decoration: none; margin-bottom: 8px; }
-.comp-table-cta:hover { background: var(--teal); }
-.comp-table-hint { font-size: 12px; color: var(--ink-light); }
 </style>
 </head>
 <body>
@@ -246,46 +282,86 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 <!-- MOBILE STICKY CTA -->
 <div class="mobile-sticky-cta">
   <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="mobile-cta-btn report">Report — £29</a>
-  <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="mobile-cta-btn playbook">Playbook — £49</a>
+  <a href="https://houseoffer-backend.onrender.com/track?tier=99&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="mobile-cta-btn playbook">Playbook — £99</a>
 </div>
+
+<!-- ADDRESS CONFIRMATION MODAL -->
+{% if report_id is defined and report_id %}
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title">📍 Confirm your property address</div>
+    <div class="modal-sub">We matched your Rightmove link to the address below. Confirming helps us find the exact Land Registry record and improve your valuation accuracy.</div>
+    <div class="modal-match">
+      <div class="modal-match-label">We matched</div>
+      <div class="modal-match-val">{{ resolved_address or address or postcode }}</div>
+    </div>
+
+    {% if last_sale_candidates %}
+    <div style="font-size:12px;color:var(--ink-light);margin-bottom:8px;">Is it one of these sold properties at the same postcode?</div>
+    <form method="get" action="/r/{{ report_id }}/select-address">
+      <select name="address" class="modal-select">
+        <option value="" disabled selected>Select your property…</option>
+        {% for c in last_sale_candidates %}
+        <option value="{{ c.address }}">{{ c.address }}{% if c.last_date %} · sold {{ c.last_date[:7] }}{% endif %}{% if c.last_price %} · £{{ "{:,}".format(c.last_price) }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-confirm" style="width:100%;margin-bottom:14px;">Use selected address</button>
+    </form>
+    {% endif %}
+
+    <div style="font-size:12px;color:var(--ink-light);margin-bottom:8px;">Not right? Correct it below:</div>
+    <input class="modal-input" id="corrected-address" type="text" placeholder="e.g. Flat 3, 14 Elmwood Avenue, {{ postcode }}">
+    <div class="modal-btns">
+      <button class="btn-confirm" onclick="HO.confirmAddress()">✓ Confirm — improve accuracy</button>
+      <button class="btn-cancel" onclick="HO.closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <nav>
   <div class="nav-inner">
-    <a href="https://houseoffer.netlify.app" class="logo">
-      <!-- HouseOffer logo mark: house silhouette with teal roof -->
-      <svg class="logo-mark" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect width="28" height="28" rx="7" fill="#1a6b5a"/>
-        <path d="M14 6L5 13.5V22h5.5v-5h7v5H23V13.5L14 6Z" fill="white"/>
-        <rect x="11.5" y="17" width="5" height="5" rx="1" fill="#1a6b5a"/>
+    <div class="logo">
+      <svg class="logo-mark" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="56" y="0" width="14" height="22" rx="2" fill="#c9dfd8"/>
+        <polygon points="44,6 84,30 4,30" fill="#b8dfd5"/>
+        <polygon points="44,6 84,30 84,78 4,78 4,30" fill="#1a6b5a"/>
+        <rect x="8" y="36" width="20" height="18" rx="2" fill="#238f77"/>
+        <rect x="60" y="36" width="20" height="18" rx="2" fill="#238f77"/>
+        <rect x="31" y="48" width="26" height="30" rx="3" fill="#e3f4ef"/>
+        <circle cx="70" cy="16" r="17" fill="#e3f4ef" stroke="#1a6b5a" stroke-width="2"/>
+        <text x="70" y="23" text-anchor="middle" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#1a6b5a">£</text>
       </svg>
       HouseOffer
-    </a>
-    <span class="nav-tag">Free Report</span>
-    <div class="nav-share">
-      <span class="nav-share-label">Share this tool</span>
-      <a href="https://wa.me/?text=Free%20tool%20to%20check%20if%20a%20property%20is%20overpriced%20%E2%80%94%20uses%20real%20Land%20Registry%20data%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" class="nav-share-btn">WhatsApp</a>
-      <button onclick="navigator.clipboard.writeText('https://houseoffer.uk');this.textContent='Copied!';" class="nav-share-btn">Copy link</button>
+    </div>
+    <div class="nav-right">
+      {% if report_id is defined and report_id %}
+      <a class="nav-share-btn whatsapp" href="https://wa.me/?text={{ ("I ran this property through HouseOffer — free report with real Land Registry data: " ~ (report_url|default('https://houseoffer.uk', true)))|urlencode }}" target="_blank" rel="noopener">WhatsApp</a>
+      <button class="nav-share-btn" onclick="HO.copyReportLink(this)">🔗 Copy report link</button>
+      {% endif %}
+      <div class="nav-tag">Free Report</div>
     </div>
   </div>
 </nav>
 
 <div class="wrapper">
 
-  <!-- HEADER -->
+  <!-- 1. HEADER -->
   <div class="report-header">
-    <div class="report-label"><span class="report-label-dot"></span>Independent property analysis</div>
+    <div class="report-label"><span class="pulse"></span>HouseOffer Analysis</div>
     <div class="report-address">{{ address or postcode }}</div>
-    <div class="report-sub">{{ property_type|title if property_type else "Property type not stated" }} · {{ postcode }} · Generated {{ generated }}</div>
-    <div class="report-meta">
-      <div class="meta-pill">🏷️ Asking price: <strong>&nbsp;{{ asking_price_formatted }}</strong></div>
-      <div class="meta-pill">🏠 {{ property_type|title if property_type else "Type not stated" }}</div>
-      {% if bedrooms %}<div class="meta-pill">🛏️ {{ bedrooms }} bedrooms</div>{% endif %}
+    <div class="report-sub">Generated {{ generated }} · HM Land Registry sold data</div>
+    <div class="meta-pills">
+      <span class="pill">📍 {{ postcode }}</span>
+      <span class="pill">🏠 {{ property_type|title if property_type else "Type not stated" }}</span>
+      {% if bedrooms %}<span class="pill">🛏 {{ bedrooms }} bedrooms</span>{% endif %}
+      {% if floor_area_sqm %}<span class="pill">📐 {{ floor_area_sqm|round|int }} m²</span>{% endif %}
     </div>
   </div>
 
   <!-- NEW-BUILD NOTICE -->
   {% if is_new_build %}
-  <div style="background:#fffbeb; border:1px solid #f59e0b; border-radius:10px; padding:16px 20px; margin-bottom:20px;">
+  <div class="newbuild-card">
     <div style="font-weight:700; font-size:15px; color:#92400e; margin-bottom:10px;">🏗️ New build / recently developed</div>
     <p style="margin:0 0 12px; font-size:14px; color:#44403c;">This listing shows signs of being newly built or recently completed. That changes which valuation tools we can use:</p>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px;">
@@ -312,25 +388,81 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
-  <!-- ─── VERDICT ─── -->
-  <div class="verdict-card {{ verdict }}">
-    <div class="verdict-eyebrow">
-      {% if verdict == 'overpriced' %}⚠️ Our verdict
-      {% elif verdict == 'value' %}✅ Our verdict
-      {% elif verdict == 'fair' %}ℹ️ Our verdict
-      {% else %}ℹ️ Our verdict{% endif %}
+  <!-- A: VALUATION + HOOK -->
+  <div class="valuation-card">
+    <div class="val-eyebrow">Our valuation</div>
+    {% if weighted_midpoint %}
+    <div class="val-main">
+      <div class="val-our">
+        <div class="val-label">Estimated market value</div>
+        <div class="val-number">{{ weighted_midpoint_formatted }}</div>
+        <div class="val-range">Range: {{ weighted_low_formatted }} – {{ weighted_high_formatted }}</div>
+      </div>
+      <div class="val-asking">
+        <div class="val-label">Asking price</div>
+        <div class="val-asking-number">{{ asking_price_formatted }}</div>
+        {% set est_diff_pct = ((asking_price - weighted_midpoint) / weighted_midpoint * 100)|round|int %}
+        <span class="diff-badge {% if est_diff_pct > 0 %}diff-over{% elif est_diff_pct < 0 %}diff-under{% else %}diff-fair{% endif %}">
+          {% if est_diff_pct > 0 %}{{ est_diff_pct }}% above our estimate
+          {% elif est_diff_pct < 0 %}{{ est_diff_pct|abs }}% below our estimate
+          {% else %}In line with our estimate{% endif %}
+        </span>
+      </div>
     </div>
+
+    {# Opportunity hook — always amber: the gap is good news for the buyer whatever the verdict #}
+    {% set gap = asking_price - weighted_midpoint %}
+    <div class="hook-line">
+      <div class="hook-icon">💰</div>
+      <div class="hook-text">
+        {% if gap >= 1000 %}
+          That's <span class="num">£{{ "{:,}".format(gap) }}</span> you could keep in your pocket. Here's how to get it →
+        {% elif gap <= -1000 %}
+          This is <span class="num">£{{ "{:,}".format(gap|abs) }}</span> of value sitting on the table. Move before someone else takes it →
+        {% else %}
+          Don't pay a <span class="num">penny more</span> than you need to. Know your exact ceiling →
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="val-main">
+      <div class="val-our">
+        <div class="val-label">Estimated market value</div>
+        <div style="font-size:14px; color:var(--ink-mid); line-height:1.6; margin-top:4px;">We couldn't compute a full weighted valuation for this property — usually a sign of thin local sold data. The data points below still stand on their own.</div>
+      </div>
+      <div class="val-asking">
+        <div class="val-label">Asking price</div>
+        <div class="val-asking-number">{{ asking_price_formatted }}</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="confidence-row">
+      {% if confidence_score %}
+      <span class="conf-badge confidence-{{ confidence_score }}">● {{ confidence_score|upper }} confidence</span>
+      {% endif %}
+      <span class="conf-reason">{{ confidence_caveat or (comparables_count ~ " comparable sales · " ~ ("area-matched" if search_broadened else "postcode-matched") if comparables_count else "Limited local sold data for this property") }}</span>
+      {% if report_id is defined and report_id %}
+      <button class="conf-addr-btn" onclick="HO.openModal()">📍 Confirm address</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- B: VERDICT -->
+  {% set vclass = {'overpriced': 'v-over', 'fair': 'v-fair', 'value': 'v-val'}.get(verdict, 'v-unknown') %}
+  <div class="verdict-card {{ vclass }}">
+    <div class="verdict-eyebrow">Our verdict</div>
     <div class="verdict-headline">
-      {% if verdict == 'overpriced' %}This property is asking above what the market supports
-      {% elif verdict == 'value' %}This property is priced below what comparable homes have sold for
-      {% elif verdict == 'fair' %}Fairly priced — but that doesn't mean there's no room to negotiate
+      {% if verdict == 'overpriced' %}This seller is asking for more than the market says it's worth
+      {% elif verdict == 'fair' %}This one is priced where the market says it should be
+      {% elif verdict == 'value' %}This one is underpriced — and won't stay that way long
       {% else %}Not enough local data for a verdict{% endif %}
     </div>
     <div class="verdict-body">
       {% if local_avg_sold %}
         Based on {{ comparables_count }} completed sales of similar {{ property_type_label }} homes in
         {% if search_broadened %}the {{ postcode.split()[0] }} area{% else %}{{ postcode }}{% endif %},
-        HPI-adjusted to today's value, this property is asking
+        adjusted to today's value, this property is asking
         <strong>
           {% if sold_diff_pct > 0 %}{{ sold_diff_pct }}% more
           {% elif sold_diff_pct < 0 %}{{ sold_diff_pct|abs }}% less
@@ -338,11 +470,11 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         </strong>
         than what similar homes have actually sold for.
         {% if verdict == 'overpriced' %}
-          That gap is real money — and it's negotiable if you know how to use it.
+          That gap is real money — and it's your opening position at the negotiating table.
         {% elif verdict == 'value' %}
-          In a competitive market, this kind of gap disappears fast. You need to move confidently — with the right number ready.
+          Someone else will spot this too. You need to move confidently — with the right number ready.
         {% else %}
-          "Fair" doesn't mean you pay asking. It means the market won't hand you a discount — you have to negotiate one.
+          No big gap to exploit here — which means your edge is knowing exactly where NOT to overpay, not finding a hidden discount.
         {% endif %}
       {% else %}
         We couldn't find enough comparable sold prices for a verdict. The full report includes a manual comparable analysis with our recommendation.
@@ -350,636 +482,483 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
   </div>
 
-  <!-- DATA POINT 1: SOLD PRICE COMPARISON -->
-  {% if local_avg_sold %}
-  <div class="section-title">📊 Their number vs the market</div>
-  <div class="data-row">
-    <div class="data-card before">
-      <div class="data-card-label">Their asking price</div>
-      <div class="data-card-value">{{ asking_price_formatted }}</div>
-      <div class="data-card-sub">what the estate agent wants you to pay</div>
-      {% if sold_diff_pct is not none and sold_diff_pct|abs <= 50 %}
-      <span class="diff-badge {% if sold_diff_pct > 0 %}over{% elif sold_diff_pct < 0 %}under{% else %}fair{% endif %}">
-        {% if sold_diff_pct > 0 %}↑ {{ sold_diff_pct }}% above market
-        {% elif sold_diff_pct < 0 %}↓ {{ sold_diff_pct|abs }}% below market
-        {% else %}≈ In line with market{% endif %}
-      </span>
-      {% endif %}
-    </div>
-    {% if sold_diff_pct is not none and sold_diff_pct|abs > 50 %}
-    <div class="data-card after" style="display:flex;flex-direction:column;justify-content:center;">
-      <div class="data-card-label" style="color:var(--amber);">Comparables unreliable</div>
-      <div style="font-size:14px;color:var(--ink-mid);line-height:1.6;margin-top:4px;">
-        The sold prices nearby cover a wide mix of property sizes and types. The gap is too large to be meaningful — the full report uses price per m&#178; and an automated valuation model for a like-for-like view.
-      </div>
-    </div>
-    {% else %}
-    <div class="data-card after">
-      <div class="data-card-label">What the market says</div>
-      <div class="data-card-value">{{ local_avg_sold_formatted }}</div>
-      <div class="data-card-sub">
-        avg of <strong>{{ comparables_count }} sold {{ property_type_label }}</strong>
-        {% if search_broadened %}in {{ postcode.split()[0] }}{% else %}near {{ postcode }}{% endif %}
-        · Land Registry
-      </div>
-    </div>
-    {% endif %}
-  </div>
-  <div class="source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales · HPI-adjusted to today's value · interquartile mean</div>
+  <!-- C: CROWD VOTING -->
+  {% if report_id is defined and report_id %}
+  <div class="crowd-card">
+    <div class="crowd-eyebrow">🎯 What's it worth to you?</div>
+    <div class="crowd-title">Before the data — what's your honest number?</div>
+    <div class="crowd-sub">House buying is emotional, not just financial. Lock in your first instinct, then bring your partner, parents or friends in to see how their number compares to yours — and to the data.</div>
 
-  {% if sold_diff_pct is not none and sold_diff_pct|abs > 20 and sold_diff_pct|abs <= 50 %}
-  <div style="background:#fdf0e3;border:1px solid #f0c98a;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13.5px;color:#5c5849;line-height:1.6;">
-    <strong style="color:#c06a1a;">Note on comparable accuracy</strong><br>
-    The comparable set used here covers all {{ property_type_label }} sales in the area — without filtering by size or number of bedrooms — which means larger or smaller homes may be included. That can widen the gap you see above. For a tighter like-for-like comparison, the paid report also uses price per m&#178; (where floor area is available) and an automated valuation model, both of which give a size-adjusted view of value.
-  </div>
-  {% endif %}
+    <div class="anchor-note">
+      <span class="anchor-note-icon">💡</span>
+      <span><strong>Before you answer:</strong> the asking price you just saw is doing more work on your brain than you think. It's called anchoring — once we see a number, it quietly shapes every guess that follows, even when it has nothing to do with real value. Try to answer as if you'd never seen the asking price at all.</span>
+    </div>
 
-  {% if comparables %}
-  <div class="comp-table-section">
-    <div class="comp-table-header">
-      <div class="comp-table-title">{{ comparables_count }} sold prices used in this analysis</div>
-      <div class="comp-table-sub">All prices adjusted to today's value using ONS regional House Price Index · HM Land Registry</div>
+    <div class="crowd-input-row" id="crowd-input-row">
+      <input class="crowd-input" type="text" id="crowd-input" inputmode="numeric" placeholder="e.g. £340,000" aria-label="Your estimate in pounds">
+      <button class="crowd-submit" onclick="HO.submitVote()">Lock in my number</button>
     </div>
-    <table class="comp-table">
-      <thead>
-        <tr>
-          <th>Address</th>
-          <th>Date</th>
-          <th>Sale Price</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for comp in comparables[:3] %}
-        <tr>
-          <td>{{ comp.address }}</td>
-          <td class="date">{{ comp.date[:7] }}</td>
-          <td class="price">{{ comp.adjusted_price_formatted or comp.price_formatted }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if comparables|length > 3 %}
-    <div style="position:relative;">
-      <table class="comp-table">
-        <tbody>
-          {% for comp in comparables[3:8] %}
-          <tr class="blurred">
-            <td>{{ comp.address }}</td>
-            <td class="date">{{ comp.date[:7] }}</td>
-            <td class="price">{{ comp.adjusted_price_formatted or comp.price_formatted }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <div class="comp-table-footer" style="filter:blur(4px);user-select:none;pointer-events:none;">
-        <div class="comp-table-hint">{{ comparables_count }} comparable sales used · all HPI-adjusted</div>
-      </div>
-      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:rgba(247,243,237,0.62);backdrop-filter:blur(1px);padding:20px 16px;text-align:center;">
-        <div style="font-size:22px;line-height:1;">&#128274;</div>
-        <div style="font-family:'Lora',serif;font-size:15px;font-weight:700;color:var(--ink);">Your numbers are ready</div>
-        <div style="font-size:13px;color:var(--ink-mid);max-width:300px;line-height:1.5;">All {{ comparables_count }} comparable sales plus your personalised offer range, calculated from 7 valuation methods</div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" style="display:inline-block;background:var(--teal);color:white;font-size:13px;font-weight:700;padding:10px 24px;border-radius:20px;text-decoration:none;margin-top:4px;">Unlock for £29</a>
-      </div>
-    </div>
-    {% else %}
-    <div class="comp-table-footer">
-      <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="comp-table-cta">Unlock all {{ comparables_count }} comparable sales — £29</a>
-      <div class="comp-table-hint">See the exact sales our algorithm used to reach this verdict.</div>
-    </div>
-    {% endif %}
-  </div>
-  {% endif %}
 
-  {% endif %}
-
-  <!-- ANCHOR BIAS CALLOUT -->
-  {% if local_avg_sold %}
-  <div class="anchor-card">
-    <div class="anchor-eyebrow">&#129504; A note on anchor bias</div>
-    <div class="anchor-headline">
-      {% if verdict == 'overpriced' %}Their number is designed to be your starting point. It shouldn't be.
-      {% elif verdict == 'value' %}Move fast — but move with the right number, not theirs.
-      {% else %}The asking price feels reasonable. That's exactly when anchoring works best.{% endif %}
-    </div>
-    <div class="anchor-body">
-      Estate agents know that the first number you see shapes every decision that follows. It's called anchoring — and it's deliberate.
-      {% if verdict == 'overpriced' %}
-      The data shows this property is asking <strong>{{ sold_diff_pct }}% above</strong> what comparable homes have actually sold for.
-      Don't negotiate down from their number. The full report gives you <em>your</em> number to anchor from instead.
-      {% elif verdict == 'fair' %}
-      This asking price is close to the market — which makes it feel unchallengeable. It isn't. The full report shows you exactly where to start and how far you can push.
-      {% else %}
-      This property looks like good value — which means others may think so too. The full report gives you a confident opening offer and a strategy to secure it before someone else does.
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- DATA POINT 2: HPI-ADJUSTED LAST SALE -->
-  {% if hpi_adjustment %}
-  <div class="section-title">📈 This property's history vs asking price</div>
-  <div class="data-row">
-    <div class="data-card before">
-      <div class="data-card-label">Last sold · {{ hpi_adjustment.sale_date[:7] }}</div>
-      <div class="data-card-value">{{ hpi_adjustment.sale_price_formatted }}</div>
-      <div class="data-card-sub">what this exact property sold for previously</div>
-    </div>
-    <div class="data-card after">
-      <div class="data-card-label">HPI-adjusted today</div>
-      <div class="data-card-value">{{ hpi_adjustment.adjusted_price_formatted }}</div>
-      <div class="data-card-sub">
-        {% set hpi_vs_asking = ((asking_price - hpi_adjustment.adjusted_price) / hpi_adjustment.adjusted_price * 100)|round(1) %}
-        same property, adjusted for <strong>{{ hpi_adjustment.growth_pct }}% price growth</strong>
-        <br>
-        <span style="color: {% if hpi_vs_asking > 5 %}var(--red){% elif hpi_vs_asking < -5 %}var(--teal){% else %}var(--amber){% endif %}; font-weight:600; font-size:12px;">
-          Asking price is {{ hpi_vs_asking|abs }}%
-          {% if hpi_vs_asking > 0 %}above{% else %}below{% endif %}
-          this HPI-adjusted value
-        </span>
-      </div>
-    </div>
-  </div>
-  <div class="source-note">📊 HPI adjustment based on ONS/Land Registry regional House Price Index for {{ property_type_label }} homes</div>
-  {% elif last_sale_candidates and report_id is defined and report_id %}
-  <div class="section-title">📈 This property's history vs asking price</div>
-  <div style="background:#f8f9fb; border:1px solid #e2e6ed; border-radius:10px; padding:18px 20px; margin-bottom:8px;">
-    <p style="margin:0 0 12px; font-size:14px;">
-      The listing doesn't include a house number, so we can't automatically match this
-      property to its sale history.
-      {% if last_sale_candidates and last_sale_candidates[0].radius_fallback %}
-      Land Registry has no records at this exact postcode, so we've shown nearby sold properties instead — your property may appear under a neighbouring postcode.
-      {% else %}
-      We found these sold properties at the same postcode.
-      {% endif %}
-      If one of them is this property, select it and we'll update the report.
-    </p>
-    <form method="get" action="/r/{{ report_id }}/select-address" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-      <select name="address" required style="flex:1; min-width:240px; padding:9px 12px; border:1px solid #cdd4de; border-radius:8px; font-size:14px;">
-        <option value="" disabled selected>Select your property…</option>
-        {% for c in last_sale_candidates %}
-        <option value="{{ c.address }}">{{ c.address }}{% if c.last_date %} · sold {{ c.last_date[:7] }}{% endif %}{% if c.last_price %} · £{{ "{:,}".format(c.last_price) }}{% endif %}</option>
-        {% endfor %}
-      </select>
-      <button type="submit" style="padding:9px 18px; border:none; border-radius:8px; background:var(--teal, #0d9488); color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Update report</button>
-    </form>
-    <p style="margin:14px 0 8px; font-size:13px; color:#5c5849;">
-      Don't see your property above? The Rightmove listing shows its last sold price.
-      Enter that (and the year if shown) and we'll pin the exact address.
-    </p>
-    <form method="get" action="/r/{{ report_id }}/resolve-by-sale" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-      <input name="price" required inputmode="numeric" placeholder="Last sold price, e.g. 200000" style="flex:1; min-width:200px; padding:9px 12px; border:1px solid #cdd4de; border-radius:8px; font-size:14px;">
-      <input name="date" placeholder="Year (optional), e.g. 2013" style="width:170px; padding:9px 12px; border:1px solid #cdd4de; border-radius:8px; font-size:14px;">
-      <button type="submit" style="padding:9px 18px; border:none; border-radius:8px; background:var(--teal, #0d9488); color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Find my property</button>
-    </form>
-  </div>
-  <div class="source-note">📊 Sold properties {% if last_sale_candidates and last_sale_candidates[0].radius_fallback %}near{% else %}at{% endif %} this postcode · HM Land Registry Price Paid Data</div>
-  {% endif %}
-
-  <!-- DATA POINT 3: £/SQM -->
-  {% if asking_psqm and local_avg_psqm %}
-  <div class="section-title">📐 Price per m² comparison</div>
-  <div class="data-row">
-    <div class="data-card before">
-      <div class="data-card-label">This property / m²</div>
-      <div class="data-card-value">£{{ "{:,}".format(asking_psqm) }}</div>
-      <div class="data-card-sub">at asking price{% if floor_area_sqm %} · {{ floor_area_sqm|round|int }}m²{% endif %}</div>
-      {% if psqm_diff_pct is not none %}
-      <span class="diff-badge {% if psqm_diff_pct > 0 %}over{% elif psqm_diff_pct < 0 %}under{% else %}fair{% endif %}">
-        {% if psqm_diff_pct > 0 %}↑ {{ psqm_diff_pct }}% above local avg
-        {% elif psqm_diff_pct < 0 %}↓ {{ psqm_diff_pct|abs }}% below local avg
-        {% else %}≈ In line{% endif %}
-      </span>
-      {% endif %}
-    </div>
-    <div class="data-card after">
-      <div class="data-card-label">Local average / m²</div>
-      <div class="data-card-value">£{{ "{:,}".format(local_avg_psqm) }}</div>
-      <div class="data-card-sub">for comparable <strong>{{ property_type_label }}</strong> nearby</div>
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- DAYS ON MARKET -->
-  {% if days_on_market %}
-  <div class="dom-card">
-    <div class="dom-icon">&#9200;</div>
-    <div style="flex:1;">
-      <div class="dom-title">
-        Listed for {{ days_on_market }} days
-        {% if local_avg_dom %} —
-          {% if dom_signal == 'high' %}well above the local average
-          {% elif dom_signal == 'medium' %}slightly above the local average
-          {% else %}within the normal range{% endif %}
+    <div class="crowd-results" id="crowd-results">
+      <div class="crowd-chart" id="crowd-chart">
+        <div class="crowd-track"></div>
+        {% if weighted_midpoint %}
+        <div class="crowd-mkr" data-marker="data">
+          <div class="crowd-mkr-label" style="background:var(--teal)">Data</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--teal)"></div>
+        </div>
         {% endif %}
-      </div>
-      <div class="dom-body">
-        {% if local_avg_dom %}Properties in this area typically sell within <strong>{{ local_avg_dom }} days</strong>.{% endif %}
-        This property has been on the market for <strong>{{ days_on_market }} days</strong>.
-      </div>
-      <!-- Blurred: what this means for your offer -->
-      <div style="margin-top:12px; position:relative;">
-        <div style="filter:blur(4px); user-select:none; pointer-events:none; font-size:13.5px; color:var(--ink-mid); line-height:1.6;">
-          {% if dom_signal == 'high' %}Sellers waiting this long are typically motivated. This gives you meaningful leverage to open well below asking and hold your position.
-          {% elif dom_signal == 'medium' %}The seller has had time to feel the lack of offers. A confident opening below asking is justified here.
-          {% else %}The property is moving at a normal pace, which means competition may be real. Factor this into how aggressive your opening offer is.{% endif %}
-          The full report calculates exactly how many pounds this adds to your negotiating position.
+        <div class="crowd-mkr" data-marker="asking">
+          <div class="crowd-mkr-label" style="background:var(--red)">Asking</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--red)"></div>
         </div>
-        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
-          <a href="#unlock-cta" style="background:var(--teal);color:#fff;font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px;text-decoration:none;white-space:nowrap;">Unlock negotiation analysis &rarr;</a>
+        <div class="crowd-mkr" data-marker="you">
+          <div class="crowd-mkr-label" style="background:var(--purple)">You</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--purple)"></div>
         </div>
       </div>
+
+      <div class="crowd-feed" id="crowd-feed">
+        <div class="feed-row"><div class="feed-avatar" style="background:#7a8fd0;">Y</div><div class="feed-name">You</div><div class="feed-val" id="feed-you-val"></div></div>
+      </div>
+
+      <div class="crowd-avg-strip">
+        <div class="crowd-avg-label">Everyone's average so far (<span id="voter-count">1</span> vote<span id="voter-plural"></span>)</div>
+        <div class="crowd-avg-val" id="crowd-avg"></div>
+      </div>
+
+      {% if weighted_midpoint %}
+      <div class="crowd-paid-hook">
+        <div class="crowd-paid-icon">📊</div>
+        <div class="crowd-paid-text" id="crowd-vs-data">As votes come in, watch how everyone's number compares with the data valuation of <strong>{{ weighted_midpoint_formatted }}</strong>.</div>
+      </div>
+      {% endif %}
     </div>
+
+    <button class="share-btn" onclick="HO.shareForVotes(this)">📲 Share with friends &amp; family to get their estimate</button>
   </div>
   {% endif %}
 
-  <!-- PRICE DROP -->
-  {% if price_reduced and original_asking_price %}
-  <div class="dom-card" style="border-left: 3px solid var(--amber); background: var(--amber-light); border-color: var(--amber-border);">
-    <div class="dom-icon" style="background: rgba(192,106,26,0.12);">📉</div>
-    <div>
-      <div class="dom-title">Price reduced — the seller has already moved</div>
-      <div class="dom-body">
-        Originally listed at <strong>{{ original_asking_price_formatted }}</strong>, now asking <strong>{{ asking_price_formatted }}</strong>
-        {% if reduction_pct %} — a <strong>{{ reduction_pct }}% reduction</strong>{% endif %}
-        {% if reduction_date %} ({{ reduction_date }}){% endif %}.
-        A price reduction is evidence the seller's position has softened, which strengthens your negotiating hand.
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- ─── LOCKED: FOOTBALL FIELD + OFFER TRIO PREVIEW ─── -->
-  <div style="position:relative; margin-bottom:20px; border-radius:var(--radius); overflow:hidden; border:1.5px solid var(--sand-border); background:var(--white); box-shadow:var(--shadow-sm);">
-
-    <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--sand-border);">
-      <div>
-        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-light);margin-bottom:3px;">Seven-method valuation range</div>
-        <div style="font-size:15px;font-weight:700;color:var(--ink);">Football field analysis + your offer strategy</div>
-      </div>
-      <div style="background:var(--teal);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;">£29 Report</div>
-    </div>
-
-    <!-- Football field chart + offer trio: all in one locked block with a single overlay CTA -->
-    <div style="position:relative;">
-
-      <!-- Chart (min-width so labels never clip on narrow screens) -->
-      <div style="padding:16px 20px 0;overflow-x:auto;">
-        <div style="min-width:500px;">
-        <svg viewBox="0 0 680 288" style="width:100%;display:block;" role="img" aria-label="Football field valuation preview">
-          <defs><filter id="ffblur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="2.5"/></filter></defs>
-
-          <!-- Method labels (crisp) -->
-          <text x="172" y="35" text-anchor="end" font-size="11" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Comparable sales (adj.)</text>
-          <text x="172" y="75" text-anchor="end" font-size="11" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Comparable sales (raw)</text>
-          <text x="172" y="115" text-anchor="end" font-size="11" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">HPI-adjusted last sale</text>
-          <text x="172" y="155" text-anchor="end" font-size="11" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Price per m&#178;</text>
-          <text x="172" y="195" text-anchor="end" font-size="11" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Area price trend</text>
-          <text x="172" y="235" text-anchor="end" font-size="11" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Automated valuation</text>
-          <text x="172" y="275" text-anchor="end" font-size="11" font-family="Plus Jakarta Sans,sans-serif" fill="#5c5849" font-weight="500">Rental yield</text>
-
-          <!-- Bar track backgrounds -->
-          <rect x="178" y="24" width="460" height="18" fill="#f7f3ed" rx="3"/>
-          <rect x="178" y="64" width="460" height="18" fill="#f7f3ed" rx="3"/>
-          <rect x="178" y="104" width="460" height="18" fill="#f7f3ed" rx="3"/>
-          <rect x="178" y="144" width="460" height="18" fill="#f7f3ed" rx="3"/>
-          <rect x="178" y="184" width="460" height="18" fill="#f7f3ed" rx="3"/>
-          <rect x="178" y="224" width="460" height="18" fill="#f7f3ed" rx="3"/>
-          <rect x="178" y="264" width="460" height="18" fill="#f7f3ed" rx="3"/>
-
-          <!-- Bars and weighted band: blurred -->
-          <g filter="url(#ffblur)">
-            <rect x="303" y="18" width="110" height="268" fill="rgba(26,107,90,0.08)" rx="3"/>
-            <rect x="288" y="24" width="130" height="18" fill="#1a6b5a" opacity="0.85" rx="3"/>
-            <circle cx="353" cy="33" r="4.5" fill="white" stroke="#1a6b5a" stroke-width="2"/>
-            <rect x="253" y="64" width="150" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
-            <circle cx="328" cy="73" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
-            <rect x="308" y="104" width="95" height="18" fill="#1a6b5a" opacity="0.85" rx="3"/>
-            <circle cx="355" cy="113" r="4.5" fill="white" stroke="#1a6b5a" stroke-width="2"/>
-            <rect x="273" y="144" width="160" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
-            <circle cx="353" cy="153" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
-            <rect x="238" y="184" width="140" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
-            <circle cx="308" cy="193" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
-            <rect x="298" y="224" width="120" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
-            <circle cx="358" cy="233" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
-            <rect x="213" y="264" width="170" height="18" fill="#9b9488" opacity="0.65" rx="3"/>
-            <circle cx="298" cy="273" r="4.5" fill="white" stroke="#9b9488" stroke-width="2"/>
-          </g>
-
-          <!-- Asking price and recommended offer lines: crisp -->
-          <line x1="433" y1="14" x2="433" y2="282" stroke="#b83232" stroke-width="1.5" stroke-dasharray="5,3"/>
-          <line x1="321" y1="14" x2="321" y2="282" stroke="#1a6b5a" stroke-width="1.5" stroke-dasharray="5,3"/>
-
-          <!-- Price axis -->
-          <line x1="178" y1="283" x2="638" y2="283" stroke="#e0d9ce" stroke-width="1"/>
-        </svg>
-        <!-- Axis labels as HTML below the SVG so they never clip -->
-        <div style="display:flex;justify-content:space-around;margin:4px 0 10px;padding:0 0 0 178px;">
-          <span style="font-size:9.5px;font-weight:700;color:#1a6b5a;background:var(--teal-light);border:1px solid var(--teal-border);border-radius:3px;padding:1px 6px;">Recommended offer</span>
-          <span style="font-size:9.5px;font-weight:700;color:#b83232;background:var(--red-light);border:1px solid #f0cece;border-radius:3px;padding:1px 6px;">Asking price</span>
-        </div>
-        <!-- Legend -->
-        <div style="display:flex;gap:16px;flex-wrap:wrap;padding:8px 0 14px;border-top:1px solid var(--sand-border);">
-          <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-mid);"><div style="width:10px;height:10px;border-radius:2px;background:#1a6b5a;flex-shrink:0;"></div>Higher-weight (x2)</div>
-          <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-mid);"><div style="width:10px;height:10px;border-radius:2px;background:#9b9488;flex-shrink:0;"></div>Standard method</div>
-        </div>
-        </div>
-      </div>
-
-      <!-- Offer trio -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--sand-border);border-top:1px solid var(--sand-border);">
-        <div style="background:var(--white);padding:14px 16px;text-align:center;">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Open with</div>
-          <div style="font-size:22px;font-weight:800;color:var(--teal);filter:blur(3px);user-select:none;">£385,000</div>
-        </div>
-        <div style="background:#f7faf8;padding:14px 16px;text-align:center;border-left:1px solid var(--sand-border);border-right:1px solid var(--sand-border);">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Target price</div>
-          <div style="font-size:22px;font-weight:800;color:var(--teal);filter:blur(3px);user-select:none;">£397,500</div>
-        </div>
-        <div style="background:var(--white);padding:14px 16px;text-align:center;">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-light);margin-bottom:6px;">Walk away above</div>
-          <div style="font-size:22px;font-weight:800;color:var(--red);filter:blur(3px);user-select:none;">£412,000</div>
-        </div>
-      </div>
-
-      <!-- Single overlay covering the entire chart + offer trio -->
-      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(247,243,237,0.60);backdrop-filter:blur(1px);">
-        <div style="font-size:22px;">🔒</div>
-        <div style="font-size:15px;font-weight:700;color:var(--ink);text-align:center;">Your numbers are ready</div>
-        <div style="font-size:13px;color:var(--ink-mid);text-align:center;max-width:260px;line-height:1.5;">Opening offer, target, and walk-away price calculated from 7 valuation methods</div>
-        <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}" style="background:var(--teal);color:#fff;font-size:14px;font-weight:700;padding:11px 26px;border-radius:24px;text-decoration:none;margin-top:4px;">Unlock for £29</a>
-      </div>
-
-    </div>
-
-  </div>
-
-  <!-- ─── BRIDGE SECTION ─── -->
-  <div class="bridge-section {{ verdict }}">
-    <div class="bridge-eyebrow">
+  <!-- AMMUNITION BOX — evidence bridge into the football field lock -->
+  <div class="ammo-card">
+    <div class="ammo-eyebrow">
       {% if verdict == 'overpriced' %}🎯 You have evidence. Here's how to use it.
       {% elif verdict == 'value' %}🎯 You have an edge. Here's how to protect it.
       {% elif verdict == 'fair' %}🎯 The data is level. Here's how to negotiate anyway.
       {% else %}🎯 Limited data. Here's how to build your case.{% endif %}
     </div>
-    <div class="bridge-headline">
+    <div class="ammo-headline">
       {% if verdict == 'overpriced' %}A number without reasoning is just a guess. Agents are trained to ignore guesses.
       {% elif verdict == 'value' %}Moving fast without a strategy means overpaying for something already underpriced.
       {% elif verdict == 'fair' %}When the data is neutral, negotiation skill is the only edge left.
       {% else %}Without comparables, your offer lives or dies on how it's constructed.{% endif %}
     </div>
-    <div class="bridge-body">
-
-      {# ── OVERPRICED ── #}
-      {% if verdict == 'overpriced' %}
-      <p>You already have real negotiating ammunition from this report:</p>
-      <ul class="bridge-weapons">
-        {% if local_avg_sold %}
-        <li><strong>Comparable sales</strong> — {{ comparables_count }} similar homes sold at an average of {{ local_avg_sold_formatted }}. That's a {{ sold_diff_pct }}% gap you can cite by name.</li>
-        {% endif %}
-        {% if hpi_adjustment %}
-        <li><strong>This property's own history</strong> — it last sold for {{ hpi_adjustment.sale_price_formatted }}. HPI-adjusted for today's market, that's {{ hpi_adjustment.adjusted_price_formatted }}. The asking price is above even that.</li>
-        {% endif %}
-        {% if days_on_market and dom_signal == 'high' %}
-        <li><strong>Days on market</strong> — {{ days_on_market }} days versus a local average of {{ local_avg_dom }}. That's a seller under pressure, and pressure is leverage.</li>
-        {% elif days_on_market and dom_signal == 'medium' %}
-        <li><strong>Days on market</strong> — {{ days_on_market }} days listed. Not desperate yet, but the clock is running in your favour.</li>
-        {% endif %}
-      </ul>
-      <p>But walking in with individual data points isn't the same as walking in with a position. Estate agents deal with "I think it's worth less" every day. What they can't easily dismiss is: <em>"Based on {{ comparables_count }} comparable sales, the HPI-adjusted value of this property, and {{ days_on_market }} days on market, my opening offer is £X — and here's the reasoning."</em></p>
-      <p>The full report synthesises every data point into a single <strong>football field valuation</strong> — your walk-away number, your opening offer, and your target price — with the written reasoning to back each figure in the room.</p>
-
-      {# ── VALUE ── #}
-      {% elif verdict == 'value' %}
-      <p>This property looks underpriced — which is good news, but it changes your negotiation entirely. Here's what you're working with:</p>
-      <ul class="bridge-weapons">
-        {% if local_avg_sold %}
-        <li><strong>Comparable sales</strong> — similar homes are selling at {{ local_avg_sold_formatted }} on average. This property is asking {{ sold_diff_pct|abs }}% below that. You need to know if that gap is justified or just an opportunity.</li>
-        {% endif %}
-        {% if hpi_adjustment %}
-        <li><strong>This property's history</strong> — last sold {{ hpi_adjustment.sale_price_formatted }}, HPI-adjusted to {{ hpi_adjustment.adjusted_price_formatted }} today. Understanding why it's priced below that tells you whether to offer quickly or probe for problems.</li>
-        {% endif %}
-        {% if days_on_market %}
-        <li><strong>Days on market</strong> — {{ days_on_market }} days. {% if dom_signal == 'low' %}Moving at normal pace. Others will have spotted this too.{% else %}Slower than average — worth understanding why before you commit.{% endif %}</li>
-        {% endif %}
-      </ul>
-      <p>With good-value properties, the risk isn't paying too much — it's paying full asking price on something you could still have negotiated, or losing it by moving too slowly with the wrong opening offer.</p>
-      <p>The full report gives you a <strong>precise opening offer</strong> calibrated to secure the property competitively, the reasoning to justify it, and a read on why it's priced below market — so you move fast and smart, not just fast.</p>
-
-      {# ── FAIR ── #}
-      {% elif verdict == 'fair' %}
-      <p>A fair asking price is the hardest position to negotiate from — because the agent has the data to back it up. But "fair" still has room in it. Here's your position:</p>
-      <ul class="bridge-weapons">
-        {% if local_avg_sold %}
-        <li><strong>Comparable sales</strong> — {{ comparables_count }} sold properties at an average of {{ local_avg_sold_formatted }}. The gap is small ({{ sold_diff_pct }}%), but it exists — and it's the basis of a credible opening offer.</li>
-        {% endif %}
-        {% if hpi_adjustment %}
-        <li><strong>This property's own history</strong> — HPI-adjusted value of {{ hpi_adjustment.adjusted_price_formatted }}. Even a small difference between that and asking is a legitimate point to raise.</li>
-        {% endif %}
-        {% if days_on_market %}
-        <li><strong>Days on market</strong> — {{ days_on_market }} days. {% if dom_signal != 'low' %}That's above average, which softens the seller's position even when the price looks right.{% else %}Moving normally — you'll need to be sharp on your offer.{% endif %}</li>
-        {% endif %}
-      </ul>
-      <p>The agents won't budge on "I think it's worth less." But they will engage with a structured, reasoned offer: comparable evidence, an adjusted baseline, and a specific number that you can defend. That's what opens a negotiation even when the price looks fair.</p>
-      <p>The full report builds that structure — a <strong>football field valuation</strong> with your opening offer, target, and walk-away number, plus the written case for each figure so you're not just asserting a position, you're evidencing one.</p>
-
-      {# ── UNKNOWN ── #}
-      {% else %}
-      <p>Without enough local comparable sales, you're in a more exposed position than most buyers — the asking price is the only public number in the room, and that's exactly how the agent wants it.</p>
-      <p>Negotiating without comparables isn't impossible, but it requires building your case from different angles:</p>
-      <ul class="bridge-weapons">
-        {% if hpi_adjustment %}
-        <li><strong>This property's own history</strong> — it last sold for {{ hpi_adjustment.sale_price_formatted }}. HPI-adjusted to today, that's {{ hpi_adjustment.adjusted_price_formatted }}. That's your baseline, even without street-level comparables.</li>
-        {% endif %}
-        {% if days_on_market %}
-        <li><strong>Days on market</strong> — {{ days_on_market }} days listed. {% if dom_signal == 'high' %}Well above average — a motivated seller is your leverage when data is thin.{% else %}Worth monitoring as a signal of seller appetite.{% endif %}</li>
-        {% endif %}
-        <li><strong>Manual comparable analysis</strong> — the full report sources comparables from adjacent streets and similar property types to build the case the local data alone can't.</li>
-      </ul>
-      <p>The full report does this work for you — producing a <strong>reasoned opening offer</strong> you can walk in with and defend, even in a market where the data is thin.</p>
+    <ul class="ammo-list">
+      {% if local_avg_sold %}
+      <li><strong>Comparable sales</strong> — {{ comparables_count }} similar homes sold at an average of {{ local_avg_sold_formatted }}.
+        {% if verdict == 'overpriced' %}That's a {{ sold_diff_pct }}% gap you can cite by name.
+        {% elif verdict == 'value' %}This property is asking {{ sold_diff_pct|abs }}% below that — you need to know if that gap is justified or just an opportunity.
+        {% else %}The gap is small ({{ sold_diff_pct }}%), but it exists — and it's the basis of a credible opening offer.{% endif %}</li>
       {% endif %}
-
-    </div>
+      {% if hpi_adjustment %}
+      <li><strong>This property's own history</strong> — it last sold for {{ hpi_adjustment.sale_price_formatted }}. HPI-adjusted for today's market, that's {{ hpi_adjustment.adjusted_price_formatted }}.
+        {% if verdict == 'overpriced' %}The asking price is above even that.
+        {% elif verdict == 'value' %}Understanding why it's priced below that tells you whether to offer quickly or probe for problems.
+        {% else %}Even a small difference between that and asking is a legitimate point to raise.{% endif %}</li>
+      {% endif %}
+      {% if days_on_market %}
+      <li><strong>Days on market</strong> — {{ days_on_market }} days{% if local_avg_dom %} versus a local average of {{ local_avg_dom }}{% endif %}.
+        {% if dom_signal == 'high' %}That's a seller under pressure, and pressure is leverage.
+        {% elif dom_signal == 'medium' %}Not desperate yet, but the clock is running in your favour.
+        {% else %}Moving at normal pace — others will have spotted this too.{% endif %}</li>
+      {% endif %}
+      {% if not local_avg_sold and not hpi_adjustment and not days_on_market %}
+      <li><strong>Manual comparable analysis</strong> — the full report sources comparables from adjacent streets and similar property types to build the case the local data alone can't.</li>
+      {% endif %}
+    </ul>
+    <div class="ammo-close">Individual data points aren't the same as walking in with a position. The full report synthesises every signal into one football field valuation — your walk-away number, opening offer, and target price, with the reasoning to defend each figure in the room.</div>
   </div>
 
-  <!-- ─── LOCKED: £29 VALUATION RANGE (improved teaser) ─── -->
-  <div class="locked-section">
-    <div class="locked-header">
-      <div class="locked-header-left">
-        <div class="locked-header-label">Full valuation range</div>
-        <div class="locked-header-title">Your recommended offer price & walk-away number</div>
+  <!-- D: FOOTBALL FIELD — labels visible, bars/numbers blurred -->
+  <div class="locked-ff">
+    <div class="locked-ff-header">
+      <div>
+        <div class="locked-ff-eyebrow">Seven-method valuation range</div>
+        <div class="locked-ff-title">Football field analysis + your offer strategy</div>
       </div>
-      <div class="locked-price-badge">£29 Report</div>
     </div>
-    <div class="locked-body" style="min-height:240px;">
-      <!-- Improved teaser: real range shape with blurred numbers -->
-      <div class="range-teaser">
-        <div class="range-bar-wrap">
-          <div class="range-bar-labels"><span>Walk away</span><span>Start here</span><span>Asking</span></div>
-          <div class="range-bar-track">
-            <div class="range-bar-fill"></div>
-            <div class="range-bar-pin"></div>
-          </div>
-        </div>
-        <div class="range-values">
-          <div class="range-val">
-            <div class="range-val-label">Walk away</div>
-            <div class="range-val-num blurred">£000,000</div>
-          </div>
-          <div class="range-val">
-            <div class="range-val-label">Open with</div>
-            <div class="range-val-num target blurred">£000,000</div>
-          </div>
-          <div class="range-val">
-            <div class="range-val-label">Asking</div>
-            <div class="range-val-num">{{ asking_price_formatted }}</div>
-          </div>
-        </div>
-        <div class="range-hint">
-          {% if verdict == 'overpriced' %}
-            The report synthesises your comparable evidence, HPI data{% if days_on_market and dom_signal != 'low' %}, and days-on-market signal{% endif %} into a single number to walk in with — plus the written reasoning to hold your position when the agent pushes back.
-          {% elif verdict == 'value' %}
-            The report calculates the right opening offer to secure this competitively — not so high you overpay, not so low you lose it — with the reasoning to explain exactly why.
-          {% elif verdict == 'fair' %}
-            Even at fair value, there's a defensible opening offer below asking. The report builds the evidence-based case that makes it credible — not just a number, but a position.
+    <div class="locked-ff-body">
+      {# Free-tier methods (comparables adj/raw, HPI last sale) are computed and their
+         averages already appear free on this page — so their bars render REAL and
+         unblurred from the report's own football_field data. Paid-tier methods stay
+         blurred placeholders. #}
+      {% set ffmap = {} %}
+      {% for m in football_field|default([], true) %}{% if ffmap.update({m.name: m}) %}{% endif %}{% endfor %}
+      {% set cmin = chart_price_min|default(none, true) %}
+      {% set cmax = chart_price_max|default(none, true) %}
+      {% set cspan = (cmax - cmin) if (cmin is not none and cmax is not none and cmax > cmin) else none %}
+
+      {% for label, name, muted in [("Comparable sales (adj.)", "Comparable sales (HPI-adjusted)", false),
+                                    ("Comparable sales (raw)", "Comparable sales (unadjusted)", true),
+                                    ("HPI-adjusted last sale", "HPI-adjusted last sale", false)] %}
+      {% set m = ffmap.get(name) %}
+      <div class="ff-row-clear">
+        <div class="ff-label-clear">{{ label }}</div>
+        <div class="ff-fake-track">
+          {% if m and m.available and cspan %}
+          {% set bar_left = ((m.low - cmin) / cspan * 100)|round(1) %}
+          {% set bar_width = [((m.high - m.low) / cspan * 100)|round(1), 2]|max %}
+          <div class="ff-fake-fill{% if muted %} ff-muted{% endif %}" style="left:{{ bar_left }}%;width:{{ bar_width }}%;"></div>
           {% else %}
-            The report constructs your offer from the data available — HPI history{% if days_on_market %}, days on market{% endif %}, and manual comparables — with the full reasoning written out so you can deliver it with confidence.
+          <div class="ff-fake-fill ff-blur-only{% if muted %} ff-muted{% endif %}" style="width:60%"></div>
           {% endif %}
         </div>
+        <div class="ff-fig{% if muted %} muted{% endif %}">{% if m and m.available and cspan %}{{ m.midpoint_formatted }}{% endif %}</div>
       </div>
-      <div class="lock-overlay">
+      {% endfor %}
+
+      <div class="locked-ff-overlay-inline">
         <div class="lock-icon">🔒</div>
-        <div class="lock-text">Your numbers are ready</div>
-        <div class="lock-sub">Unlock your specific opening offer, target price, and walk-away number</div>
-        <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}" class="lock-btn">Unlock for £29</a>
+        <div class="lock-title">Your numbers are ready</div>
+        <div class="lock-sub">Opening offer, target, and walk-away price calculated from 7 valuation methods</div>
+        <a class="lock-cta" href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}">Unlock for £29</a>
       </div>
+
+      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Price per m²</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:57%"></div></div><div class="ff-fig"></div></div>
+      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Area price trend</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:60%"></div></div><div class="ff-fig"></div></div>
+      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Automated valuation</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:60%"></div></div><div class="ff-fig"></div></div>
+      <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Rental yield</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:58%"></div></div><div class="ff-fig"></div></div>
+      <div class="ff-row-clear" style="margin-top:14px;"><div class="ff-label-clear" style="color:var(--red);font-weight:600;">Asking price</div><div class="ff-fake-track"><div class="ff-fake-fill" style="width:{% if cspan %}{{ [((asking_price - cmin) / cspan * 100)|round(1), 4]|max }}{% else %}79{% endif %}%;background:linear-gradient(90deg,#f0c98a,#c06a1a);"></div></div><div class="ff-asking-figure">{{ asking_price_formatted }}</div></div>
+
+      <div class="ff-fake-offer-strip">
+        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Open with</div><div class="ff-fake-offer-val">£305,000</div></div>
+        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Target price</div><div class="ff-fake-offer-val">£312,000</div></div>
+        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Walk away above</div><div class="ff-fake-offer-val" style="color:var(--red)">£330,000</div></div>
+      </div>
+
+      {% if comparables %}
+      <div class="comp-table-wrap">
+        <div class="comp-table-title-row">{{ comparables_count }} sold prices used in this analysis</div>
+        <table class="comp-table-mini">
+          <thead><tr><th>Address</th><th>Date</th><th>Sale price</th></tr></thead>
+          <tbody>
+            {% for comp in comparables[:3] %}
+            <tr><td>{{ comp.address }}</td><td>{{ comp.date[:7] }}</td><td>{{ comp.adjusted_price_formatted or comp.price_formatted }}</td></tr>
+            {% endfor %}
+            {% for comp in comparables[3:6] %}
+            <tr class="comp-blur"><td>{{ comp.address }}</td><td>{{ comp.date[:7] }}</td><td>{{ comp.adjusted_price_formatted or comp.price_formatted }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      <div class="ff-source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales · HPI-adjusted · interquartile mean</div>
     </div>
   </div>
 
-  <!-- ─── LOCKED: £49 NEGOTIATION PLAYBOOK ─── -->
-  <div class="locked-section" style="margin-bottom:24px;">
-    <div class="locked-header">
-      <div class="locked-header-left">
-        <div class="locked-header-label">Full negotiation playbook</div>
-        <div class="locked-header-title">Word-for-word offer email & counter-offer strategy</div>
-      </div>
-      <div class="locked-price-badge premium">£49 Playbook</div>
-    </div>
-    <div class="locked-body" style="min-height:220px;">
-      <div class="locked-blur" style="padding:20px 24px;">
-        <div class="email-preview">
-          <div class="email-header-row">
-            <div class="email-avatar"></div>
-            <div class="email-meta">
-              <div class="email-from"></div>
-              <div class="email-subject" style="width:240px;"></div>
-            </div>
-          </div>
-          <div class="email-body-line" style="width:95%;"></div>
-          <div class="email-body-line" style="width:88%;"></div>
-          <div class="email-body-line" style="width:72%;"></div>
-          <div class="email-body-line" style="width:91%;"></div>
-          <div class="email-body-line" style="width:65%;"></div>
-        </div>
-        <div class="strategy-steps">
-          <div class="strategy-step"><div class="step-num"></div><div class="step-line" style="width:70%;"></div></div>
-          <div class="strategy-step"><div class="step-num"></div><div class="step-line" style="width:55%;"></div></div>
-          <div class="strategy-step"><div class="step-num"></div><div class="step-line" style="width:80%;"></div></div>
-        </div>
-      </div>
-      <div class="lock-overlay">
-        <div class="lock-icon" style="background:var(--teal);">🔒</div>
-        <div class="lock-text">
-          {% if verdict == 'overpriced' %}Turn the gap into your opening line
-          {% elif verdict == 'value' %}Move fast — with the right words
-          {% else %}Your opening email, written for you{% endif %}
-        </div>
-        <div class="lock-sub">Word-for-word offer email, counter-offer strategy, and walk-away script — written for this property</div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="lock-btn teal">Unlock for £49</a>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── UPGRADE SECTION (with intro bridge) ─── -->
-  <div class="upgrade-section">
-    <div class="upgrade-intro">
-      {% if verdict == 'overpriced' %}
-        You've seen the data. This property is asking <strong>{{ sold_diff_pct }}% above</strong> what comparable homes have sold for.
-        The question now is: <strong>what number do you walk in with?</strong> That's exactly what the report answers.
-      {% elif verdict == 'value' %}
-        This looks like one of the better-priced properties in the area. <strong>Don't lose it by hesitating or guessing.</strong>
-        The report gives you a confident, evidence-based offer to make immediately.
-      {% elif verdict == 'fair' %}
-        A fair asking price still has room in it. <strong>The difference between a good offer and a great one is knowing where to start.</strong>
-        The report gives you that number — and the reasoning to back it up.
+  <!-- E: DAYS ON MARKET — efficient frontier + leverage strip -->
+  {% if days_on_market %}
+  <div class="dom-card">
+    <div class="dom-eyebrow">⏳ The efficient frontier</div>
+    <div class="dom-headline">
+      {% if local_avg_dom and days_on_market > local_avg_dom %}
+        {{ days_on_market }} days on market — every day that passes, your leverage grows
       {% else %}
-        Without clear comparable data, you're negotiating blind. <strong>The report does the analysis for you</strong> — comparable sales, recommended offer, and walk-away number.
+        {{ days_on_market }} days on market — moving at a normal pace
       {% endif %}
     </div>
+
+    {% if local_avg_dom %}
+    {% set dom_pct = [[(50 * days_on_market / local_avg_dom)|round|int, 5]|max, 95]|min %}
+    <div class="frontier-track">
+      <div class="frontier-mkr" style="left:{{ dom_pct }}%">
+        <div class="frontier-mkr-label">This property</div>
+        <div class="frontier-mkr-dot"></div>
+      </div>
+    </div>
+    <div class="frontier-labels">
+      <span>Just listed</span>
+      <span>Local average ({{ local_avg_dom }} days)</span>
+      <span>Stale listing</span>
+    </div>
+    {% endif %}
+
+    <div class="dom-body">
+      {% if local_avg_dom and days_on_market > local_avg_dom %}
+        A property that lingers on the market is a seller whose confidence is fading. This one has sat <strong>{{ days_on_market - local_avg_dom }} days longer than the local average</strong> — and that shift in leverage now belongs to you.
+      {% elif local_avg_dom %}
+        Properties in this area typically sell within <strong>{{ local_avg_dom }} days</strong>, and this one is inside that window — which means competition may be real. Factor that into how aggressive your opening offer is.
+      {% else %}
+        This property has been listed for <strong>{{ days_on_market }} days</strong>. How long a listing has sat is one of the strongest signals of how far a seller will move.
+      {% endif %}
+    </div>
+
+    <!-- Leverage strip: £ values blurred — the offer-shift calculation ships with the full report engine -->
+    <div class="leverage-strip">
+      <div class="leverage-cell">
+        <div class="leverage-cell-label">Opening offer</div>
+        <div class="leverage-cell-was leverage-blur">was £310,000</div>
+        <div class="leverage-cell-val leverage-blur">£305,000</div>
+      </div>
+      <div class="leverage-arrow">→</div>
+      <div class="leverage-cell">
+        <div class="leverage-cell-label">Walk-away</div>
+        <div class="leverage-cell-was leverage-blur">was £325,000</div>
+        <div class="leverage-cell-val leverage-blur">£330,000</div>
+      </div>
+    </div>
+    <div class="leverage-note">
+      {% if local_avg_dom and days_on_market > local_avg_dom %}
+        Because this listing has sat <strong>{{ days_on_market - local_avg_dom }} days longer</strong> than average, the full report widens your negotiating range — a lower opening offer and a higher walk-away ceiling both make sense here.
+      {% else %}
+        The full report shows the typical discount range for properties on the market this long — and how to use it in your offer.
+      {% endif %}
+      <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}">Unlock the exact numbers →</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- PRICE DROP (kept: direct leverage evidence) -->
+  {% if price_reduced and original_asking_price %}
+  <div class="dom-card" style="background: var(--amber-light); border-color: var(--amber-border);">
+    <div class="dom-eyebrow">📉 Price reduced</div>
+    <div class="dom-headline">The seller has already moved once</div>
+    <div class="dom-body" style="margin-bottom:0;">
+      Originally listed at <strong>{{ original_asking_price_formatted }}</strong>, now asking <strong>{{ asking_price_formatted }}</strong>
+      {% if reduction_pct %} — a <strong>{{ reduction_pct }}% reduction</strong>{% endif %}
+      {% if reduction_date %} ({{ reduction_date }}){% endif %}.
+      A price reduction is evidence the seller's position has softened, which strengthens your negotiating hand.
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- UPGRADE -->
+  <div class="upgrade-section" id="unlock-cta">
+    <div class="upgrade-title">Ready to make your move?</div>
+    <div class="upgrade-sub">
+      {% if verdict == 'overpriced' %}The data shows real room to negotiate. A precise opening offer backed by comparable sales gives you the best chance of landing this at the right price.
+      {% elif verdict == 'value' %}Good value properties move fast. Lock in the right number before someone else does.
+      {% elif verdict == 'fair' %}Even at fair value, knowing your walk-away number prevents you overpaying under pressure.
+      {% else %}Without clear comparable data, you're negotiating blind. The report does the analysis for you — comparable sales, recommended offer, and walk-away number.{% endif %}
+    </div>
     <div class="upgrade-grid">
-      <div class="upgrade-card report">
-        <div class="upgrade-eyebrow">Report</div>
-        <div class="upgrade-price-big">£29</div>
-        <div class="upgrade-body">
-          {% if verdict == 'overpriced' %}Your evidence-based number to walk in with — and the data to back it up
-          {% elif verdict == 'value' %}A confident opening offer, ready to go — so you don't lose this one
-          {% elif verdict == 'fair' %}Know exactly where to start — and how far you can push
-          {% else %}Your recommended offer, built from comparable sales and manual analysis{% endif %}
+      <div class="upgrade-card u-report">
+        <div class="upg-eye">Offer Report</div>
+        <div class="upg-price">£29</div>
+        <div class="upg-desc">Your evidence-based opening offer, the full football field breakdown, and every comparable sale to back it up.</div>
+        <div class="upg-feats">
+          <div class="upg-feat">Opening offer number</div>
+          <div class="upg-feat">Walk-away price</div>
+          <div class="upg-feat">Full football field chart</div>
+          <div class="upg-feat">Full 10–15 comparable sales</div>
+          <div class="upg-feat">Written reasoning behind each number</div>
         </div>
-        <div class="upgrade-features">
-          <div class="upgrade-feature">Recommended opening offer</div>
-          <div class="upgrade-feature">Walk-away price</div>
-          <div class="upgrade-feature">Full comparable sales (10–15)</div>
-          <div class="upgrade-feature">Seller signal score</div>
-        </div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="btn-upgrade report">Get my report — £29</a>
-        <div class="upgrade-note">One-time · Instant delivery</div>
+        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="btn-upg u-report">Get my report — £29</a>
+        <div class="upg-note">One-time · Instant delivery</div>
       </div>
-      <div class="upgrade-card playbook">
-        <div class="upgrade-eyebrow">Full Playbook</div>
-        <div class="upgrade-price-big">£49</div>
-        <div class="upgrade-body">
-          {% if verdict == 'overpriced' %}Includes the report plus the exact words to use — offer email, counter-offer script, walk-away line
-          {% elif verdict == 'value' %}Move fast and sound credible — word-for-word offer email included
-          {% else %}Everything in the report, plus a negotiation script written for this property{% endif %}
+      <div class="upgrade-card u-playbook">
+        <div class="upg-eye">Full Playbook</div>
+        <div class="upg-price">£99</div>
+        <div class="upg-desc">Everything in the report plus word-for-word offer email, counter-offer script, and a real buying agent backing you through the negotiation.</div>
+        <div class="upg-feats">
+          <div class="upg-feat">Everything in Report</div>
+          <div class="upg-feat">Word-for-word offer email</div>
+          <div class="upg-feat">Counter-offer strategy</div>
+          <div class="upg-feat">Expert buying agent support</div>
         </div>
-        <div class="upgrade-features">
-          <div class="upgrade-feature">Everything in Report</div>
-          <div class="upgrade-feature">Word-for-word offer email</div>
-          <div class="upgrade-feature">Counter-offer strategy</div>
-          <div class="upgrade-feature">Email Q&A support</div>
-        </div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=49&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="btn-upgrade playbook">Get the playbook — £49</a>
-        <div class="upgrade-note">One-time · Instant delivery</div>
+        <a href="https://houseoffer-backend.onrender.com/track?tier=99&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="btn-upg u-playbook">Get the playbook — £99</a>
+        <div class="upg-note">One-time · Instant delivery</div>
       </div>
     </div>
   </div>
 
-  <!-- ─── SHARE BAR (bottom) ─── -->
-  <div style="background:var(--teal-light);border:1px solid var(--teal-border);border-radius:12px;padding:18px 20px;margin-bottom:24px;text-align:center;">
-    <div style="font-family:'Lora',serif;font-size:16px;font-weight:700;color:var(--teal);margin-bottom:4px;">Help a friend buy smarter</div>
-    <div style="font-size:13px;color:var(--ink-mid);margin-bottom:14px;">Share this free analysis tool with anyone viewing a property</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
-      <a href="https://wa.me/?text=I%20used%20HouseOffer%20to%20check%20if%20a%20property%20was%20fairly%20priced%20%E2%80%94%20it%27s%20free%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#25D366;color:#fff;font-size:13px;font-weight:700;padding:9px 18px;border-radius:20px;text-decoration:none;">WhatsApp</a>
-      <a href="https://twitter.com/intent/tweet?text=Free%20tool%20to%20check%20if%20a%20property%20is%20overpriced%20before%20you%20make%20an%20offer%20%E2%80%94%20uses%20real%20Land%20Registry%20data%3A%20https%3A%2F%2Fhouseoffer.uk" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#000;color:#fff;font-size:13px;font-weight:700;padding:9px 18px;border-radius:20px;text-decoration:none;">X / Twitter</a>
-      <button onclick="navigator.clipboard.writeText('https://houseoffer.uk');this.textContent='Copied!';" style="display:inline-flex;align-items:center;gap:5px;background:var(--teal);color:#fff;font-size:13px;font-weight:700;padding:9px 18px;border-radius:20px;border:none;cursor:pointer;">Copy link</button>
-    </div>
-  </div>
-
-  <div class="attribution">
-    Contains HM Land Registry data © Crown copyright and database right 2026.
-    Licensed under the Open Government Licence v3.0 ·
-    <a href="https://houseoffer.netlify.app">HouseOffer.uk</a>
-    <br><br>
-    <em style="font-size: 11px; color: var(--ink-light); line-height: 1.5; display: block; max-width: 580px; margin: 0 auto;">
-      HouseOffer reports are informational only and based on publicly available data. They do not constitute financial advice, a formal RICS valuation, or a guarantee of price. Always consult a qualified surveyor before purchase.
-    </em>
-    <br>
-    <a href="https://houseoffer.uk/privacy.html" style="font-size: 11px;">Privacy</a> ·
-    <a href="https://houseoffer.uk/terms.html" style="font-size: 11px;">Terms</a>
+  <!-- ATTRIBUTION -->
+  <div class="attr">
+    Contains HM Land Registry data © Crown copyright and database right 2026. Licensed under the Open Government Licence v3.0.<br>
+    HouseOffer reports are informational only and do not constitute a formal RICS valuation or financial advice. Always consult a qualified surveyor before purchase.<br>
+    <a href="https://houseoffer.uk/privacy.html">Privacy</a> · <a href="https://houseoffer.uk/terms.html">Terms</a>
   </div>
 
 </div>
+
+<script>
+var HO = {
+  backend: "https://houseoffer-backend.onrender.com",
+  reportId: {{ report_id|default('', true)|tojson }},
+  reportUrl: {{ report_url|default('', true)|tojson }},
+  ourMid: {{ weighted_midpoint|tojson }},
+  asking: {{ asking_price|tojson }},
+  voteShareUrl: null,
+  pollTimer: null,
+
+  // ── Share ──────────────────────────────────────────────────────────────────
+  getVoteLink: function() {
+    // Mint (or fetch) the short voting link; fall back to the report link
+    var self = this;
+    if (self.voteShareUrl) return Promise.resolve(self.voteShareUrl);
+    if (!self.reportId) return Promise.resolve(self.reportUrl || "https://houseoffer.uk");
+    return fetch(self.backend + "/r/" + self.reportId + "/share-link", {method: "POST"})
+      .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function(d) { self.voteShareUrl = d.url; return d.url; })
+      .catch(function() { return self.reportUrl || "https://houseoffer.uk"; });
+  },
+  shareForVotes: function(btn) {
+    var original = btn.innerHTML;
+    this.getVoteLink().then(function(url) {
+      var text = "What do you reckon this place is actually worth? Drop your number — no signup:";
+      if (navigator.share) {
+        navigator.share({title: "What's your number?", text: text, url: url}).catch(function() {});
+      } else {
+        navigator.clipboard.writeText(text + " " + url).then(function() {
+          btn.innerHTML = "✓ Link copied — send it on";
+          setTimeout(function() { btn.innerHTML = original; }, 2500);
+        });
+      }
+    });
+  },
+  copyReportLink: function(btn) {
+    var url = this.reportUrl || window.location.href;
+    var original = btn.innerHTML;
+    navigator.clipboard.writeText(url).then(function() {
+      btn.innerHTML = "✓ Copied";
+      setTimeout(function() { btn.innerHTML = original; }, 2000);
+    });
+  },
+
+  // ── Crowd voting ───────────────────────────────────────────────────────────
+  submitVote: function() {
+    var self = this;
+    var input = document.getElementById("crowd-input");
+    var raw = (input.value || "").replace(/[^0-9]/g, "");
+    var estimate = parseInt(raw, 10);
+    if (!estimate || estimate < 1000) { input.focus(); input.style.borderColor = "var(--red)"; return; }
+    fetch(self.backend + "/api/vote", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({report_id: self.reportId, estimate: estimate})
+    }).then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function(d) { self.renderFeed(d); })
+      .catch(function() {});
+    try { localStorage.setItem("ho_vote_" + self.reportId, String(estimate)); } catch(e) {}
+    self.revealResults(estimate);
+  },
+  revealResults: function(estimate) {
+    var self = this;
+    document.getElementById("crowd-input-row").style.display = "none";
+    document.getElementById("crowd-results").classList.add("show");
+    document.getElementById("feed-you-val").textContent = "£" + estimate.toLocaleString();
+    document.getElementById("crowd-avg").textContent = "£" + estimate.toLocaleString();
+    self.renderMarkers(estimate);
+    // Live feed: poll while the page is open (bounded)
+    if (self.pollTimer) clearInterval(self.pollTimer);
+    var polls = 0;
+    self.pollTimer = setInterval(function() {
+      if (++polls > 60) { clearInterval(self.pollTimer); return; }
+      fetch(self.backend + "/api/votes/" + self.reportId)
+        .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function(d) { self.renderFeed(d); })
+        .catch(function() {});
+    }, 6000);
+  },
+  renderMarkers: function(estimate) {
+    var vals = [estimate, this.asking];
+    if (this.ourMid) vals.push(this.ourMid);
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var span = (max - min) || max * 0.1 || 1;
+    min -= span * 0.2; max += span * 0.2;
+    var chart = document.getElementById("crowd-chart");
+    function pct(v) { return (8 + (v - min) / (max - min) * 84).toFixed(1) + "%"; }
+    function setPos(name, v) {
+      var m = chart.querySelector('[data-marker="' + name + '"]');
+      if (m) m.style.left = pct(v);
+    }
+    if (this.ourMid) setPos("data", this.ourMid);
+    setPos("you", estimate);
+    setPos("asking", this.asking);
+  },
+  renderFeed: function(d) {
+    if (!d) return;
+    if (d.count) {
+      document.getElementById("voter-count").textContent = d.count;
+      document.getElementById("voter-plural").textContent = d.count === 1 ? "" : "s";
+    }
+    if (d.crowd_avg) {
+      document.getElementById("crowd-avg").textContent = "£" + Number(d.crowd_avg).toLocaleString();
+      var cmp = document.getElementById("crowd-vs-data");
+      if (cmp && HO.ourMid) {
+        var diff = Math.round((d.crowd_avg - HO.ourMid) / HO.ourMid * 100);
+        var rel = diff > 0 ? diff + "% above" : diff < 0 ? (-diff) + "% below" : "right on";
+        cmp.innerHTML = "The crowd's average of <strong>£" + Number(d.crowd_avg).toLocaleString() +
+                        "</strong> is <strong>" + rel + "</strong> the data valuation of <strong>£" +
+                        Number(HO.ourMid).toLocaleString() + "</strong>.";
+      }
+    }
+    var feed = document.getElementById("crowd-feed");
+    if (d.votes && d.votes.length) {
+      var palette = ["#c06a1a", "#1a6b5a", "#238f77", "#b83232", "#7a8fd0", "#5f74b8"];
+      // Keep the "You" row, replace the rest with the live feed (self excluded server-side)
+      var youRow = feed.firstElementChild;
+      feed.innerHTML = "";
+      feed.appendChild(youRow);
+      d.votes.forEach(function(v, i) {
+        var name = v.name || "Anonymous";
+        var c = palette[i % palette.length];
+        var row = document.createElement("div");
+        row.className = "feed-row";
+        row.innerHTML = '<div class="feed-avatar" style="background:' + c + ';">' + name.charAt(0).toUpperCase() + '</div>' +
+                        '<div class="feed-name"></div>' +
+                        '<div class="feed-val" style="color:' + c + ';">£' + Number(v.estimate).toLocaleString() + '</div>';
+        row.querySelector(".feed-name").textContent = name;
+        feed.appendChild(row);
+      });
+    }
+  },
+
+  // ── Address confirmation ───────────────────────────────────────────────────
+  openModal: function() { document.getElementById("modal").classList.add("open"); },
+  closeModal: function() { document.getElementById("modal").classList.remove("open"); },
+  confirmAddress: function() {
+    var self = this;
+    var corrected = (document.getElementById("corrected-address").value || "").trim();
+    var body = corrected ? {address: corrected} : {confirmed: true};
+    fetch(self.backend + "/r/" + self.reportId + "/confirm-address", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    }).then(function(r) { return r.json().catch(function() { return {}; }); })
+      .then(function(d) {
+        if (corrected && d.rebuilding) { window.location.reload(); }
+        else {
+          var btn = document.querySelector(".conf-addr-btn");
+          if (btn) btn.innerHTML = "✓ Address confirmed";
+          self.closeModal();
+        }
+      })
+      .catch(function() { self.closeModal(); });
+  }
+};
+
+// Close modal on backdrop click
+(function() {
+  var modal = document.getElementById("modal");
+  if (modal) modal.addEventListener("click", function(e) { if (e.target === this) HO.closeModal(); });
+})();
+
+// Restore a previous vote so the reveal persists across visits
+(function() {
+  if (!HO.reportId) return;
+  try {
+    var prev = localStorage.getItem("ho_vote_" + HO.reportId);
+    if (prev && document.getElementById("crowd-input-row")) {
+      HO.revealResults(parseInt(prev, 10));
+      fetch(HO.backend + "/api/votes/" + HO.reportId)
+        .then(function(r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function(d) { HO.renderFeed(d); }).catch(function() {});
+    }
+  } catch(e) {}
+})();
+</script>
 
 {% if report_id %}
 <script>
@@ -1021,7 +1000,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     log("page_exit", {seconds: seconds, max_scroll_pct: maxScrollPct});
   });
 
-  // Track lock-overlay engagement (when locked sections come into view)
+  // Track lock engagement (when locked/blurred sections come into view)
   if ("IntersectionObserver" in window) {
     var seenLocks = new Set();
     var observer = new IntersectionObserver(function(entries) {
@@ -1035,7 +1014,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         }
       });
     }, {threshold: 0.5});
-    document.querySelectorAll(".lock-overlay").forEach(function(el, i) {
+    document.querySelectorAll(".locked-ff-overlay-inline, .leverage-strip").forEach(function(el, i) {
       el.setAttribute("data-lock-label", "lock_" + (i + 1));
       observer.observe(el);
     });

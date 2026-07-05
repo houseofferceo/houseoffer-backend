@@ -79,6 +79,84 @@ def log_event(report_id, event_type, extra=None):
         print(f"log_event error: {e}")
         return False
 
+# ── CROWD VOTING STORAGE ──────────────────────────────────────────────────────
+# Votes live as JSON files per report (fast local reads for the live feed) and
+# every vote ALSO streams to the Google Sheets webhook, which is the durable
+# copy: on a redeploy the live feed resets but no vote data is lost.
+# Share slugs map a short public code (/v/xk29p) to a report_id.
+VOTES_DIR = "/tmp/houseoffer_votes"
+SLUGS_DIR = "/tmp/houseoffer_slugs"
+os.makedirs(VOTES_DIR, exist_ok=True)
+os.makedirs(SLUGS_DIR, exist_ok=True)
+_votes_lock = threading.Lock()
+MAX_VOTES_PER_REPORT = 500
+_SLUG_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/O/1/l/i lookalikes
+
+
+def _load_votes(report_id):
+    try:
+        path = os.path.join(VOTES_DIR, f"{report_id}.json")
+        if not os.path.exists(path):
+            return []
+        with open(path) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"_load_votes error: {e}")
+        return []
+
+
+def _save_votes(report_id, votes):
+    try:
+        with open(os.path.join(VOTES_DIR, f"{report_id}.json"), "w") as f:
+            json.dump(votes, f)
+        return True
+    except Exception as e:
+        print(f"_save_votes error: {e}")
+        return False
+
+
+def _vote_summary(votes, exclude_token=None):
+    """Feed payload for the report + voting pages. count/average cover ALL
+    votes; the visible feed excludes the requester's own vote (the page
+    renders that as a local "You" row) and caps the list."""
+    count = len(votes)
+    crowd_avg = round(sum(v["estimate"] for v in votes) / count) if count else None
+    feed = [{"name": v.get("name") or None, "estimate": v["estimate"]}
+            for v in reversed(votes) if v.get("token") != exclude_token][:50]
+    return {"count": count, "crowd_avg": crowd_avg, "votes": feed}
+
+
+def _slug_path(slug):
+    return os.path.join(SLUGS_DIR, f"{slug}.json")
+
+
+def _mint_vote_slug(report_id):
+    """Create (or reuse) the short public voting slug for a report."""
+    import secrets
+    for _ in range(20):
+        slug = "".join(secrets.choice(_SLUG_ALPHABET) for _ in range(5))
+        if not os.path.exists(_slug_path(slug)):
+            with open(_slug_path(slug), "w") as f:
+                json.dump({"report_id": report_id,
+                           "created_at": datetime.utcnow().isoformat() + "Z"}, f)
+            return slug
+    raise RuntimeError("could not mint a unique vote slug")
+
+
+def _resolve_vote_slug(slug):
+    """slug -> report_id, or None."""
+    if not re.fullmatch(r"[a-z0-9]{4,10}", slug or ""):
+        return None
+    try:
+        path = _slug_path(slug)
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            return (json.load(f) or {}).get("report_id")
+    except Exception as e:
+        print(f"_resolve_vote_slug error: {e}")
+        return None
+
 # ── DEDUP ─────────────────────────────────────────────────────────────────────
 # Simple in-memory dedup cache: {hash: timestamp}
 # Prevents same email+URL submission within 60s causing duplicate report emails
@@ -198,6 +276,38 @@ def extract_postcode_from_url(url):
         return match.group(1).replace(" ", "").upper()
     return None
 
+# Valid GB (UK) postcode AREA codes — the leading alpha prefix of a postcode.
+# Used by the random-URL test harness to reject non-GB / placeholder listings
+# (e.g. Republic of Ireland Eircodes "D83 1EB", placeholder codes "A71B 0AC")
+# which are postcode-shaped but never resolve to real UK sales data.
+VALID_GB_POSTCODE_AREAS = {
+    "AB", "AL", "B", "BA", "BB", "BD", "BH", "BL", "BN", "BR", "BS", "BT", "CA",
+    "CB", "CF", "CH", "CM", "CO", "CR", "CT", "CV", "CW", "DA", "DD", "DE", "DG",
+    "DH", "DL", "DN", "DT", "DY", "E", "EC", "EH", "EN", "EX", "FK", "FY", "G",
+    "GL", "GU", "GY", "HA", "HD", "HG", "HP", "HR", "HS", "HU", "HX", "IG", "IM",
+    "IP", "IV", "JE", "KA", "KT", "KW", "KY", "L", "LA", "LD", "LE", "LL", "LN",
+    "LS", "LU", "M", "ME", "MK", "ML", "N", "NE", "NG", "NN", "NP", "NR", "NW",
+    "OL", "OX", "PA", "PE", "PH", "PL", "PO", "PR", "RG", "RH", "RM", "S", "SA",
+    "SE", "SG", "SK", "SL", "SM", "SN", "SO", "SP", "SR", "SS", "ST", "SW", "SY",
+    "TA", "TD", "TF", "TN", "TQ", "TR", "TS", "TW", "UB", "W", "WA", "WC", "WD",
+    "WF", "WN", "WR", "WS", "WV", "YO", "ZE",
+}
+
+_GB_POSTCODE_RE = re.compile(r"^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$")  # compact form
+
+def is_valid_gb_postcode(postcode):
+    """True only for structurally valid UK postcodes whose AREA is a real GB
+    postcode area. Rejects Irish Eircodes ("D83 1EB") and placeholders ("A71B 0AC")
+    that are postcode-shaped but not GB — the harvester's main pollution source."""
+    if not postcode:
+        return False
+    compact = re.sub(r"\s+", "", str(postcode).strip().upper())
+    if not _GB_POSTCODE_RE.match(compact):
+        return False
+    area_match = re.match(r"^[A-Z]{1,2}", compact)
+    return bool(area_match) and area_match.group(0) in VALID_GB_POSTCODE_AREAS
+
+
 def _coerce_bedrooms(value):
     """Caller-supplied bedrooms may be '', '3', 3 or None. Return an int in a
     sane range, or None for anything that isn't a real bedroom count."""
@@ -261,6 +371,12 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "reduction_pct": scraped.get("reduction_pct"),
         "scraper_floor_area_sqm": scraped.get("floor_area_sqm"),
         "is_new_build": scraped.get("is_new_build", False),
+        # Special tenure / sale type (Cycle 1, item 4): shared_ownership / auction /
+        # retirement / None. Drives a caveat in the report; never withholds a value.
+        "sale_type": scraped.get("sale_type"),
+        # Official EPC certificate the listing links (Cycle 4c) — a direct,
+        # address-free floor-area source.
+        "epc_cert_url": scraped.get("epc_cert_url"),
         # Provenance flags (FIX 1) so the report/QC layer can see when bedrooms,
         # property type or floor area were unknown rather than truly read.
         "bedrooms_source": beds_source,
@@ -271,6 +387,8 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         "longitude": scraped.get("longitude"),
         # Subject bathrooms — scraped from the listing, feeds the AVM.
         "bathrooms": scraped.get("bathrooms"),
+        # Portal og:image — powers the voting share page and WhatsApp previews.
+        "main_photo_url": scraped.get("main_photo_url"),
     }
 
     # Full-address resolution (sold-record coordinate match). Enhancement only:
@@ -338,6 +456,25 @@ def _epc_fetch_certificate(certificate_number):
         return None
     cert = r.json().get("data")
     return cert if isinstance(cert, dict) else None
+
+_EPC_RRN_RE = re.compile(r"\d{4}-\d{4}-\d{4}-\d{4}-\d{4}")
+
+def fetch_floor_area_from_cert_url(epc_cert_url):
+    """Cycle 4c: floor area from the EXACT EPC certificate the listing links to.
+    The gov.uk certificate URL embeds the certificate number (RRN), so this needs
+    NO address match — bypassing the address-resolution bottleneck that leaves most
+    listings with no floor area. Returns floor area in m² or None."""
+    if not (EPC_API_KEY and epc_cert_url):
+        return None
+    m = _EPC_RRN_RE.search(epc_cert_url)
+    if not m:
+        return None
+    try:
+        cert = _epc_fetch_certificate(m.group(0))
+        return _extract_floor_area(cert) if cert else None
+    except Exception as e:
+        print(f"EPC cert-url lookup exception: {e}")
+        return None
 
 def _leading_house_number(addr):
     """Extract the leading house/flat number from an address string.
@@ -725,18 +862,24 @@ def get_sold_comparables(postcode, property_type):
     comparables = _filter_sold(fetch_sold_prices(formatted), canonical)
     broadened = False
     postcode_used = formatted
+    # Cycle 1, item 2: tier label drives the published confidence score.
+    #   postcode = direct unit-postcode same-type match (HIGH)
+    #   sector / district = geographically broadened same-type match (MEDIUM)
+    #   region = area-wide, all-type last-resort fallback (LOW, but never blank)
+    tier = "postcode"
+    district = district_postcode(postcode)
+    sector = sector_postcode(postcode)
     if len(comparables) < MIN_COMPARABLES:
         # Try sector (e.g. 'LS17 9') before jumping to the full district ('LS17'),
         # which can be too broad and mix premium and cheap sub-areas.
-        sector = sector_postcode(postcode)
-        if sector != district_postcode(postcode):
+        if sector != district:
             sector_comps = _filter_sold(fetch_sold_prices(sector), canonical)
             if len(sector_comps) >= MIN_SECTOR_COMPARABLES:
                 comparables = sector_comps
                 postcode_used = sector
                 broadened = True
+                tier = "sector"
         if len(comparables) < MIN_COMPARABLES:
-            district = district_postcode(postcode)
             district_comps = _filter_sold(fetch_sold_prices(district), canonical)
             # P1 fix: only broaden to the district if it actually yields MORE
             # comps. A failed/empty district call must never wipe out comps we
@@ -745,9 +888,25 @@ def get_sold_comparables(postcode, property_type):
                 comparables = district_comps
                 postcode_used = district
                 broadened = True
+                tier = "district"
+    # Regional fallback (item 2): NEVER return "no comparables" when a valid
+    # postcode exists. If the same-type tiers above produced nothing usable, widen
+    # to ALL recent sales across the district (any property type), then the sector.
+    # Triggers only when we would otherwise hand back an empty set.
+    if not comparables:
+        region_comps = _all_sold_transactions(fetch_sold_prices(district))
+        region_pc = district
+        if not region_comps and sector != district:
+            region_comps = _all_sold_transactions(fetch_sold_prices(sector))
+            region_pc = sector
+        if region_comps:
+            comparables = _median_trim(region_comps)
+            postcode_used = region_pc
+            broadened = True
+            tier = "region"
     # HPI-adjust all comparables to today's value before returning
     comparables = hpi_adjust_comparables(comparables, postcode)
-    return comparables, postcode_used, broadened, type_unknown
+    return comparables, postcode_used, broadened, type_unknown, tier
 
 # ── P2: bedroom-matched, distance-ranked comparables ───────────────────────────
 # The Rightmove sold feed (fetch_sold_nearby) carries property_type, bedrooms and
@@ -843,19 +1002,23 @@ def _filter_sold(data, canonical_type):
         comps = [t for t in transactions
                  if (canonical_type is None or _canonical_sold_type(t.get("type")) == canonical_type)
                  and t.get("price") and t.get("price") < 2_000_000]
-        # Median band: exclude non-market transactions (partial transfers,
-        # right-to-buy, inter-family sales) that Land Registry records at
-        # far-from-market values. Anchored on the median, which an outlier
-        # cannot drag the way it drags the mean. Kept loose (50%-200%) so it
-        # removes junk data without shaping the genuine distribution.
-        if len(comps) >= 5:
-            prices = sorted(c["price"] for c in comps)
-            n = len(prices)
-            median = prices[n // 2] if n % 2 else (prices[n // 2 - 1] + prices[n // 2]) / 2
-            comps = [c for c in comps if 0.5 * median <= c["price"] <= 2.0 * median]
-        return comps
+        # Median band junk-trim (see _median_trim).
+        return _median_trim(comps)
     except Exception:
         return []
+
+def _median_trim(comps):
+    """Exclude non-market transactions (partial transfers, right-to-buy,
+    inter-family sales) that Land Registry records at far-from-market values.
+    Anchored on the median, which an outlier cannot drag the way it drags the
+    mean. Kept loose (50%-200%) so it removes junk without shaping the genuine
+    distribution. Only applied once there are enough records to trust the median."""
+    if len(comps) >= 5:
+        prices = sorted(c["price"] for c in comps)
+        n = len(prices)
+        median = prices[n // 2] if n % 2 else (prices[n // 2 - 1] + prices[n // 2]) / 2
+        return [c for c in comps if 0.5 * median <= c["price"] <= 2.0 * median]
+    return comps
 
 def _all_sold_transactions(data):
     if not data:
@@ -970,6 +1133,13 @@ def _psqf_points(data, canonical_type):
                     "sqf": p.get("sqf"),
                     "address": p.get("address"),
                     "price": p.get("price"),
+                    # Phase A: carry the columns this feed already provides per sold
+                    # property — used to build bedroom/size/distance-matched comps.
+                    "bedrooms": p.get("bedrooms"),
+                    "latitude": p.get("lat") or p.get("latitude"),
+                    "longitude": p.get("lng") or p.get("longitude"),
+                    "date": p.get("date"),
+                    "property_type": p.get("type"),
                 })
     if not points:
         # None-safe: some PropertyData £/sqf records have type=null, which can't be
@@ -1729,6 +1899,215 @@ def _method_dict(name, low, high, midpoint, source, available, weight=1):
     }
 
 
+_CONFIDENCE_ORDER = {"high": 2, "medium": 1, "low": 0}
+# Independent matched-sold corroboration thresholds (Cycle 2). HIGH requires the
+# bedroom/size/distance-matched SOLD comps (psqf feed) to agree with the published
+# midpoint within CORROBORATE; a gap above CONFLICT means the methods disagree and
+# the estimate is capped to MEDIUM with a "methods disagree" caveat.
+_MATCHED_SOLD_CORROBORATE = 0.12
+_MATCHED_SOLD_CONFLICT = 0.20
+# Cycle 3 sanity gate: when our valuation diverges from the asking price beyond
+# these ratios, the listing is almost certainly non-standard (shared ownership,
+# short lease, auction guide, mis-listing, wrong type) — see E9 0CC (+130%) and
+# CF63 (−88%). Normal over/under-pricing never reaches these bounds, so the gate
+# only catches genuine anomalies. Such listings are capped to LOW + flagged.
+_ASKING_ANOMALY_HIGH_RATIO = 1.5   # our value > 1.5× asking
+_ASKING_ANOMALY_LOW_RATIO = 0.6    # our value < 0.6× asking
+# Cycle 4b premium-property guard: a would-be-HIGH whose value sits this far BELOW
+# asking is almost always an under-captured premium/larger home (the area comps and
+# the matched-sold are both biased low and corroborate each other) rather than
+# genuine confidence — seen on NW3/CO4/W6 prime stock. Demote such rows to MEDIUM.
+_PREMIUM_UNDERVALUE_RATIO = 0.75   # our value < 0.75× asking (i.e. >25% below)
+
+def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
+                        comp_count, sale_type, is_new_build, has_value,
+                        matched_sold_value=None, weighted_midpoint=None,
+                        asking_anomaly=False, asking_price=None):
+    """Single source of truth for the PUBLISHED confidence score + caveat. We always
+    return a valuation for any listing with a usable postcode — this only encodes how
+    much to trust it and why.
+
+    Cycle 2 fix: HIGH no longer means "enough comps at the postcode" (that gave HIGH
+    to bedroom/size-BLIND averages — the flat misses N19/B1/N8/EH10/B23). HIGH now
+    requires EITHER a genuinely bedroom/size-matched headline set OR independent
+    matched-sold comps that AGREE with the published number. When the headline set is
+    only area-matched it is MEDIUM, and when an available matched-sold signal
+    DISAGREES sharply the estimate is capped to MEDIUM and flagged.
+
+    Returns (score, reasons, caveat)."""
+    reasons = []
+    # The headline comparable SET was itself bedroom/size matched (FIX 2 path).
+    headline_matched = comparable_confidence in (
+        "bedroom_matched", "size_matched", "bedroom_distance", "bedroom_distance_wide")
+    # Independent corroboration / conflict from the matched-sold (psqf) signal.
+    corroborated = conflict = False
+    if matched_sold_value and weighted_midpoint:
+        div = abs(matched_sold_value - weighted_midpoint) / weighted_midpoint
+        corroborated = div <= _MATCHED_SOLD_CORROBORATE
+        conflict = div > _MATCHED_SOLD_CONFLICT
+
+    if headline_matched or corroborated:
+        score = "high"
+        if corroborated and not headline_matched:
+            reasons.append("recent sales of similar (bedroom-matched) homes corroborate this estimate")
+    elif comparable_tier in ("postcode", "sector", "district"):
+        score = "medium"
+        if comparable_tier == "postcode" and comp_count >= MIN_COMPARABLES:
+            reasons.append("based on local sold prices, but not bedroom- or size-matched")
+        elif comparable_tier == "postcode":
+            reasons.append("based on a small number of sales in this exact postcode")
+        else:
+            reasons.append("limited sales in the immediate postcode — estimate based on "
+                           f"the wider {comparable_tier} area")
+    elif comparable_tier == "region":
+        score = "low"
+        reasons.append("very few like-for-like sales nearby — estimate based on "
+                       "broader area-wide sales of all property types")
+    else:
+        score = "medium"
+
+    def downgrade(to):
+        return to if _CONFIDENCE_ORDER[to] < _CONFIDENCE_ORDER[score] else score
+
+    if conflict:
+        score = downgrade("medium")
+        reasons.append("valuation methods disagree on this property — treat the estimate with caution")
+    if type_unknown:
+        score = downgrade("low")
+        reasons.append("property type unclear — estimate is less precise as a result")
+
+    # Premium-property guard (Cycle 4b): don't claim HIGH when our value sits well
+    # below asking on a non-anomaly. That gap is usually a premium/larger home our
+    # comparables under-capture (both methods biased low, corroborating each other),
+    # not real confidence. Demote to MEDIUM with a plain reason. (Extreme gaps are
+    # already LOW via the anomaly gate.)
+    if (score == "high" and asking_price and weighted_midpoint
+            and weighted_midpoint < asking_price * _PREMIUM_UNDERVALUE_RATIO):
+        score = "medium"
+        reasons.append("our valuation is well below the asking price — often a premium "
+                       "or larger property that local comparable sales under-capture")
+
+    caveats = []
+    # Cycle 3 sanity gate: a valuation far from the asking price is a red flag for a
+    # non-standard listing even when our comps are good (E9 0CC: bedroom-matched
+    # comps said £495k, asking £215k — an undetected shared-ownership share).
+    if asking_anomaly:
+        score = downgrade("low")
+        reasons.append("asking price is far from the comparable evidence")
+        caveats.append(
+            "The asking price is very different from the sold-price evidence we found. "
+            "That usually means a non-standard listing — shared ownership, a short "
+            "lease, an auction guide price, or a mis-listing — so treat this estimate "
+            "with particular caution.")
+    if sale_type:
+        score = downgrade("medium")
+        label = {
+            "shared_ownership": "a shared-ownership / part-buy listing",
+            "auction": "an auction or guide-price listing",
+            "retirement": "a retirement / age-restricted listing",
+        }.get(sale_type, "a special-tenure listing")
+        caveats.append(
+            f"This looks like {label}. Its asking price is not directly comparable "
+            "to open-market value, so treat this estimate as indicative only.")
+    if is_new_build:
+        caveats.append(
+            "This looks like a new-build; new-builds usually carry a premium over "
+            "the resale sales this estimate is based on.")
+    if not has_value:
+        score = "low"
+    if reasons and score != "high":
+        caveats.append(f"Confidence is {score}: " + "; ".join(reasons) + ".")
+    caveat = " ".join(caveats) if caveats else None
+    return score, reasons, caveat
+
+
+def _resolve_seller_signal(days_on_market, local_avg_dom, dom_signal,
+                           price_reduced, reduction_pct, reduction_date,
+                           discount_pct):
+    """Single source of truth for the published seller-motivation signal on the
+    paid report. Mirrors _resolve_confidence: combines the public pressure
+    signals (time on market vs local average, recorded price reductions, the
+    local asking-vs-sold discount) into a strong/moderate/weak score plus
+    plain-English evidence lines. Missing inputs are stated honestly and cap
+    how high the score can go — they are never silently skipped.
+
+    Weighting rationale (2026-07-05 session): time on market is the strongest
+    single public signal (0-2 pts, negative when the listing is moving at or
+    faster than the local pace — that actively counters a pressure read); a
+    recorded price reduction is direct evidence the seller has already moved
+    (0-2 pts by size); the area asking-vs-sold discount is area-level context,
+    not property-specific, so it only nudges (±1 pt).
+
+    Returns (score, reasons, summary)."""
+    reasons = []
+    points = 0
+    dom_comparable = bool(days_on_market and local_avg_dom)
+
+    if dom_comparable:
+        if dom_signal == "high":
+            points += 2
+            reasons.append(f"listed {days_on_market} days vs a local average of "
+                           f"{local_avg_dom} — well past the point most sellers get nervous")
+        elif dom_signal == "medium":
+            points += 1
+            reasons.append(f"listed {days_on_market} days vs a local average of "
+                           f"{local_avg_dom} — starting to sit")
+        else:
+            points -= 1
+            reasons.append(f"only {days_on_market} days on the market vs a local average of "
+                           f"{local_avg_dom} — no time pressure on the seller yet")
+    elif days_on_market:
+        reasons.append(f"listed {days_on_market} days, but we couldn't fetch the local "
+                       "average to compare against")
+    else:
+        reasons.append("we couldn't read how long this listing has been on the market")
+
+    if price_reduced:
+        if reduction_pct and reduction_pct >= 5:
+            points += 2
+            reasons.append(f"the price has already been cut by {reduction_pct}% — "
+                           "the seller's position has publicly softened")
+        else:
+            points += 1
+            reasons.append("the price has already been reduced once — "
+                           "the seller has publicly moved")
+    else:
+        reasons.append("no price reduction recorded — the seller hasn't publicly moved yet")
+
+    if discount_pct is not None:
+        if discount_pct >= 5:
+            points += 1
+            reasons.append(f"buyers in this area achieve on average {discount_pct}% "
+                           "below asking — local sellers expect to negotiate")
+        elif discount_pct <= 2:
+            points -= 1
+            reasons.append(f"local sales complete close to asking (avg {discount_pct}% "
+                           "discount) — sellers around here tend to hold firm")
+        else:
+            reasons.append(f"buyers in this area achieve on average {discount_pct}% "
+                           "below asking — a typical negotiating margin")
+    else:
+        reasons.append("no local asking-vs-sold data available for this area")
+
+    score = "strong" if points >= 3 else ("moderate" if points >= 1 else "weak")
+    # Honesty cap: without the time-on-market comparison (the primary signal)
+    # we never claim STRONG on secondary evidence alone.
+    if score == "strong" and not dom_comparable:
+        score = "moderate"
+        reasons.append("score capped: without the time-on-market comparison we "
+                       "won't claim strong motivation on secondary signals alone")
+
+    summary = {
+        "strong": "Multiple public signals point to a seller under pressure. "
+                  "Negotiate with confidence — the clock is on your side.",
+        "moderate": "Some pressure signals are present, but this is not a seller who "
+                    "has to sell. Negotiate on the evidence, not on urgency.",
+        "weak": "Little public evidence of seller pressure. Your leverage here is "
+                "the data below, not the clock.",
+    }[score]
+    return score, reasons, summary
+
+
 def build_report_data(property_url, asking_price, bedrooms, property_type,
                       postcode, floor_area_sqm=None, address=None,
                       scraper_days_on_market=None, scraper_floor_area_sqm=None,
@@ -1739,6 +2118,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       bedrooms_source="unknown", property_type_source="unknown",
                       floor_area_source="unknown",
                       latitude=None, longitude=None, bathrooms=None,
+                      sale_type=None, epc_cert_url=None, main_photo_url=None,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -1756,6 +2136,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     floor_area_sqm_raw = None  # set by FIX 3 when a scraped area is rejected
     # P2 comparable-source signals (default to the Land Registry path).
     comparable_source = "land_registry"
+    # Cycle 1, item 2/3: which geographic tier produced the headline comparable set
+    # (postcode/sector/district/region). Set by get_sold_comparables; drives the
+    # published confidence score below.
+    comparable_tier = "postcode"
     comparable_radius_miles = None
     comparable_bedroom_band = None
     # Diagnostics: None = nearby feed not attempted (no subject coords);
@@ -1790,11 +2174,16 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         fut_nearby = None
         if latitude is not None and longitude is not None:
             fut_nearby = pool.submit(fetch_sold_nearby, postcode)
-        fut_epc = fut_psqf = fut_rents = fut_bedroom_price = None
+        fut_epc = fut_psqf = fut_rents = fut_bedroom_price = fut_cert_area = None
         if paid_tier:
             if EPC_API_KEY:
                 fut_epc = pool.submit(_epc_resolution, postcode, address,
                                       property_type, floor_area_sqm)
+                # Cycle 4c: when the listing has no floor area but links its official
+                # EPC certificate, fetch that exact certificate's area directly (no
+                # address match needed) — the main floor-area coverage lever.
+                if epc_cert_url and not floor_area_sqm:
+                    fut_cert_area = pool.submit(fetch_floor_area_from_cert_url, epc_cert_url)
             fut_psqf = pool.submit(fetch_psqf_points, postcode, property_type)
             fut_rents = pool.submit(fetch_avg_rents, formatted, property_type, bedrooms)
             # Option D: bedroom-specific local price (the like-for-like signal the
@@ -1802,7 +2191,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             fut_bedroom_price = (pool.submit(fetch_bedroom_price, formatted, property_type, bedrooms)
                                  if (bedrooms and property_type) else None)
 
-        comparables, postcode_used, broadened, type_unknown = fut_comps.result()
+        comparables, postcode_used, broadened, type_unknown, comparable_tier = fut_comps.result()
         if type_unknown:
             # No type filter could be applied — comparables mix property types.
             comparable_confidence = "low"
@@ -1843,8 +2232,24 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                     address_resolution = epc_confidence
                 if not floor_area_sqm and epc_area:
                     floor_area_sqm = epc_area
+                    # Tag provenance so the report/QC layer knows the area is
+                    # EPC-derived (was left as "unknown" — a mislabelling bug).
+                    floor_area_source = "epc"
+                    floor_area_confidence = "high"
             except Exception as e:
                 print(f"EPC resolution error: {e}")
+
+        # Cycle 4c: direct EPC-certificate floor area (exact, address-free) when the
+        # address-matched lookup above still found nothing.
+        if not floor_area_sqm and fut_cert_area is not None:
+            try:
+                cert_area = fut_cert_area.result()
+                if cert_area:
+                    floor_area_sqm = cert_area
+                    floor_area_source = "epc"
+                    floor_area_confidence = "high"
+            except Exception as e:
+                print(f"EPC cert-url area error: {e}")
 
         # ── FIX 3: sanity-check a SCRAPED floor area before it feeds the AVM,
         # £/sqm or size-match. EPC-derived areas are already authoritative and
@@ -1933,6 +2338,38 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             psqm_val = round(price / sqm) if price else round(price_per_sqft_to_sqm(pt["psqf"]))
             psqf_lookup[key] = {"sqm": sqm, "psqm": psqm_val}
 
+    # ── PHASE B: bedroom + distance (+ size) matched SOLD comparables ───────────
+    # Built from the £/sqf feed's per-property bedrooms / coordinates / floor area
+    # (Phase A now carries them). Reuses the P2 matcher. Scored as a new weighted
+    # method here; promotion to the PRIMARY comparable signal is Phase C.
+    matched_sold_value = None
+    matched_sold_low = matched_sold_high = None
+    matched_sold_count = 0
+    matched_sold_confidence = None
+    if latitude is not None and longitude is not None and not type_unknown and psqf_points:
+        try:
+            msel, msmeta = get_nearby_comparables(
+                latitude, longitude, property_type, bedrooms, psqf_points, min_comps=6)
+            matched_sold_confidence = msmeta.get("confidence")
+            # Optional ±20% floor-area refinement when it keeps a usable set.
+            if floor_area_sqm and floor_area_sqm > 0:
+                subj_sqf = floor_area_sqm * 10.764
+                sized = [c for c in msel if _within_size_band(c.get("sqf"), subj_sqf)]
+                if len(sized) >= 5:
+                    msel = sized
+                    matched_sold_confidence = f"{matched_sold_confidence}+size"
+            matched_sold_count = len(msel)
+            if len(msel) >= 5:
+                adj = hpi_adjust_comparables(msel, postcode)
+                prices = sorted(c.get("adjusted_price") or c["price"] for c in adj if c.get("price"))
+                if prices:
+                    n = len(prices)
+                    q1, q3 = max(0, n // 4), min(n - 1, n - n // 4)
+                    matched_sold_low, matched_sold_high = round(prices[q1]), round(prices[q3])
+                    matched_sold_value = avg_sold_price(adj)
+        except Exception as e:
+            print(f"matched-sold comparables error: {e}")
+
     # ── FIX 2: real ±20% size-matching of the headline comparable set ──────────
     # The /sold-prices feed has no floor area, so we join it to the £/sqf feed by
     # address and keep only comparables within ±20% of the subject's floor area.
@@ -2013,13 +2450,14 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             )
             if hpi_adjustment:
                 hpi_adjusted_value = hpi_adjustment["adjusted_price"]
-        else:
-            # No confident match - build candidates list for the dropdown
-            # on both tiers so the user can pick their address
-            try:
-                last_sale_candidates = get_last_sale_candidates(postcode)
-            except Exception:
-                pass
+        # Candidates power the confirm-address modal dropdown on BOTH paths —
+        # even a confident match can be the wrong property, and picking from
+        # the sold list is the cheapest correction (Land Registry SPARQL
+        # first, so normally no PropertyData spend).
+        try:
+            last_sale_candidates = get_last_sale_candidates(postcode)
+        except Exception:
+            pass
     except Exception as e:
         print(f"HPI section error: {e}")
 
@@ -2029,6 +2467,32 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     if days_on_market and local_avg_dom:
         ratio = days_on_market / local_avg_dom
         dom_signal = "high" if ratio > 1.5 else ("medium" if ratio > 1.0 else "low")
+
+    # DOM → typical-discount RANGE (2026-07-05, paid-tier context). Keyed off
+    # dom_signal so the buckets can never drift from the ratio thresholds above.
+    # Deliberately a range, never a precise figure, and deliberately NOT an
+    # input to the open/target/walk_away calculation — market context only.
+    # Bucket values anchor on the observed asking-vs-sold discounts (national
+    # avg ~4.5%, method 7 uses ±1%): at/below local pace 0-3%, moderately
+    # above 2-5%, well above 3-7%.
+    dom_shift_low_pct = dom_shift_high_pct = None
+    dom_shift_low_amount = dom_shift_high_amount = None
+    if dom_signal:
+        dom_shift_low_pct, dom_shift_high_pct = {
+            "high": (3, 7), "medium": (2, 5), "low": (0, 3)}[dom_signal]
+        if asking_price:
+            # Nearest £500: precise-looking pounds would contradict "range".
+            dom_shift_low_amount = round(asking_price * dom_shift_low_pct / 100 / 500) * 500
+            dom_shift_high_amount = round(asking_price * dom_shift_high_pct / 100 / 500) * 500
+
+    # Seller-motivation signal (2026-07-05, paid-tier section). Uses the RAW
+    # local discount_pct — method 7 below substitutes a national fallback into
+    # this variable, which must not masquerade as local evidence here.
+    seller_signal_score, seller_signal_reasons, seller_signal_summary = (
+        _resolve_seller_signal(days_on_market, local_avg_dom, dom_signal,
+                               price_reduced, reduction_pct, reduction_date,
+                               discount_pct))
+    local_sold_discount_pct = discount_pct
 
     verdict = sold_verdict or psqm_verdict or "unknown"
     diff_pct = sold_diff_pct if sold_diff_pct is not None else psqm_diff_pct or 0
@@ -2169,7 +2633,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     else:
         methods.append(_method_dict("Automated valuation", 0, 0, 0, "Automated valuation model", False))
 
-    # Method 6: Lender valuation band
+    # Method 6: Estimated lender range — SYNTHETIC (min of our other methods
+    # x 0.90-0.97, no independent data source). Labelled "(modelled)" so it is
+    # never mistaken for actual lender data alongside the sourced methods.
     base_candidates = [v for v in (local_avg_sold, hpi_adjusted_value, psqm_implied_value) if v]
     if base_candidates:
         lender_base = min(base_candidates)
@@ -2177,11 +2643,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         m6_high = round(lender_base * 0.97)
         m6_mid = round((m6_low + m6_high) / 2)
         methods.append(_method_dict(
-            "Lender valuation band", m6_low, m6_high, m6_mid,
-            "Estimated lender valuation", True
+            "Estimated lender range (modelled)", m6_low, m6_high, m6_mid,
+            "Modelled — not sourced from lender data", True
         ))
     else:
-        methods.append(_method_dict("Lender valuation band", 0, 0, 0, "Estimated lender valuation", False))
+        methods.append(_method_dict("Estimated lender range (modelled)", 0, 0, 0,
+                                    "Modelled — not sourced from lender data", False))
 
     # Method 6b: Rental yield implied value (rent fetched in the parallel phase
     # using the FULL postcode - the broadened district postcode breaks /rents).
@@ -2253,6 +2720,27 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         print(f"Method 8 error: {e}")
         methods.append(_method_dict("Bedroom-matched local price", 0, 0, 0,
                                     "PropertyData local asking by bedroom", False, weight=2))
+
+    # Method 9 (Phase B): bedroom/size/distance-matched SOLD comparables, from the
+    # £/sqf feed's per-property bedrooms+coordinates+floor area. Added at weight 1
+    # for SCORING — not yet the primary signal (that's Phase C, after the batch
+    # shows it tracks asking on its own).
+    # Weight 0 = shown for scoring but EXCLUDED from the weighted valuation. The
+    # batch showed this method reads high (permissive widening pulls in larger/
+    # pricier sold comps), so it must not affect live valuations until tightened
+    # (Phase B.1: enforce ±20% size as the hard like-for-like constraint).
+    if matched_sold_value:
+        methods.append(_method_dict(
+            f"Matched sold comparables ({bedrooms}-bed)" if bedrooms else "Matched sold comparables",
+            matched_sold_low or round(matched_sold_value * 0.95),
+            matched_sold_high or round(matched_sold_value * 1.05),
+            matched_sold_value,
+            "PropertyData sold £/sqf feed — bedroom/size/distance matched (scoring only)", True, weight=0
+        ))
+    else:
+        methods.append(_method_dict("Matched sold comparables", 0, 0, 0,
+                                    "PropertyData sold £/sqf feed — bedroom/size/distance matched (scoring only)",
+                                    False, weight=0))
 
     # ── Bedroom-specific signal leads ──────────────────────────────────────────
     # When Option D (bedroom-matched local price) is available, let it lead: the
@@ -2360,6 +2848,37 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     original_asking_price_formatted = _fmt(original_asking_price)
     reduction_amount_formatted = _fmt(reduction_amount)
 
+    # ── PUBLISHED CONFIDENCE SCORE + CAVEAT (Cycle 1, item 3) ──────────────────
+    # One resolver combines the comparable tier, type certainty, thin-set, special
+    # tenure and new-build into a high/medium/low score and a buyer-facing caveat.
+    # We still publish a number for every listing with a usable postcode.
+    # Cycle 3 sanity gate: flag a valuation that diverges wildly from the asking
+    # price (probable special tenure / lease / mis-listing) — drives the caveat below.
+    asking_anomaly = False
+    if asking_price and weighted_midpoint:
+        ratio = weighted_midpoint / asking_price
+        asking_anomaly = (ratio > _ASKING_ANOMALY_HIGH_RATIO
+                          or ratio < _ASKING_ANOMALY_LOW_RATIO)
+    confidence_score, confidence_reasons, confidence_caveat = _resolve_confidence(
+        comparable_tier=comparable_tier,
+        comparable_confidence=comparable_confidence,
+        type_unknown=type_unknown,
+        comp_count=len(comparables_for_avg),
+        sale_type=sale_type,
+        is_new_build=is_new_build,
+        has_value=weighted_midpoint is not None,
+        matched_sold_value=matched_sold_value,
+        weighted_midpoint=weighted_midpoint,
+        asking_anomaly=asking_anomaly,
+        asking_price=asking_price,
+    )
+    # Divergence between the independent matched-sold signal and the published
+    # midpoint — surfaced for the QC layer and the batch test (drives the HIGH gate).
+    matched_sold_divergence_pct = None
+    if matched_sold_value and weighted_midpoint:
+        matched_sold_divergence_pct = round(
+            (weighted_midpoint - matched_sold_value) / matched_sold_value * 100, 1)
+
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
@@ -2386,6 +2905,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # kept for the QC layer; never fed into the valuation maths.
         "floor_area_sqm_raw": floor_area_sqm_raw,
         "comparable_confidence": comparable_confidence,
+        # Cycle 1: published confidence model — high/medium/low + plain-English
+        # caveat, plus the comparable tier and any detected special sale type.
+        "confidence_score": confidence_score,
+        "confidence_reasons": confidence_reasons,
+        "confidence_caveat": confidence_caveat,
+        "comparable_tier": comparable_tier,
+        "sale_type": sale_type,
+        # Cycle 3: valuation diverged far from asking (probable non-standard listing).
+        "asking_anomaly": asking_anomaly,
         "comparable_count_size_matched": comparable_count_size_matched,
         # P2: where the comparable set came from and how it was matched.
         "comparable_source": comparable_source,
@@ -2401,6 +2929,13 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "bedroom_local_avg_asking": bedroom_local_avg_asking,
         "bedroom_implied_value": bedroom_implied_value,
         "comparable_downweighted_for_bedroom": comparable_downweighted_for_bedroom,
+        # Phase B: bedroom/size/distance-matched SOLD comparables (scored, not yet primary).
+        "matched_sold_value": matched_sold_value,
+        "matched_sold_count": matched_sold_count,
+        "matched_sold_confidence": matched_sold_confidence,
+        # Cycle 2: agreement between the independent matched-sold signal and the
+        # published midpoint (drives the HIGH gate; large gap = methods disagree).
+        "matched_sold_divergence_pct": matched_sold_divergence_pct,
         "local_avg_sold": local_avg_sold,
         "local_avg_sold_formatted": f"£{local_avg_sold:,}" if local_avg_sold else None,
         "sold_diff_pct": sold_diff_pct,
@@ -2424,6 +2959,16 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "days_on_market": days_on_market,
         "local_avg_dom": local_avg_dom,
         "dom_signal": dom_signal,
+        # Seller-motivation signal + DOM discount range (paid-tier section).
+        # Context/display only — none of these feed the offer calculation.
+        "seller_signal_score": seller_signal_score,
+        "seller_signal_reasons": seller_signal_reasons,
+        "seller_signal_summary": seller_signal_summary,
+        "local_sold_discount_pct": local_sold_discount_pct,
+        "dom_shift_low_pct": dom_shift_low_pct,
+        "dom_shift_high_pct": dom_shift_high_pct,
+        "dom_shift_low_formatted": _fmt(dom_shift_low_amount),
+        "dom_shift_high_formatted": _fmt(dom_shift_high_amount),
         "price_reduced": price_reduced,
         "original_asking_price": original_asking_price,
         "original_asking_price_formatted": original_asking_price_formatted,
@@ -2454,6 +2999,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "property_url": property_url,
         "tier": tier,
         "is_new_build": is_new_build,
+        "main_photo_url": main_photo_url,
     }
 
 # ── BACKGROUND REPORT BUILDS ──────────────────────────────────────────────────
@@ -2530,6 +3076,11 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
                 bedrooms_source=report.get("bedrooms_source", "unknown"),
                 property_type_source=report.get("property_type_source", "unknown"),
                 floor_area_source=report.get("floor_area_source", "unknown"),
+                sale_type=report.get("sale_type"),
+                latitude=report.get("latitude"),
+                longitude=report.get("longitude"),
+                bathrooms=report.get("bathrooms"),
+                main_photo_url=report.get("main_photo_url"),
                 tier=tier,
             )
             latest = load_report(report_id) or {}
@@ -2719,6 +3270,145 @@ def track():
     from flask import redirect
     return redirect("https://houseoffer.netlify.app/#pricing")
 
+# ── POST-UNLOCK BUYER PROFILE (2026-07-05) ───────────────────────────────────
+# Three single-choice questions shown after unlock, before the paid report
+# renders. Always skippable — a paying customer is never blocked from their
+# report. Answers personalise the report at DISPLAY TIME only: the stored
+# open/target/walk_away values are never modified.
+
+BUYER_PROFILE_FIELDS = {
+    "position": {"first_time", "sold_stc", "need_to_sell", "cash", "investor"},
+    "attachment": {"several", "this_one", "the_one"},
+    "timeline": {"fast", "one_three", "flexible"},
+}
+
+# Positions that make a buyer fully proceedable (chain-free or sale agreed).
+_PROCEEDABLE_POSITIONS = {"cash", "investor", "sold_stc", "first_time"}
+
+
+def _personalised_offer_display(report, profile):
+    """Task 5(B): render-time presentation of the offer numbers, shaped by the
+    buyer's answers. Returns template-context OVERRIDES only — the stored
+    report dict is never touched, and the calculation itself is unchanged.
+
+    Movement rules (documented in SESSION_LOG_2026-07-05.md):
+    - Proceedable buyer comparing several options → the displayed opening
+      stretches DOWN by half the open→target gap, floored at weighted_low
+      (never outside the data-justified range).
+    - "THE one" + a chain still to settle → displayed opening moves UP by half
+      the open→target gap (fewer rounds, less risk), capped below target.
+    - Everything else → numbers exactly as stored.
+
+    HARD GUARDRAIL: the displayed walk-away NEVER exceeds the stored
+    data-derived walk_away. Answers move where you play WITHIN the range;
+    they never raise the ceiling."""
+    if not profile:
+        return {}
+    open_v = report.get("open_offer")
+    target = report.get("target_price")
+    walk = report.get("walk_away")
+    if not (open_v and target and walk):
+        return {}
+
+    position = profile.get("position")
+    attachment = profile.get("attachment")
+    stance = None
+    display_open = open_v
+
+    if position in _PROCEEDABLE_POSITIONS and attachment == "several":
+        # Floor at weighted_low (the bottom of the data-justified range) — but
+        # never ABOVE the stored opening, which the asking-price caps can
+        # already have pushed below weighted_low. An "aggressive" answer must
+        # never display a higher opening than the neutral one.
+        floor = min(report.get("weighted_low") or open_v, open_v)
+        display_open = max(floor, open_v - round(0.5 * (target - open_v)))
+        display_open = round(display_open / 1000) * 1000
+        stance = "aggressive"
+    elif attachment == "the_one" and position == "need_to_sell":
+        display_open = min(target - 1000, open_v + round(0.5 * (target - open_v)))
+        display_open = round(display_open / 1000) * 1000
+        stance = "tight"
+
+    # Re-enforce the universal caps after rounding: below target, below asking.
+    display_open = min(display_open, target - 1000)
+    asking = report.get("asking_price")
+    if asking:
+        display_open = min(display_open, asking - 1000)
+
+    # Personalisation never proposes a different ceiling today, but the cap is
+    # enforced in code so no future stance can breach it:
+    display_walk_candidate = walk
+    # HARD GUARDRAIL (explicit cap, not a convention): whatever the profile
+    # says, the displayed walk-away NEVER exceeds the stored data-derived value.
+    display_walk = min(display_walk_candidate, walk)
+
+    if stance is None and display_open == open_v:
+        return {"offer_stance": None}
+
+    overrides = {
+        "offer_stance": stance,
+        "open_offer": display_open,
+        "open_offer_formatted": _fmt(display_open),
+        "recommended_offer": display_open,
+        "recommended_offer_formatted": _fmt(display_open),
+        "walk_away": display_walk,
+        "walk_away_formatted": _fmt(display_walk),
+    }
+    if asking:
+        overrides["open_offer_vs_asking_pct"] = round((asking - display_open) / asking * 100, 1)
+    if report.get("local_avg_sold"):
+        overrides["open_offer_vs_comps_pct"] = round(
+            (report["local_avg_sold"] - display_open) / report["local_avg_sold"] * 100, 1)
+    return overrides
+
+
+@app.route("/r/<report_id>/buyer-profile", methods=["POST"])
+def buyer_profile(report_id):
+    """Store the post-unlock questionnaire answers (or an explicit skip) on the
+    report, then send the buyer to their report. Invalid values are dropped
+    per-field; a submission with no usable answer counts as a skip so the
+    report always renders with neutral defaults."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return "Report not found", 404
+    stored = load_report(report_id)
+    if not stored:
+        return "Report not found", 404
+
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    if data.get("skip"):
+        stored["buyer_profile_skipped"] = True
+        save_report(report_id, stored)
+        log_event(report_id, "buyer_profile_skipped", {})
+        return redirect(f"/r/{report_id}")
+
+    answers = {}
+    for field, allowed in BUYER_PROFILE_FIELDS.items():
+        v = (data.get(field) or "").strip()
+        answers[field] = v if v in allowed else None
+    if not any(answers.values()):
+        stored["buyer_profile_skipped"] = True
+        save_report(report_id, stored)
+        log_event(report_id, "buyer_profile_skipped", {"reason": "no_valid_answers"})
+        return redirect(f"/r/{report_id}")
+
+    answers["answered_at"] = _now_iso()
+    stored["buyer_profile"] = answers
+    stored.pop("buyer_profile_skipped", None)
+    save_report(report_id, stored)
+    log_event(report_id, "buyer_profile", answers)
+    report = stored.get("report") or {}
+    post_to_sheets({
+        "type": "buyer_profile", "timestamp": _now_iso(), "uuid": report_id,
+        "position": answers.get("position") or "",
+        "attachment": answers.get("attachment") or "",
+        "timeline": answers.get("timeline") or "",
+        "postcode": report.get("postcode"), "verdict": report.get("verdict"),
+        "asking_price": report.get("asking_price"),
+        "report_url": f"{BASE_URL.rstrip('/')}/r/{report_id}",
+    })
+    return redirect(f"/r/{report_id}")
+
+
 @app.route("/r/<report_id>")
 def view_report(report_id):
     """Serve a previously generated report by its UUID."""
@@ -2769,8 +3459,25 @@ def view_report(report_id):
     report = stored.get("report", {})
     report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
     paid = stored.get("paid", False)
+
+    # Post-unlock questions: paid reports ask three quick single-choice
+    # questions before first render, so the report is written for the buyer's
+    # situation. Always skippable — never blocks a paying customer.
+    if paid and not stored.get("buyer_profile") and not stored.get("buyer_profile_skipped"):
+        log_event(report_id, "buyer_questions_shown", {})
+        return render_template(
+            "buyer_questions.html", report_id=report_id,
+            address=report.get("resolved_address") or report.get("address"),
+            postcode=report.get("postcode"))
+
     template = "report_paid.html" if paid else "report_free.html"
-    return render_template(template, report_url=report_url, report_id=report_id, **report)
+    ctx = dict(report)
+    profile = stored.get("buyer_profile") if paid else None
+    if profile:
+        # Display layer only: overrides how the stored numbers are presented.
+        ctx.update(_personalised_offer_display(report, profile))
+    return render_template(template, report_url=report_url, report_id=report_id,
+                           buyer_profile=profile, **ctx)
 
 
 @app.route("/r/<report_id>/status")
@@ -2844,6 +3551,186 @@ def resolve_by_sale(report_id):
                   {"price": price, "date": date_raw,
                    "confidence": res["confidence"], "candidates": len(res["candidates"])})
     return redirect(f"/r/{report_id}")
+
+
+# Cap on rebuild-triggering address corrections per report: each free-tier
+# rebuild costs ~3-5 PropertyData calls, so this bounds the spend per report.
+MAX_ADDRESS_CORRECTIONS = 2
+
+
+@app.route("/r/<report_id>/confirm-address", methods=["POST"])
+def confirm_address(report_id):
+    """Address-confirmation modal on the report page. A plain confirmation is
+    logged and costs nothing (it also validates the address-resolution
+    pipeline). A corrected address triggers a background rebuild — the same
+    path as the sold-candidates picker — capped per report."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    corrected = (data.get("address") or "").strip()
+
+    if not corrected:
+        stored["address_confirmed"] = True
+        save_report(report_id, stored)
+        report = stored.get("report") or {}
+        log_event(report_id, "address_confirmed", {
+            "address": report.get("resolved_address") or report.get("address"),
+        })
+        return jsonify({"status": "confirmed", "rebuilding": False})
+
+    if len(corrected) > 200:
+        return jsonify({"error": "address too long"}), 400
+    if stored.get("status") == "building":
+        return jsonify({"error": "report is already rebuilding"}), 409
+    corrections = int(stored.get("address_corrections") or 0)
+    if corrections >= MAX_ADDRESS_CORRECTIONS:
+        log_event(report_id, "address_correction_capped", {"address": corrected})
+        return jsonify({"error": "correction limit reached", "rebuilding": False}), 429
+
+    stored["address_corrections"] = corrections + 1
+    stored["status"] = "building"
+    stored["build_started_at"] = _now_iso()
+    save_report(report_id, stored)
+    log_event(report_id, "address_corrected",
+              {"address": corrected, "correction_n": corrections + 1})
+    _start_rebuild(report_id, stored, address=corrected,
+                   tier="paid" if stored.get("paid") else "free")
+    return jsonify({"status": "rebuilding", "rebuilding": True})
+
+
+# ── CROWD VOTING ROUTES ───────────────────────────────────────────────────────
+
+@app.route("/r/<report_id>/share-link", methods=["POST"])
+def create_share_link(report_id):
+    """Mint (or reuse) the short public voting link for a report. Recipients
+    land on /v/<slug> — a lightweight page that costs no PropertyData calls."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+    slug = stored.get("vote_slug")
+    if not slug or not os.path.exists(_slug_path(slug)):
+        slug = _mint_vote_slug(report_id)
+        stored["vote_slug"] = slug
+        save_report(report_id, stored)
+        log_event(report_id, "share_link_created", {"slug": slug})
+    return jsonify({"slug": slug, "url": f"{BASE_URL.rstrip('/')}/v/{slug}"})
+
+
+@app.route("/api/vote", methods=["POST"])
+def submit_vote():
+    """Record a crowd vote against a report — from the report page (report_id)
+    or a share link (slug). One vote per voter token per property; voting
+    again updates the existing vote. Every vote streams to the Sheets webhook
+    as its own row (type=vote), the durable copy of this data asset."""
+    data = request.get_json(silent=True) or {}
+    report_id = (data.get("report_id") or "").strip()
+    source = "report"
+    slug = (data.get("slug") or "").strip()
+    if not report_id and slug:
+        report_id = _resolve_vote_slug(slug) or ""
+        source = "share"
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+    report = stored.get("report") or {}
+
+    try:
+        estimate = int(str(data.get("estimate", "")).replace(",", "").replace("£", "").strip())
+    except (ValueError, TypeError):
+        return jsonify({"error": "estimate must be a number"}), 400
+    if not (1_000 <= estimate <= 100_000_000):
+        return jsonify({"error": "estimate out of range"}), 400
+    name = re.sub(r"[<>\"&]", "", str(data.get("name") or "")).strip()[:30]
+
+    token = request.cookies.get("ho_voter") or uuid.uuid4().hex
+    now = _now_iso()
+    with _votes_lock:
+        votes = _load_votes(report_id)
+        existing = next((v for v in votes if v.get("token") == token), None)
+        if existing:
+            existing.update({"estimate": estimate, "name": name or existing.get("name"),
+                             "updated_at": now})
+        elif len(votes) >= MAX_VOTES_PER_REPORT:
+            return jsonify({"error": "vote limit reached for this property"}), 429
+        else:
+            votes.append({"token": token, "name": name, "estimate": estimate,
+                          "source": source, "created_at": now})
+        _save_votes(report_id, votes)
+
+    # Durable copy: one Sheets row per vote, tagged for later analysis
+    # (crowd vs. expert vs. eventual sold price — backlog items 63/64).
+    post_to_sheets({
+        "type": "vote",
+        "timestamp": now,
+        "uuid": report_id,
+        "slug": slug or stored.get("vote_slug") or "",
+        "source": source,
+        "voter_name": name,
+        "estimate": estimate,
+        "updated": bool(existing),
+        "asking_price": report.get("asking_price"),
+        "our_valuation": report.get("weighted_midpoint"),
+        "verdict": report.get("verdict"),
+        "postcode": report.get("postcode"),
+        "property_url": report.get("property_url") or stored.get("property_url", ""),
+        "report_url": f"{BASE_URL.rstrip('/')}/r/{report_id}",
+    })
+    log_event(report_id, "vote_cast", {"source": source, "estimate": estimate,
+                                       "updated": bool(existing)})
+
+    resp = jsonify(_vote_summary(votes, exclude_token=token))
+    resp.set_cookie("ho_voter", token, max_age=180 * 24 * 3600, samesite="Lax")
+    return resp
+
+
+@app.route("/api/votes/<report_id>")
+def get_votes(report_id):
+    """Live vote feed for a report. The requester's own vote is excluded from
+    the visible list (pages render it locally as "You")."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    token = request.cookies.get("ho_voter")
+    return jsonify(_vote_summary(_load_votes(report_id), exclude_token=token))
+
+
+@app.route("/v/<slug>")
+def voting_page(slug):
+    """Lightweight crowd-voting page behind a share link. Serves entirely from
+    the stored report — no scraping, no PropertyData calls, no signup. The
+    asking price is only revealed AFTER the visitor locks in their number, so
+    their estimate stays unanchored."""
+    report_id = _resolve_vote_slug(slug)
+    stored = load_report(report_id) if report_id else None
+    report = (stored or {}).get("report") or {}
+    if not report:
+        return render_template("vote_page.html", expired=True, slug=slug), 404
+    log_event(report_id, "vote_page_viewed", {
+        "slug": slug, "referer": request.headers.get("Referer", "")[:200]})
+    return render_template(
+        "vote_page.html",
+        expired=False,
+        slug=slug,
+        report_id=report_id,
+        vote_url=f"{BASE_URL.rstrip('/')}/v/{slug}",
+        report_url=f"{BASE_URL.rstrip('/')}/r/{report_id}",
+        address=report.get("address") or report.get("postcode"),
+        postcode=report.get("postcode"),
+        property_type=report.get("property_type"),
+        bedrooms=report.get("bedrooms"),
+        main_photo_url=report.get("main_photo_url"),
+        asking_price=report.get("asking_price"),
+        asking_price_formatted=report.get("asking_price_formatted"),
+        weighted_midpoint=report.get("weighted_midpoint"),
+        weighted_midpoint_formatted=report.get("weighted_midpoint_formatted"),
+    )
 
 
 @app.route("/admin/unlock/<report_id>")
@@ -3603,7 +4490,11 @@ def _harvest_random_rightmove(n, id_min, id_max, attempts_cap):
             s = scrape_property_url(url)
         except Exception:
             continue
-        if s.get("postcode") and s.get("asking_price"):
+        # Cycle 1, item 1: GB-residential validity filter. Keep only live SALE
+        # listings whose postcode is a genuine GB postcode — drops the non-GB /
+        # placeholder junk (14 of 40 last run) that isn't a real valuation case.
+        if (s.get("postcode") and s.get("asking_price")
+                and is_valid_gb_postcode(s.get("postcode"))):
             found.append({"url": url, "label": f"random {s.get('postcode')}"})
     return found
 
@@ -3616,6 +4507,8 @@ def _valuation_test_row(url, label=None):
         "asking_price": None, "valuation_midpoint": None, "valuation_low": None,
         "valuation_high": None, "gap_vs_asking_pct": None, "verdict": None,
         "comparable_confidence": None, "comparables_count": None,
+        "confidence_score": None, "comparable_tier": None, "sale_type": None,
+        "confidence_caveat": None, "asking_anomaly": None,
         "size_matched_count": None, "floor_area_sqm": None,
         "floor_area_source": None, "floor_area_confidence": None,
         "methods_available": None, "error": None,
@@ -3643,8 +4536,17 @@ def _valuation_test_row(url, label=None):
             "valuation_high": report.get("weighted_high"),
             "verdict": report.get("verdict"),
             "comparable_confidence": report.get("comparable_confidence"),
+            "confidence_score": report.get("confidence_score"),
+            "comparable_tier": report.get("comparable_tier"),
+            "sale_type": report.get("sale_type"),
+            "confidence_caveat": report.get("confidence_caveat"),
+            "asking_anomaly": report.get("asking_anomaly"),
             "comparable_source": report.get("comparable_source"),
             "comparable_outlier_excluded": report.get("comparable_outlier_excluded"),
+            "matched_sold_value": report.get("matched_sold_value"),
+            "matched_sold_count": report.get("matched_sold_count"),
+            "matched_sold_confidence": report.get("matched_sold_confidence"),
+            "matched_sold_divergence_pct": report.get("matched_sold_divergence_pct"),
             "bedroom_local_avg_asking": report.get("bedroom_local_avg_asking"),
             "bedroom_implied_value": report.get("bedroom_implied_value"),
             "comparable_radius_miles": report.get("comparable_radius_miles"),
@@ -3679,20 +4581,68 @@ def _assemble_valuation_batch(n, mode, urls_arg, id_min, id_max):
             batch += [b for b in _CURATED_VALUATION_BATCH if b["url"] not in have][:n - len(batch)]
     return batch[:n]
 
+def _accuracy_block(rows):
+    """Accuracy summary for a set of valued rows: within-10%, within-20%, median
+    |gap|. Used overall and per confidence tier so we can see whether low-confidence
+    numbers really are worse (Cycle 1 report format)."""
+    gaps = sorted(abs(r["gap_vs_asking_pct"]) for r in rows
+                  if r.get("gap_vs_asking_pct") is not None)
+    if not gaps:
+        return {"n": len(rows), "within_10pct": 0, "within_20pct": 0, "median_abs_gap_pct": None}
+    return {
+        "n": len(rows),
+        "within_10pct": sum(1 for g in gaps if g <= 10),
+        "within_20pct": sum(1 for g in gaps if g <= 20),
+        "median_abs_gap_pct": gaps[len(gaps) // 2],
+    }
+
 def _summarise_valuation_results(results, n, outlier_threshold):
+    # Category (a): no usable postcode at all → we couldn't generate a report.
+    no_postcode = [r for r in results
+                   if r.get("error") and "postcode" in str(r["error"]).lower()]
     ok = [r for r in results if not r["error"] and r["valuation_midpoint"]]
     gaps = sorted(abs(r["gap_vs_asking_pct"]) for r in ok if r["gap_vs_asking_pct"] is not None)
     conf_hist = {}
     for r in ok:
         c = r["comparable_confidence"] or "n/a"
         conf_hist[c] = conf_hist.get(c, 0) + 1
+    # Accuracy broken out by published confidence score (high/medium/low).
+    by_score = {}
+    for score in ("high", "medium", "low"):
+        tier_rows = [r for r in ok if r.get("confidence_score") == score]
+        if tier_rows:
+            by_score[score] = _accuracy_block(tier_rows)
+    score_hist = {}
+    for r in ok:
+        s = r.get("confidence_score") or "n/a"
+        score_hist[s] = score_hist.get(s, 0) + 1
+    tier_hist = {}
+    for r in ok:
+        t = r.get("comparable_tier") or "n/a"
+        tier_hist[t] = tier_hist.get(t, 0) + 1
+    sale_type_hist = {}
+    for r in ok:
+        st = r.get("sale_type")
+        if st:
+            sale_type_hist[st] = sale_type_hist.get(st, 0) + 1
+    asking_anomaly_count = sum(1 for r in ok if r.get("asking_anomaly"))
     outliers = sorted(
         [r for r in ok if r["gap_vs_asking_pct"] is not None
          and abs(r["gap_vs_asking_pct"]) >= outlier_threshold],
         key=lambda r: -abs(r["gap_vs_asking_pct"]))
     return {
         "requested": n, "valued_ok": len(ok), "errors": len(results) - len(ok),
+        # Category (a) = no resolvable postcode; categories (b)+(c) = valued_ok.
+        "no_usable_postcode": len(no_postcode),
+        "valued_with_confidence": len(ok),
         "median_abs_gap_pct": gaps[len(gaps) // 2] if gaps else None,
+        "within_10pct": sum(1 for g in gaps if g <= 10),
+        "within_20pct": sum(1 for g in gaps if g <= 20),
+        "accuracy_by_confidence": by_score,
+        "confidence_score_histogram": score_hist,
+        "comparable_tier_histogram": tier_hist,
+        "sale_type_histogram": sale_type_hist,
+        "asking_anomaly_count": asking_anomaly_count,
         "confidence_histogram": conf_hist,
         "outlier_threshold_pct": outlier_threshold,
         "outlier_count": len(outliers), "outliers": outliers,
@@ -3717,9 +4667,14 @@ def batch_valuation_test():
     if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
         return jsonify({"error": "Unauthorised"}), 403
     sync = request.args.get("sync") in ("1", "true", "yes")
-    n = max(1, min(int(request.args.get("n", "12")), 40))
+    # Async runs can go up to 100 (for a durable random sample streamed to Sheets);
+    # sync stays small to fit the request timeout.
+    n = max(1, min(int(request.args.get("n", "12")), 100))
     if sync:
         n = min(n, 8)  # keep within the request timeout — no background thread
+    # &sheets=1 streams each completed row to the Google Sheets webhook so a large
+    # background run survives instance spin-down (results land in the sheet live).
+    stream_sheets = request.args.get("sheets") in ("1", "true", "yes")
     concurrency = max(1, min(int(request.args.get("concurrency", "6" if sync else "4")), 6))
     mode = request.args.get("mode", "random")
     urls_arg = request.args.get("urls")
@@ -3751,6 +4706,26 @@ def batch_valuation_test():
             with ThreadPoolExecutor(max_workers=concurrency) as pool:
                 for r in pool.map(lambda it: _valuation_test_row(it["url"], it.get("label")), batch):
                     results.append(r)
+                    if stream_sheets:
+                        # Durable per-row stream — survives instance spin-down.
+                        post_to_sheets({
+                            "type": "valuation_test",
+                            "run_id": job_id,
+                            "run_at": _now_iso(),
+                            "url": r.get("url"), "postcode": r.get("postcode"),
+                            "property_type": r.get("property_type"),
+                            "bedrooms": r.get("bedrooms"),
+                            "asking_price": r.get("asking_price"),
+                            "valuation_midpoint": r.get("valuation_midpoint"),
+                            "gap_vs_asking_pct": r.get("gap_vs_asking_pct"),
+                            "verdict": r.get("verdict"),
+                            "comparable_confidence": r.get("comparable_confidence"),
+                            "comparable_source": r.get("comparable_source"),
+                            "matched_sold_value": r.get("matched_sold_value"),
+                            "bedroom_implied_value": r.get("bedroom_implied_value"),
+                            "floor_area_sqm": r.get("floor_area_sqm"),
+                            "error": r.get("error"),
+                        })
                     st = load_report(job_id) or {}
                     st["results"] = results
                     st["completed"] = len(results)
@@ -4053,6 +5028,33 @@ def submit():
             stored.update({"status": "ready", "report": report,
                            "buyer_estimate": _be, "anchor_bias": anchor_bias})
             save_report(_rid, stored)
+
+            # Seed the buyer's own estimate (given on the request form, before
+            # they saw any data) as the first crowd vote, so friends arriving
+            # via the share link always see the number that started it.
+            try:
+                seed_est = int(str(_be or "").replace(",", "").replace("£", "").replace(" ", ""))
+                if 1_000 <= seed_est <= 100_000_000:
+                    with _votes_lock:
+                        votes = _load_votes(_rid)
+                        if not any(v.get("token") == f"owner-{_rid}" for v in votes):
+                            votes.append({"token": f"owner-{_rid}", "name": "The buyer",
+                                          "estimate": seed_est, "source": "owner_seed",
+                                          "created_at": _now_iso()})
+                            _save_votes(_rid, votes)
+                            post_to_sheets({
+                                "type": "vote", "timestamp": _now_iso(),
+                                "uuid": _rid, "slug": "", "source": "owner_seed",
+                                "voter_name": "The buyer", "estimate": seed_est,
+                                "updated": False,
+                                "asking_price": report.get("asking_price"),
+                                "our_valuation": report.get("weighted_midpoint"),
+                                "verdict": report.get("verdict"),
+                                "postcode": report.get("postcode"),
+                                "property_url": _url, "report_url": _ru,
+                            })
+            except (ValueError, TypeError):
+                pass
 
             post_to_sheets({
                 "type": "submission",

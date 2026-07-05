@@ -7,6 +7,20 @@ UK English. All prices GBP.
 
 ## Fixed
 
+### Paid report: context-only methods drew off-chart football-field bars
+- Date: 2026-07-05
+- Symptom: weight-0 "context only" methods (matched-sold scoring row,
+  national-fallback asking-to-sold, guardrail-excluded comparables) rendered
+  as chart bars, but the chart axis is bounded by weight>0 methods + asking
+  price only — a context range outside those bounds drew its bar off the
+  plot (reproduced at x=917 in a 680-wide viewBox), leaving a labelled empty
+  row, and visually resurrected outliers the weighted range had excluded.
+- Fix: chart plots weight>0 methods only; the method table keeps every row
+  with the "context only" tag. See SESSION_LOG_2026-07-05.md.
+- Same session: paid template brought up to free-v3 parity (OG tags,
+  confirm-address modal, crowd voting, nav share + logo, floor-area pill,
+  confidence fallback reason, £99 playbook card).
+
 ### Front-end polish: buyer estimate in thousands, live progress page
 - Date: 2026-06-11
 - Buyer estimate ("what do you think it's worth"): users now type a simple
