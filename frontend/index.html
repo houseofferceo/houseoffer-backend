@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HouseOffer — Know exactly what to offer on any UK home</title>
-<meta name="description" content="Free property valuation reports for UK buyers. Paste a Rightmove link and see if the asking price is fair — backed by real Land Registry sold data.">
+<title>HouseOffer — The only property valuation that tells you how much to trust it</title>
+<meta name="description" content="Free property valuation reports for UK buyers. Paste a Rightmove link and see if the asking price is fair — built on HM Land Registry sold prices, with a confidence score on every report.">
 <link rel="canonical" href="https://houseoffer.uk/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="HouseOffer">
-<meta property="og:title" content="HouseOffer — Know exactly what to offer on any UK home">
+<meta property="og:title" content="HouseOffer — The only property valuation that tells you how much to trust it">
 <meta property="og:description" content="Free property valuation reports for UK buyers. Paste a Rightmove link and see if the asking price is fair — backed by real Land Registry sold data.">
 <meta property="og:url" content="https://houseoffer.uk/">
 <meta property="og:image" content="https://houseoffer.uk/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="HouseOffer — Know exactly what to offer on any UK home">
+<meta name="twitter:title" content="HouseOffer — The only property valuation that tells you how much to trust it">
 <meta name="twitter:description" content="Free property valuation reports for UK buyers. Paste a Rightmove link and see if the asking price is fair — backed by real Land Registry sold data.">
 <meta name="twitter:image" content="https://houseoffer.uk/og-image.png">
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -35,6 +35,12 @@
   --teal-border: #b8dfd5;
   --amber: #c06a1a;
   --amber-light: #fdf0e3;
+  --amber-border: #f0c98a;
+  --red: #b83232;
+  --red-light: #fdf0f0;
+  --purple: #7a8fd0;
+  --purple-light: #eaedf9;
+  --purple-border: #c9d2ee;
   --white: #ffffff;
   --shadow-sm: 0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);
   --shadow-md: 0 4px 20px rgba(30,28,24,0.09), 0 1px 4px rgba(30,28,24,0.05);
@@ -162,23 +168,6 @@ h1 em {
 }
 .btn-primary:hover { background: var(--teal-mid); transform: translateY(-1px); }
 .btn-primary:active { transform: translateY(0); }
-.hero-trust {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 13px; color: var(--ink-light);
-}
-.trust-avatars {
-  display: flex;
-}
-.trust-avatar {
-  width: 26px; height: 26px; border-radius: 50%;
-  border: 2px solid var(--sand);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px;
-  margin-left: -6px;
-  background: var(--sand-dark);
-}
-.trust-avatar:first-child { margin-left: 0; }
-
 /* ── HERO CARD ── */
 .hero-visual {
   position: relative;
@@ -452,38 +441,6 @@ h2 {
 }
 .btn-primary-full:hover { background: var(--teal-mid); }
 
-/* ── TESTIMONIALS ── */
-.testimonials-bg { background: var(--sand-dark); }
-.testimonials-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 20px; margin-top: 48px;
-}
-.testimonial {
-  background: var(--white);
-  border-radius: var(--radius);
-  padding: 24px;
-  box-shadow: var(--shadow-sm);
-}
-.stars { color: #f5a623; font-size: 14px; margin-bottom: 12px; letter-spacing: 1px; }
-.testimonial-text {
-  font-family: 'Lora', serif;
-  font-size: 15px; font-style: italic;
-  color: var(--ink); line-height: 1.65;
-  margin-bottom: 16px;
-}
-.testimonial-author {
-  display: flex; align-items: center; gap: 10px;
-}
-.author-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: var(--teal-light);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 700; color: var(--teal);
-  flex-shrink: 0;
-}
-.author-name { font-size: 13px; font-weight: 600; color: var(--ink); }
-.author-detail { font-size: 12px; color: var(--ink-light); }
-
 /* ── FAQ ── */
 .faq-list { margin-top: 48px; max-width: 680px; }
 .faq-item {
@@ -506,20 +463,6 @@ h2 {
 }
 .cta-band h2 { color: white; margin-bottom: 14px; }
 .cta-band p { color: rgba(255,255,255,0.8); font-size: 17px; margin-bottom: 32px; max-width: 480px; margin-left: auto; margin-right: auto; }
-.cta-form {
-  display: flex; gap: 10px; justify-content: center;
-  flex-wrap: wrap; max-width: 480px; margin: 0 auto;
-}
-.cta-input {
-  flex: 1; min-width: 200px;
-  background: rgba(255,255,255,0.12);
-  border: 1.5px solid rgba(255,255,255,0.25);
-  border-radius: 10px; padding: 13px 16px;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 15px; color: white; outline: none;
-}
-.cta-input::placeholder { color: rgba(255,255,255,0.5); }
-.cta-input:focus { border-color: rgba(255,255,255,0.6); }
 .btn-white {
   background: white; color: var(--teal);
   border: none; border-radius: 10px;
@@ -565,13 +508,90 @@ footer {
   .steps { grid-template-columns: 1fr; }
   .features-grid { grid-template-columns: 1fr; }
   .pricing-grid { grid-template-columns: 1fr; max-width: 380px; }
-  .testimonials-grid { grid-template-columns: 1fr; }
+  .showcase-grid { grid-template-columns: 1fr; }
+  .crowd-grid { grid-template-columns: 1fr; }
   .nav-links { display: none; }
 }
 @media (max-width: 540px) {
   .trust-bar-inner { gap: 20px; }
   .hero { padding: 48px 20px 40px; }
 }
+
+
+/* ── CONFIDENCE BADGE (mirrors the live report badge) ── */
+.conf-row-mock { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.conf-badge-mock {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--teal-light); color: var(--teal);
+  border: 1px solid var(--teal-border);
+  padding: 3px 10px; border-radius: 20px;
+  white-space: nowrap;
+}
+.conf-reason-mock { font-size: 11.5px; color: var(--ink-light); }
+
+/* ── REPORT SHOWCASE (What you actually get) ── */
+.showcase-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 24px; margin-top: 52px; align-items: start; }
+.showcase-caption { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; margin-top: 12px; padding-left: 2px; }
+.showcase-caption strong { color: var(--ink); }
+.mock-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-sm); }
+.mock-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 12px; }
+.mock-val-main { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.mock-val-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 4px; }
+.mock-val-number { font-family: 'Lora', serif; font-size: 30px; font-weight: 700; color: var(--ink); line-height: 1.1; }
+.mock-val-range { font-size: 13px; color: var(--ink-mid); margin-top: 4px; }
+.mock-diff-badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; margin-top: 6px; background: var(--red-light); color: var(--red); }
+.mock-verdict { border-radius: var(--radius); padding: 20px 22px; background: var(--red-light); border: 1.5px solid #e8b4b4; box-shadow: var(--shadow-sm); }
+.mock-verdict-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--red); margin-bottom: 8px; }
+.mock-verdict-headline { font-family: 'Lora', serif; font-size: 19px; font-weight: 700; line-height: 1.3; color: var(--red); margin-bottom: 8px; }
+.mock-verdict-body { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; }
+.mock-anchor-note { display: flex; gap: 10px; align-items: flex-start; background: #fdf6e3; border: 1px solid var(--amber-border); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: #6b4a12; line-height: 1.55; }
+.mock-anchor-note strong { color: var(--ink); }
+.mock-comp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mock-comp-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-light); padding: 6px 8px; border-bottom: 1px solid var(--sand-border); font-weight: 600; }
+.mock-comp-table td { padding: 7px 8px; border-bottom: 1px solid var(--sand); color: var(--ink-mid); }
+.mock-comp-table td:last-child { font-weight: 600; color: var(--ink); }
+.mock-blur td { filter: blur(4px); user-select: none; }
+.mock-dom-track { position: relative; height: 6px; background: var(--sand-dark); border-radius: 3px; margin: 26px 0 8px; }
+.mock-dom-mkr { position: absolute; top: -22px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.mock-dom-mkr-label { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; color: white; background: var(--amber); white-space: nowrap; margin-bottom: 4px; }
+.mock-dom-mkr-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; background: var(--amber); box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+.mock-dom-labels { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-light); }
+
+/* ── CROWD VOTING SECTION ── */
+.crowd-section-bg { background: var(--purple-light); }
+.crowd-section-bg .section-eyebrow { color: var(--purple); }
+.crowd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+.crowd-demo { background: var(--white); border: 1.5px solid var(--purple-border); border-radius: var(--radius); padding: 26px 26px 20px; box-shadow: var(--shadow-sm); max-width: 640px; }
+.crowd-demo-title { font-family: 'Lora', serif; font-size: 17px; font-weight: 600; color: var(--ink); margin-bottom: 20px; }
+.crowd-demo-chart { position: relative; height: 64px; background: var(--sand); border-radius: 10px; margin-bottom: 16px; }
+.crowd-demo-track { position: absolute; top: 30px; left: 20px; right: 20px; height: 4px; background: var(--sand-border); border-radius: 2px; }
+.crowd-demo-mkr { position: absolute; top: 4px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.crowd-demo-mkr-label { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; color: white; white-space: nowrap; margin-bottom: 10px; }
+.crowd-demo-mkr-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+.crowd-feed-demo { display: flex; flex-direction: column; gap: 6px; }
+.feed-row-demo { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-mid); }
+.feed-avatar-demo { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: white; background: var(--purple); flex-shrink: 0; }
+.feed-val-demo { margin-left: auto; font-weight: 600; color: var(--ink); }
+
+/* ── PRICING EXTRAS ── */
+a.btn-outline, a.btn-primary-full { display: block; text-align: center; text-decoration: none; }
+.price-inbuild {
+  position: absolute; top: -13px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--amber); color: var(--white);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 4px 14px; border-radius: 20px;
+  white-space: nowrap;
+}
+.soon-chip { font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; background: var(--amber-light); color: var(--amber); border-radius: 5px; padding: 1px 6px; flex-shrink: 0; }
+.btn-outline.inbuild { color: var(--amber); border-color: var(--amber); }
+.btn-outline.inbuild:hover { background: var(--amber-light); }
+.sample-link { display: block; text-align: center; margin-top: 12px; font-size: 13.5px; color: var(--teal); font-weight: 600; text-decoration: none; }
+.sample-link:hover { text-decoration: underline; }
+.price-note { text-align: center; font-size: 11.5px; color: var(--ink-light); margin-top: 10px; }
 
 /* ── ANIMATIONS ── */
 .fade-up {
@@ -600,7 +620,7 @@ footer {
       <a href="#how">How it works</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
-      <a href="#hero-form" class="nav-cta">Get my offer price →</a>
+      <a href="#hero-form" class="nav-cta" onclick="focusHeroForm()">Get my free report →</a>
     </div>
   </div>
 </nav>
@@ -613,11 +633,12 @@ footer {
         <span class="hero-badge-dot"></span>
         🇬🇧 Built for UK home buyers · Free to try
       </div>
-      <h1>Found a house you love?<br>We tell you <em>exactly</em> what to offer.</h1>
-      <p class="hero-sub">Paste a Rightmove link. We analyse the sold prices, check how long it's been listed, and tell you three things: <strong>what the home is actually worth</strong>, <strong>how much to offer</strong>, and <strong>exactly what to say to the estate agent.</strong></p>
+      <h1>Found a house you love?<br>Find out what it's <em>really</em> worth.</h1>
+      <p class="hero-sub">The only property valuation that tells you <strong>how much to trust it</strong>. Paste a Rightmove link: we analyse what similar homes actually sold for, then give you a defensible range, a deliberate offer position and your walk-away number — with a confidence score on every report.</p>
       <form class="hero-form" id="hero-form" onsubmit="handleHeroSubmit(event)" style="flex-direction:column; max-width:480px;">
         <input class="hero-input" type="text" id="propUrl" name="property-url" placeholder="Paste your Rightmove link here…" style="width:100%; min-width:0;" required />
-        <input class="hero-input" type="text" id="buyerEstimate" name="buyer_estimate" placeholder="What do you think it's worth? (optional)" style="width:100%; min-width:0;" inputmode="numeric" />
+        <input class="hero-input" type="text" id="buyerEstimate" name="buyer_estimate" placeholder="What do you think it's worth?" style="width:100%; min-width:0;" inputmode="numeric" />
+        <p style="font-size:12px; color:var(--ink-light); margin:-4px 0 2px 4px;">Optional — but the report's more fun if you guess first.</p>
         <input class="hero-input" type="email" id="heroEmail" name="email" placeholder="Your email address…" style="width:100%; min-width:0;" required />
         <button class="btn-primary" type="submit" id="heroBtn" style="width:100%;">Get my free report →</button>
       </form>
@@ -625,27 +646,27 @@ footer {
 
       <!-- WHAT YOU GET STRIP -->
       <div style="margin-top:24px; display:flex; flex-direction:column; gap:10px;">
-        <p style="font-size:11px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-light); margin-bottom:2px;">What you get in your report</p>
+        <p style="font-size:11px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-light); margin-bottom:2px;">What you get in your free report</p>
         <div style="display:flex; flex-direction:column; gap:8px;">
           <div style="display:flex; align-items:flex-start; gap:10px;">
             <div style="width:28px; height:28px; border-radius:8px; background:var(--teal-light); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:14px;">📊</div>
             <div>
-              <p style="font-size:13px; font-weight:600; color:var(--ink); margin-bottom:1px;">Independent valuation range</p>
-              <p style="font-size:12px; color:var(--ink-mid);">What the home is actually worth based on real sold prices nearby — not the estate agent's number.</p>
+              <p style="font-size:13px; font-weight:600; color:var(--ink); margin-bottom:1px;">Valuation range + confidence score</p>
+              <p style="font-size:12px; color:var(--ink-mid);">What the home is really worth, from actual sold prices nearby — with a HIGH / MEDIUM / LOW score that tells you how much to trust it.</p>
             </div>
           </div>
           <div style="display:flex; align-items:flex-start; gap:10px;">
-            <div style="width:28px; height:28px; border-radius:8px; background:var(--teal-light); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:14px;">💷</div>
+            <div style="width:28px; height:28px; border-radius:8px; background:var(--teal-light); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:14px;">⚖️</div>
             <div>
-              <p style="font-size:13px; font-weight:600; color:var(--ink); margin-bottom:1px;">Your recommended offer price</p>
-              <p style="font-size:12px; color:var(--ink-mid);">A specific opening offer and walk-away price, based on comparable sales, days listed, and seller signals.</p>
+              <p style="font-size:13px; font-weight:600; color:var(--ink); margin-bottom:1px;">A straight verdict on the asking price</p>
+              <p style="font-size:12px; color:var(--ink-mid);">Overpriced, fair, or underpriced — based on what similar homes actually sold for, never on the asking price.</p>
             </div>
           </div>
           <div style="display:flex; align-items:flex-start; gap:10px;">
-            <div style="width:28px; height:28px; border-radius:8px; background:var(--teal-light); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:14px;">💬</div>
+            <div style="width:28px; height:28px; border-radius:8px; background:var(--purple-light); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:14px;">🗳️</div>
             <div>
-              <p style="font-size:13px; font-weight:600; color:var(--ink); margin-bottom:1px;">Word-for-word negotiation script</p>
-              <p style="font-size:12px; color:var(--ink-mid);">Exactly what to say to the estate agent — including how to handle counter-offers and pushback.</p>
+              <p style="font-size:13px; font-weight:600; color:var(--ink); margin-bottom:1px;">Crowd voting — get their verdict too</p>
+              <p style="font-size:12px; color:var(--ink-mid);">Share the report with family and friends. Everyone drops their number, no signup needed, and you see how the crowd compares with the data.</p>
             </div>
           </div>
         </div>
@@ -658,7 +679,7 @@ footer {
     <div class="hero-visual">
       <div class="badge-float badge-float-1">
         <span class="badge-float-icon">✅</span>
-        <span>£28k below asking price</span>
+        <span>£30k below asking price</span>
       </div>
       <div class="prop-card">
         <div class="prop-card-img" style="padding:0; background:none;">
@@ -669,12 +690,16 @@ footer {
           <div class="prop-title">3-bed semi-detached · Listed at £385,000</div>
           <div class="val-range-label">Independent valuation range</div>
           <div class="val-range">
-            <span class="val-low">£340k</span>
+            <span class="val-low">£352k</span>
             <div class="val-bar-bg">
               <div class="val-bar-fill"></div>
               <div class="val-marker"></div>
             </div>
-            <span class="val-high">£375k</span>
+            <span class="val-high">£368k</span>
+          </div>
+          <div class="conf-row-mock">
+            <span class="conf-badge-mock">● HIGH confidence</span>
+            <span class="conf-reason-mock">12 comparable sales · postcode-matched</span>
           </div>
           <div class="prop-stats">
             <div class="stat-pill">
@@ -691,12 +716,12 @@ footer {
             </div>
             <div class="stat-pill">
               <div class="stat-pill-label">Seller signal</div>
-              <div class="stat-pill-val">🟡 Motivated</div>
+              <div class="stat-pill-val" style="color:var(--amber);">MODERATE</div>
             </div>
           </div>
           <div class="neg-banner">
             <span class="neg-icon">💬</span>
-            <span class="neg-text">Suggest opening at <strong>£352,000</strong> — here's your script</span>
+            <span class="neg-text">Open <strong>£355,000</strong> · Target <strong>£360,000</strong> · Walk away <strong>£368,000</strong></span>
           </div>
         </div>
       </div>
@@ -708,15 +733,126 @@ footer {
   </div>
 </section>
 
-<!-- TRUST BAR -->
+<!-- DATA-SOURCE TRUST STRIP -->
 <div class="trust-bar">
   <div class="trust-bar-inner">
-    <div class="trust-item"><span class="trust-item-icon">📊</span> Based on Land Registry data</div>
-    <div class="trust-item"><span class="trust-item-icon">🔒</span> 100% independent — no estate agent ties</div>
-    <div class="trust-item"><span class="trust-item-icon">⚡</span> Report ready in under 5 minutes</div>
-    <div class="trust-item"><span class="trust-item-icon">🏛️</span> Built on official UK open data</div>
+    <div class="trust-item"><span class="trust-item-icon">🏛️</span> Built on HM Land Registry sold prices</div>
+    <div class="trust-item"><span class="trust-item-icon">📈</span> ONS House Price Index</div>
+    <div class="trust-item"><span class="trust-item-icon">📐</span> EPC register</div>
+    <div class="trust-item"><span class="trust-item-icon" style="color:var(--teal);">●</span> Every report shows its confidence level</div>
   </div>
 </div>
+
+<!-- WHAT YOU ACTUALLY GET — real report showcase -->
+<section class="section features-bg" id="report">
+  <div class="section-inner">
+    <p class="section-eyebrow fade-up">What you actually get</p>
+    <h2 class="fade-up">The real report,<br>piece by piece</h2>
+    <p class="section-sub fade-up">These are the actual building blocks of the free report — recreated here for a fictional example property so you can see what lands on your screen a few minutes after you paste a link.</p>
+
+    <div class="showcase-grid">
+
+      <div class="fade-up">
+        <div class="mock-card">
+          <div class="mock-eyebrow">Our valuation</div>
+          <div class="mock-val-main">
+            <div>
+              <div class="mock-val-label">Estimated market value</div>
+              <div class="mock-val-number">£360,000</div>
+              <div class="mock-val-range">Range: £352,000 – £368,000</div>
+            </div>
+            <div>
+              <div class="mock-val-label">Asking price</div>
+              <div class="mock-val-number" style="font-size:24px; color:var(--ink-mid);">£385,000</div>
+              <span class="mock-diff-badge">7% above our estimate</span>
+            </div>
+          </div>
+          <div class="conf-row-mock" style="margin-bottom:0; padding-top:14px; border-top:1px solid var(--sand-border);">
+            <span class="conf-badge-mock">● HIGH confidence</span>
+            <span class="conf-reason-mock">12 comparable sales · postcode-matched</span>
+          </div>
+        </div>
+        <p class="showcase-caption"><strong>The headline number — and how much to trust it.</strong> Every report carries a HIGH / MEDIUM / LOW confidence badge with the reason spelled out. If the data is thin, we say so.</p>
+      </div>
+
+      <div class="fade-up">
+        <div class="mock-verdict">
+          <div class="mock-verdict-eyebrow">Our verdict</div>
+          <div class="mock-verdict-headline">This seller is asking for more than the market says it's worth</div>
+          <div class="mock-verdict-body">Based on 12 completed sales of similar homes nearby, adjusted to today's value, this property is asking <strong style="color:var(--ink);">7% more</strong> than what similar homes have actually sold for.</div>
+        </div>
+        <p class="showcase-caption"><strong>A straight verdict in plain English.</strong> Built from completed Land Registry sales — never from asking prices or agent estimates.</p>
+      </div>
+
+      <div class="fade-up">
+        <div class="mock-card" style="border:1.5px solid var(--purple-border); background:linear-gradient(155deg, #ffffff, #faf9ff);">
+          <div class="mock-eyebrow" style="color:var(--purple);">🎯 What's it worth to you?</div>
+          <div class="crowd-demo-chart">
+            <div class="crowd-demo-track"></div>
+            <div class="crowd-demo-mkr" style="left:34%;">
+              <div class="crowd-demo-mkr-label" style="background:var(--purple);">You</div>
+              <div class="crowd-demo-mkr-dot" style="background:var(--purple);"></div>
+            </div>
+            <div class="crowd-demo-mkr" style="left:55%;">
+              <div class="crowd-demo-mkr-label" style="background:var(--teal);">Data</div>
+              <div class="crowd-demo-mkr-dot" style="background:var(--teal);"></div>
+            </div>
+            <div class="crowd-demo-mkr" style="left:82%;">
+              <div class="crowd-demo-mkr-label" style="background:var(--red);">Asking</div>
+              <div class="crowd-demo-mkr-dot" style="background:var(--red);"></div>
+            </div>
+          </div>
+          <div class="mock-anchor-note">
+            <span style="font-size:15px; flex-shrink:0;">💡</span>
+            <span><strong>Before you answer:</strong> the asking price is doing more work on your brain than you think. It's called anchoring — try to answer as if you'd never seen it.</span>
+          </div>
+        </div>
+        <p class="showcase-caption"><strong>Lock in your instinct — and learn about anchor bias.</strong> The report asks for your honest number first, warns you how the asking price skews it, then shows where you land against the data.</p>
+      </div>
+
+      <div class="fade-up">
+        <div class="mock-card">
+          <div class="mock-eyebrow">⏳ Days on market</div>
+          <div style="font-family:'Lora', serif; font-size:17px; font-weight:600; color:var(--ink); line-height:1.35; margin-bottom:6px;">47 days on market — every day that passes, your leverage grows</div>
+          <div class="mock-dom-track">
+            <div class="mock-dom-mkr" style="left:72%;">
+              <div class="mock-dom-mkr-label">This property</div>
+              <div class="mock-dom-mkr-dot"></div>
+            </div>
+          </div>
+          <div class="mock-dom-labels"><span>Just listed</span><span>Local average (32 days)</span><span>Stale listing</span></div>
+        </div>
+        <p class="showcase-caption"><strong>How long it's been sitting — versus the local average.</strong> One of the strongest public signals of how far a seller might move.</p>
+      </div>
+
+      <div class="fade-up">
+        <div class="mock-card" style="padding:16px 18px 10px;">
+          <div class="mock-eyebrow" style="margin-bottom:6px;">12 sold prices used in this analysis</div>
+          <table class="mock-comp-table">
+            <thead><tr><th>Address</th><th>Date</th><th>Sale price</th></tr></thead>
+            <tbody>
+              <tr><td>18 Maple Close, BS6</td><td>2026-03</td><td>£357,500</td></tr>
+              <tr><td>4 Orchard Road, BS6</td><td>2026-01</td><td>£349,000</td></tr>
+              <tr><td>27 Fern Grove, BS6</td><td>2025-11</td><td>£371,000</td></tr>
+              <tr class="mock-blur"><td>31 Maple Close, BS6</td><td>2025-10</td><td>£344,000</td></tr>
+              <tr class="mock-blur"><td>9 Elton Lane, BS6</td><td>2025-09</td><td>£362,500</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="showcase-caption"><strong>The evidence itself.</strong> The three most relevant comparable sales are free in full — address, date and sold price. The full table unlocks with the £29 report.</p>
+      </div>
+
+      <div class="fade-up">
+        <div class="mock-card" style="background:var(--sand); border-style:dashed;">
+          <div class="mock-eyebrow">And when you're ready to offer…</div>
+          <div style="font-size:14px; color:var(--ink-mid); line-height:1.65;">The £29 report adds the full ten-method valuation breakdown, your opening / target / walk-away numbers, and the Offer Frontier — three deliberate positions with the trade-offs spelled out. <a href="/sample-report/" style="color:var(--teal); font-weight:600; text-decoration:none;">See a full sample report →</a></div>
+        </div>
+        <p class="showcase-caption"><strong>Upgrade only if you want the offer strategy.</strong> The valuation, verdict and voting above are free — no card, no account.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
 
 <!-- HOW IT WORKS -->
 <section class="section" id="how">
@@ -735,65 +871,57 @@ footer {
         <div class="step-num">2</div>
         <div class="step-icon"><img src="data:image/jpeg;base64,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" alt="Property valuation data analysis" style="width:100%;height:140px;object-fit:cover;border-radius:10px;margin-bottom:8px;" /></div>
         <div class="step-title">We analyse the data</div>
-        <div class="step-body">We pull Land Registry sold prices, EPC data, days on market, and comparable properties — then calculate an independent valuation range.</div>
+        <div class="step-body">We pull Land Registry sold prices, official price-index data, EPC floor areas and comparable sales — then run ten valuation methods and score how much the result can be trusted.</div>
       </div>
       <div class="step fade-up">
         <div class="step-num">3</div>
         <div class="step-icon"><img src="data:image/jpeg;base64,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" alt="Happy couple with house keys" style="width:100%;height:140px;object-fit:cover;border-radius:10px;margin-bottom:8px;" /></div>
-        <div class="step-title">Get your offer playbook</div>
-        <div class="step-body">Receive a clear recommended opening offer, a walk-away price, and a step-by-step negotiation script tailored to this specific property.</div>
+        <div class="step-title">Read your report — instantly</div>
+        <div class="step-body">Your report opens online straight away: the valuation range, the verdict on the asking price, and its confidence score. Upgrade when you want the full offer strategy.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- WHAT YOU GET -->
-<section class="section features-bg">
-  <div class="section-inner">
-    <p class="section-eyebrow fade-up">What's inside your report</p>
-    <h2 class="fade-up">Six things inside<br>every HouseOffer report</h2>
-    <p class="section-sub fade-up">We put buyers on equal footing — with the same kind of data analysis a professional buying agent would do, at a fraction of the cost.</p>
-    <div class="features-grid">
-      <div class="feature fade-up">
-        <div class="feature-icon-wrap">📍</div>
-        <div>
-          <div class="feature-title">Independent valuation range</div>
-          <div class="feature-body">A data-backed low, mid, and high estimate based on comparable sold prices — not the estate agent's aspirational asking price.</div>
+<!-- CROWD VOTING -->
+<section class="section crowd-section-bg" id="crowd">
+  <div class="section-inner crowd-grid">
+    <div>
+      <p class="section-eyebrow fade-up">Crowd voting</p>
+      <h2 class="fade-up">Get their verdict too.</h2>
+      <p class="section-sub fade-up" style="margin-bottom:24px;">Buying a home is a team decision. Share any property with your partner, parents or friends — everyone drops their number, no signup needed — and watch how their estimates stack up against each other, the asking price, and the data.</p>
+      <p class="fade-up" style="font-size:14px; color:var(--ink-mid); line-height:1.7;">It's the fastest way to settle the "you're overpaying" argument at Sunday lunch — with real sold prices as the referee.</p>
+    </div>
+    <div class="fade-up">
+      <div class="crowd-demo">
+        <div class="crowd-demo-title">Where does everyone land?</div>
+        <div class="crowd-demo-chart">
+          <div class="crowd-demo-track"></div>
+          <div class="crowd-demo-mkr" style="left:22%;">
+            <div class="crowd-demo-mkr-label" style="background:var(--purple);">Dad</div>
+            <div class="crowd-demo-mkr-dot" style="background:var(--purple);"></div>
+          </div>
+          <div class="crowd-demo-mkr" style="left:38%;">
+            <div class="crowd-demo-mkr-label" style="background:var(--purple);">You</div>
+            <div class="crowd-demo-mkr-dot" style="background:var(--purple);"></div>
+          </div>
+          <div class="crowd-demo-mkr" style="left:58%;">
+            <div class="crowd-demo-mkr-label" style="background:var(--teal);">Data</div>
+            <div class="crowd-demo-mkr-dot" style="background:var(--teal);"></div>
+          </div>
+          <div class="crowd-demo-mkr" style="left:66%;">
+            <div class="crowd-demo-mkr-label" style="background:var(--purple);">Mum</div>
+            <div class="crowd-demo-mkr-dot" style="background:var(--purple);"></div>
+          </div>
+          <div class="crowd-demo-mkr" style="left:86%;">
+            <div class="crowd-demo-mkr-label" style="background:var(--red);">Asking</div>
+            <div class="crowd-demo-mkr-dot" style="background:var(--red);"></div>
+          </div>
         </div>
-      </div>
-      <div class="feature fade-up">
-        <div class="feature-icon-wrap">📅</div>
-        <div>
-          <div class="feature-title">Days on market & price history</div>
-          <div class="feature-body">How long the property has been listed, any price reductions, and what that tells you about seller motivation and your negotiating position.</div>
-        </div>
-      </div>
-      <div class="feature fade-up">
-        <div class="feature-icon-wrap">🏘️</div>
-        <div>
-          <div class="feature-title">Comparable sold prices</div>
-          <div class="feature-body">The 10–15 most relevant recent sales nearby, filtered by property type, size, and condition — so you know what the market actually paid.</div>
-        </div>
-      </div>
-      <div class="feature fade-up">
-        <div class="feature-icon-wrap">💬</div>
-        <div>
-          <div class="feature-title">Negotiation playbook</div>
-          <div class="feature-body">A personalised script: your opening offer, how to handle counter-offers, what signals to watch for, and a clear walk-away number.</div>
-        </div>
-      </div>
-      <div class="feature fade-up">
-        <div class="feature-icon-wrap">🟡</div>
-        <div>
-          <div class="feature-title">Seller signal score</div>
-          <div class="feature-body">Our assessment of how motivated the seller is — based on listing duration, price drops, and local supply — so you know how hard to push.</div>
-        </div>
-      </div>
-      <div class="feature fade-up">
-        <div class="feature-icon-wrap">🔒</div>
-        <div>
-          <div class="feature-title">100% independent</div>
-          <div class="feature-body">We have no relationship with estate agents, developers, or lenders. Our only job is to give you an honest, unbiased picture.</div>
+        <div class="crowd-feed-demo">
+          <div class="feed-row-demo"><div class="feed-avatar-demo">D</div>Dad<div class="feed-val-demo">£338,000</div></div>
+          <div class="feed-row-demo"><div class="feed-avatar-demo">Y</div>You<div class="feed-val-demo">£350,000</div></div>
+          <div class="feed-row-demo"><div class="feed-avatar-demo">M</div>Mum<div class="feed-val-demo">£365,000</div></div>
         </div>
       </div>
     </div>
@@ -811,78 +939,82 @@ footer {
       <div class="price-card fade-up">
         <div class="price-tier">Free</div>
         <div class="price-amount"><span>£</span>0</div>
-        <div class="price-desc">A quick sense-check before you go further</div>
+        <div class="price-desc">A full valuation — and an honest read on the asking price</div>
         <ul class="price-features">
-          <li><span class="check">✓</span> Valuation range (low / high)</li>
-          <li><span class="check">✓</span> Days on market</li>
-          <li><span class="check">✓</span> 3 comparable sales</li>
-          <li><span class="dash">–</span> Full comparable analysis</li>
-          <li><span class="dash">–</span> Negotiation playbook</li>
-          <li><span class="dash">–</span> Seller signal score</li>
+          <li><span class="check">✓</span> Valuation + range, with confidence badge</li>
+          <li><span class="check">✓</span> Our verdict on the asking price</li>
+          <li><span class="check">✓</span> Crowd voting — share with family &amp; friends</li>
+          <li><span class="check">✓</span> Days-on-market card</li>
+          <li><span class="check">✓</span> 3 comparable sales in full</li>
+          <li><span class="check">✓</span> Anchor-bias insight</li>
         </ul>
-        <button class="btn-outline">Start free</button>
+        <a class="btn-outline" href="#hero-form" onclick="focusHeroForm()">Start free</a>
       </div>
 
       <div class="price-card featured fade-up">
         <div class="price-popular">Most popular</div>
         <div class="price-tier">Report</div>
         <div class="price-amount"><span>£</span>29</div>
-        <div class="price-desc">Everything you need to make a confident offer</div>
+        <div class="price-desc">Everything you need to decide your offer</div>
         <ul class="price-features">
-          <li><span class="check">✓</span> Valuation range (low / mid / high)</li>
-          <li><span class="check">✓</span> Full comparable analysis (10–15)</li>
-          <li><span class="check">✓</span> Price history & reductions</li>
+          <li><span class="check">✓</span> Everything in Free</li>
+          <li><span class="check">✓</span> Full football-field breakdown — ten valuation methods</li>
+          <li><span class="check">✓</span> Opening offer · target · walk-away</li>
+          <li><span class="check">✓</span> The Offer Frontier — secure / balanced / aggressive</li>
           <li><span class="check">✓</span> Seller signal score</li>
-          <li><span class="check">✓</span> Recommended opening offer</li>
-          <li><span class="dash">–</span> Negotiation script & playbook</li>
+          <li><span class="check">✓</span> Full comparables table</li>
+          <li><span class="check">✓</span> Days-on-market discount range</li>
+          <li><span class="check">✓</span> Personalised to your buying position</li>
+          <li><span class="check">✓</span> Instant online report</li>
         </ul>
-        <button class="btn-primary-full">Get my report — £29</button>
+        <a class="btn-primary-full" href="https://houseoffer-backend.onrender.com/track?tier=29&postcode=homepage&verdict=pricing">Get my report — £29</a>
+        <a class="sample-link" href="/sample-report/">See a full sample report →</a>
       </div>
 
       <div class="price-card fade-up">
-        <div class="price-tier">Full playbook</div>
-        <div class="price-amount"><span>£</span>49</div>
-        <div class="price-desc">For competitive properties or nervous buyers</div>
+        <div class="price-inbuild">In build — join the list</div>
+        <div class="price-tier">Full Playbook</div>
+        <div class="price-amount"><span>£</span>99</div>
+        <div class="price-desc">An AI buying agent we're building — on your side for the whole negotiation</div>
         <ul class="price-features">
           <li><span class="check">✓</span> Everything in Report</li>
-          <li><span class="check">✓</span> Step-by-step negotiation script</li>
-          <li><span class="check">✓</span> Counter-offer guidance</li>
-          <li><span class="check">✓</span> Walk-away price</li>
-          <li><span class="check">✓</span> Email Q&A support</li>
-          <li><span class="check">✓</span> 7-day access to your report</li>
+          <li><span class="soon-chip">Soon</span> Expert buying agent support — answers your questions by email</li>
+          <li><span class="soon-chip">Soon</span> Drafts your emails and responses to the agent</li>
+          <li><span class="soon-chip">Soon</span> Supports you through the whole negotiation</li>
+          <li><span class="soon-chip">Soon</span> AI photo analysis of the listing</li>
         </ul>
-        <button class="btn-outline">Get the playbook — £49</button>
+        <a class="btn-outline inbuild" href="https://houseoffer-backend.onrender.com/track?tier=99&postcode=homepage&verdict=pricing">Join the list</a>
+        <div class="price-note">No payment taken — we'll email you when it's ready.</div>
       </div>
     </div>
   </div>
 </section>
 
 
-<!-- CREDIBILITY SECTION -->
-<section class="section" style="background:var(--sand-dark);">
+<!-- METHODOLOGY CREDIBILITY BLOCK -->
+<section class="section" id="methodology" style="background:var(--sand-dark);">
   <div class="section-inner">
     <p class="section-eyebrow fade-up">Our methodology</p>
-    <h2 class="fade-up">Six independent data sources.<br>One clear answer.</h2>
-    <p class="section-sub fade-up">Every HouseOffer report triangulates multiple official data sources — the same methods used by professional surveyors and buying agents, available to every buyer for the first time.</p>
+    <h2 class="fade-up">We show our working.<br>Every step of it.</h2>
+    <p class="section-sub fade-up">Every valuation is built from official data — HM Land Registry sold prices, the ONS House Price Index, EPC floor areas — run through ten valuation methods and weighted by data quality. Then we score how much the result can be trusted, and print that score on the report.</p>
 
     <!-- FOOTBALL FIELD VISUAL -->
     <div class="fade-up" style="background:white;border-radius:16px;padding:28px 28px 20px;margin-bottom:40px;box-shadow:0 2px 16px rgba(30,28,24,0.07);">
       <p style="font-size:12px;font-weight:600;color:var(--teal);letter-spacing:0.09em;text-transform:uppercase;margin-bottom:4px;">Example valuation football field</p>
-      <p style="font-size:13px;color:var(--ink-mid);margin-bottom:20px;">14 Maple Close, Bristol BS6 · Listed at <strong style="color:var(--ink);">£385,000</strong></p>
+      <p style="font-size:13px;color:var(--ink-mid);margin-bottom:20px;">14 Maple Close, Bristol BS6 (fictional example) · Listed at <strong style="color:var(--ink);">£385,000</strong></p>
 
-      <svg width="100%" viewBox="0 0 680 430" xmlns="http://www.w3.org/2000/svg" role="img">
-        <title>HouseOffer valuation football field — 14 Maple Close, Bristol BS6</title>
+      <svg width="100%" viewBox="0 0 680 392" xmlns="http://www.w3.org/2000/svg" role="img">
+        <title>HouseOffer valuation football field — fictional example property</title>
 
         <!-- Chart background -->
-        <rect x="150" y="20" width="510" height="370" rx="6" fill="#f7f3ed"/>
+        <rect x="150" y="20" width="510" height="332" rx="6" fill="#f7f3ed"/>
 
         <!-- Grid lines at £320k, £340k, £360k, £380k, £400k -->
-        <!-- x = 150 + pct*510: 0%=150, 25%=277, 50%=405, 75%=532, 100%=660 -->
-        <line x1="150" y1="20" x2="150" y2="390" stroke="#e0d9ce" stroke-width="1"/>
-        <line x1="277" y1="20" x2="277" y2="390" stroke="#e0d9ce" stroke-width="1"/>
-        <line x1="405" y1="20" x2="405" y2="390" stroke="#e0d9ce" stroke-width="1"/>
-        <line x1="532" y1="20" x2="532" y2="390" stroke="#e0d9ce" stroke-width="1"/>
-        <line x1="660" y1="20" x2="660" y2="390" stroke="#e0d9ce" stroke-width="1"/>
+        <line x1="150" y1="20" x2="150" y2="352" stroke="#e0d9ce" stroke-width="1"/>
+        <line x1="277" y1="20" x2="277" y2="352" stroke="#e0d9ce" stroke-width="1"/>
+        <line x1="405" y1="20" x2="405" y2="352" stroke="#e0d9ce" stroke-width="1"/>
+        <line x1="532" y1="20" x2="532" y2="352" stroke="#e0d9ce" stroke-width="1"/>
+        <line x1="660" y1="20" x2="660" y2="352" stroke="#e0d9ce" stroke-width="1"/>
 
         <!-- Axis labels -->
         <text x="150" y="14" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="#9b9488">£320k</text>
@@ -891,103 +1023,73 @@ footer {
         <text x="532" y="14" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="#9b9488">£380k</text>
         <text x="660" y="14" text-anchor="middle" font-family="var(--font-sans)" font-size="11" fill="#9b9488">£400k</text>
 
-        <!-- ASKING PRICE LINE: £385k → 81.25% → x = 150 + 0.8125*510 = 564 -->
-        <line x1="564" y1="20" x2="564" y2="402" stroke="#b83232" stroke-width="1.5" stroke-dasharray="4,3"/>
-        <rect x="510" y="403" width="108" height="18" rx="9" fill="#fdeaea"/>
-        <text x="564" y="415" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="#b83232">Asking: £385k</text>
+        <!-- ASKING PRICE LINE: £385k -->
+        <line x1="564" y1="20" x2="564" y2="364" stroke="#b83232" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <rect x="510" y="365" width="108" height="18" rx="9" fill="#fdeaea"/>
+        <text x="564" y="377" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="#b83232">Asking: £385k</text>
 
-        <!-- OPENING OFFER LINE: £355k → 43.75% → x = 150 + 0.4375*510 = 373 -->
-        <line x1="373" y1="20" x2="373" y2="396" stroke="#0f6e56" stroke-width="2.5" stroke-dasharray="6,3"/>
-        <polygon points="373,400 368,392 378,392" fill="#0f6e56"/>
-        <rect x="296" y="403" width="154" height="18" rx="9" fill="#1a6b5a"/>
-        <text x="373" y="415" text-anchor="middle" font-family="var(--font-sans)" font-size="9.5" font-weight="600" fill="white">★ Opening offer: £355k</text>
+        <!-- OPENING OFFER LINE: £355k -->
+        <line x1="373" y1="20" x2="373" y2="356" stroke="#0f6e56" stroke-width="2.5" stroke-dasharray="6,3"/>
+        <polygon points="373,362 368,354 378,354" fill="#0f6e56"/>
+        <rect x="296" y="365" width="154" height="18" rx="9" fill="#1a6b5a"/>
+        <text x="373" y="377" text-anchor="middle" font-family="var(--font-sans)" font-size="9.5" font-weight="600" fill="white">★ Opening offer: £355k</text>
 
-        <!-- ─── ROWS ─── each row center y spaced 38px apart, starting at y=51 -->
-
-        <!-- ROW 1: Comparable sold prices  lo=£345k=31.25%  hi=£375k=68.75%  mid=£360k=50% -->
-        <!-- x_lo=150+159=309  x_hi=150+351=501  w=192  mid=405 -->
+        <!-- ROW 1: Comparable sold prices £345k–£375k -->
         <text x="144" y="47" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Comparable</text>
         <text x="144" y="60" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">sold prices</text>
         <rect x="309" y="42" width="192" height="18" rx="5" fill="#e3f4ef" stroke="#1a6b5a" stroke-width="1.5"/>
         <circle cx="405" cy="51" r="5" fill="#1a6b5a"/>
         <text x="306" y="52" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#1a6b5a">£345k</text>
         <text x="504" y="52" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#1a6b5a">£375k</text>
-
-        <!-- ROW 2: Prev sold + HPI  lo=£348k=35%  hi=£370k=62.5%  mid=£359k≈48.75% -->
-        <!-- x_lo=150+178=328  x_hi=150+319=469  w=141  mid=399 -->
-        <text x="144" y="85" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Prev. sold</text>
-        <text x="144" y="98" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">+ HPI adj.</text>
+        <!-- ROW 2: Previous sold price, adjusted to today £348k–£370k -->
+        <text x="144" y="85" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Previous sold</text>
+        <text x="144" y="98" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">price (adjusted)</text>
         <rect x="328" y="80" width="141" height="18" rx="5" fill="#e8f0fa" stroke="#1a4e8c" stroke-width="1.5"/>
         <circle cx="399" cy="89" r="5" fill="#1a4e8c"/>
         <text x="325" y="90" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#1a4e8c">£348k</text>
         <text x="472" y="90" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#1a4e8c">£370k</text>
-
-        <!-- ROW 3: ONS HPI  lo=£338k=22.5%  hi=£372k=65%  mid=£355k=43.75% -->
-        <!-- x_lo=150+115=265  x_hi=150+332=482  w=217  mid=373 -->
-        <text x="144" y="123" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">ONS area</text>
-        <text x="144" y="136" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">HPI range</text>
+        <!-- ROW 3: Area price trend £338k–£372k -->
+        <text x="144" y="123" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Area price</text>
+        <text x="144" y="136" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">trend</text>
         <rect x="265" y="118" width="217" height="18" rx="5" fill="#faeeda" stroke="#8b5e1a" stroke-width="1.5"/>
         <circle cx="373" cy="127" r="5" fill="#8b5e1a"/>
         <text x="262" y="128" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#8b5e1a">£338k</text>
         <text x="485" y="128" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#8b5e1a">£372k</text>
-
-        <!-- ROW 4: Per sqm  lo=£350k=37.5%  hi=£366k=57.5%  mid=£358k≈47.5% -->
-        <!-- x_lo=150+191=341  x_hi=150+293=443  w=102  mid=392 -->
-        <text x="144" y="161" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Per sqm</text>
-        <text x="144" y="174" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">(EPC area)</text>
+        <!-- ROW 4: Price per square metre £350k–£366k -->
+        <text x="144" y="161" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Price per</text>
+        <text x="144" y="174" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">square metre</text>
         <rect x="341" y="156" width="102" height="18" rx="5" fill="#f0eafa" stroke="#6b3fa0" stroke-width="1.5"/>
         <circle cx="392" cy="165" r="5" fill="#6b3fa0"/>
         <text x="338" y="166" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#6b3fa0">£350k</text>
         <text x="446" y="166" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#6b3fa0">£366k</text>
-
-        <!-- ROW 5: Condition adj.  lo=£357k=46.25%  hi=£373k=66.25%  mid=£365k=56.25% -->
-        <!-- x_lo=150+236=386  x_hi=150+338=488  w=102  mid=437 -->
-        <text x="144" y="199" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Condition</text>
-        <text x="144" y="212" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">adj. (photos)</text>
-        <rect x="386" y="194" width="102" height="18" rx="5" fill="#fdf0e3" stroke="#b85c00" stroke-width="1.5"/>
-        <circle cx="437" cy="203" r="5" fill="#b85c00"/>
-        <text x="383" y="204" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#b85c00">£357k</text>
-        <text x="491" y="204" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#b85c00">£373k</text>
-
-        <!-- ROW 6: AVM estimate  lo=£342k=27.5%  hi=£371k=63.75%  mid=£356k≈45% -->
-        <!-- x_lo=150+140=290  x_hi=150+325=475  w=185  mid=380 -->
-        <text x="144" y="237" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">AVM estimate</text>
-        <text x="144" y="250" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">(Zoopla/Halifax)</text>
-        <rect x="290" y="232" width="185" height="18" rx="5" fill="#fce4ec" stroke="#c2185b" stroke-width="1.5"/>
-        <circle cx="380" cy="241" r="5" fill="#c2185b"/>
-        <text x="287" y="242" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#c2185b">£342k</text>
-        <text x="478" y="242" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#c2185b">£371k</text>
-
-        <!-- ROW 7: Lender valuation band  lo=£340k=25%  hi=£362k=52.5%  mid=£351k≈38.75% -->
-        <!-- x_lo=150+128=278  x_hi=150+268=418  w=140  mid=348 -->
-        <!-- Warning badge: asking £385k is ABOVE lender band -->
-        <text x="144" y="275" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Lender valuation</text>
-        <text x="144" y="288" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">band (–5–10%)</text>
-        <rect x="278" y="270" width="140" height="18" rx="5" fill="#fce8d0" stroke="#e65100" stroke-width="1.5"/>
-        <circle cx="348" cy="279" r="5" fill="#e65100"/>
-        <text x="275" y="280" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#e65100">£340k</text>
-        <text x="421" y="280" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#e65100">£362k</text>
-        <!-- Down-val risk warning -->
-        <rect x="430" y="270" width="96" height="18" rx="5" fill="#fff3e0"/>
-        <text x="478" y="282" text-anchor="middle" font-family="var(--font-sans)" font-size="9" fill="#e65100">⚠ Down-val risk</text>
-
-        <!-- ROW 8: Ask→sold discount  lo=£343k=28.75%  hi=£370k=62.5%  mid=£356k -->
-        <!-- x_lo=150+147=297  x_hi=150+319=469  w=172  mid=380 -->
-        <text x="144" y="313" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Ask→sold discount</text>
-        <text x="144" y="326" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">(BS6 avg –3.8%)</text>
-        <rect x="297" y="308" width="172" height="18" rx="5" fill="#e8eaf6" stroke="#3949ab" stroke-width="1.5"/>
-        <circle cx="380" cy="317" r="5" fill="#3949ab"/>
-        <text x="294" y="318" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#3949ab">£343k</text>
-        <text x="472" y="318" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#3949ab">£370k</text>
-
-        <!-- ROW 9: Our weighted range  lo=£352k=40%  hi=£368k=60%  mid=£360k=50% — BOLD -->
-        <!-- x_lo=150+204=354  x_hi=150+306=456  w=102  mid=405 -->
-        <text x="144" y="351" text-anchor="end" font-family="var(--font-sans)" font-size="11" font-weight="500" fill="#0f6e56">Our weighted</text>
-        <text x="144" y="364" text-anchor="end" font-family="var(--font-sans)" font-size="11" font-weight="500" fill="#0f6e56">range</text>
-        <rect x="354" y="346" width="102" height="22" rx="6" fill="#1a6b5a"/>
-        <circle cx="405" cy="357" r="6" fill="white" stroke="#0f6e56" stroke-width="2"/>
-        <text x="351" y="359" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="700" fill="#0f6e56">£352k</text>
-        <text x="459" y="359" font-family="var(--font-sans)" font-size="10" font-weight="700" fill="#0f6e56">£368k</text>
+        <!-- ROW 5: Automated valuation (unattributed) £342k–£371k -->
+        <text x="144" y="199" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Automated</text>
+        <text x="144" y="212" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">valuation</text>
+        <rect x="290" y="194" width="185" height="18" rx="5" fill="#fce4ec" stroke="#c2185b" stroke-width="1.5"/>
+        <circle cx="380" cy="203" r="5" fill="#c2185b"/>
+        <text x="287" y="204" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#c2185b">£342k</text>
+        <text x="478" y="204" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#c2185b">£371k</text>
+        <!-- ROW 6: Estimated lender range, modelled £340k–£362k -->
+        <text x="144" y="237" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Est. lender range</text>
+        <text x="144" y="250" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">(modelled)</text>
+        <rect x="278" y="232" width="140" height="18" rx="5" fill="#fce8d0" stroke="#e65100" stroke-width="1.5"/>
+        <circle cx="348" cy="241" r="5" fill="#e65100"/>
+        <text x="275" y="242" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#e65100">£340k</text>
+        <text x="421" y="242" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#e65100">£362k</text>
+        <!-- ROW 7: Asking-to-sold discount £343k–£370k -->
+        <text x="144" y="275" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">Asking-to-sold</text>
+        <text x="144" y="288" text-anchor="end" font-family="var(--font-sans)" font-size="11" fill="#5c5849">discount</text>
+        <rect x="297" y="270" width="172" height="18" rx="5" fill="#e8eaf6" stroke="#3949ab" stroke-width="1.5"/>
+        <circle cx="380" cy="279" r="5" fill="#3949ab"/>
+        <text x="294" y="280" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#3949ab">£343k</text>
+        <text x="472" y="280" font-family="var(--font-sans)" font-size="10" font-weight="600" fill="#3949ab">£370k</text>
+        <!-- ROW 8: Our weighted range £352k–£368k -->
+        <text x="144" y="313" text-anchor="end" font-family="var(--font-sans)" font-size="11" font-weight="500" fill="#0f6e56">Our weighted</text>
+        <text x="144" y="326" text-anchor="end" font-family="var(--font-sans)" font-size="11" font-weight="500" fill="#0f6e56">range</text>
+        <rect x="354" y="306" width="102" height="22" rx="6" fill="#1a6b5a"/>
+        <circle cx="405" cy="317" r="6" fill="white" stroke="#0f6e56" stroke-width="2"/>
+        <text x="351" y="319" text-anchor="end" font-family="var(--font-sans)" font-size="10" font-weight="700" fill="#0f6e56">£352k</text>
+        <text x="459" y="319" font-family="var(--font-sans)" font-size="10" font-weight="700" fill="#0f6e56">£368k</text>
 
       </svg>
 
@@ -1000,12 +1102,13 @@ footer {
           <div style="width:24px;height:3px;background:#b83232;border-radius:2px;border-top:2px dashed #b83232;"></div>Asking price
         </div>
         <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-mid);">
-          <div style="width:24px;height:3px;background:#0f6e56;border-radius:2px;border-top:2px dashed #0f6e56;"></div>Recommended offer (£355k)
+          <div style="width:24px;height:3px;background:#0f6e56;border-radius:2px;border-top:2px dashed #0f6e56;"></div>Opening offer (£355k)
         </div>
         <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-mid);">
           <div style="width:8px;height:8px;border-radius:50%;background:#5c5849;"></div>Midpoint estimate
         </div>
       </div>
+      <p style="font-size:11.5px;color:var(--ink-light);margin-top:10px;">Methods shown are the ones inside every real report. The full report also breaks out comparable sales with and without price-index adjustment, and rental-yield implied value where rental data exists.</p>
     </div>
 
         <!-- DATA SOURCES GRID -->
@@ -1023,43 +1126,45 @@ footer {
         <div style="width:40px;height:40px;border-radius:10px;background:#e8f0fa;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">📈</div>
         <div>
           <p style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px;">ONS House Price Index</p>
-          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Official UK government regional price index, used to inflation-adjust previous sold prices to today's market.</p>
+          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Official UK government regional price index, used to adjust every past sold price to today's market before we compare anything.</p>
         </div>
       </div>
 
       <div class="fade-up" style="background:white;border-radius:12px;padding:20px 22px;border:1px solid var(--sand-border);display:flex;gap:14px;align-items:flex-start;">
-        <div style="width:40px;height:40px;border-radius:10px;background:#faeeda;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">🏠</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#faeeda;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">📐</div>
         <div>
           <p style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px;">EPC Register</p>
-          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Energy Performance Certificate data gives us the exact floor area of the property — powering our price-per-sqm analysis.</p>
+          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Energy Performance Certificate data gives us the property's floor area — powering the price-per-square-metre analysis.</p>
         </div>
       </div>
 
       <div class="fade-up" style="background:white;border-radius:12px;padding:20px 22px;border:1px solid var(--sand-border);display:flex;gap:14px;align-items:flex-start;">
         <div style="width:40px;height:40px;border-radius:10px;background:#f0eafa;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">📋</div>
         <div>
-          <p style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px;">Listing history data</p>
-          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Days on market, price reductions, and relisting history — the signals that reveal how motivated the seller really is.</p>
+          <p style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px;">Listing &amp; market data</p>
+          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Days on market, price reductions and local asking-to-sold gaps — the public signals of how much room a seller has to move.</p>
         </div>
       </div>
 
       <div class="fade-up" style="background:white;border-radius:12px;padding:20px 22px;border:1px solid var(--sand-border);display:flex;gap:14px;align-items:flex-start;">
-        <div style="width:40px;height:40px;border-radius:10px;background:#fdf0e3;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">📸</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#e3f4ef;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">⚖️</div>
         <div>
-          <p style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px;">AI photo analysis</p>
-          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Our AI reviews listing photos to assess condition — new kitchen, windows, bathroom — and adjusts the valuation range accordingly.</p>
+          <p style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px;">Ten valuation methods, weighted</p>
+          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">No single method is trusted on its own. Each one values the property independently, and the final range weights them by data quality.</p>
         </div>
       </div>
 
       <div class="fade-up" style="background:white;border-radius:12px;padding:20px 22px;border:1px solid var(--sand-border);display:flex;gap:14px;align-items:flex-start;">
-        <div style="width:40px;height:40px;border-radius:10px;background:#e1f5ee;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">💬</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#e1f5ee;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;">●</div>
         <div>
-          <p style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px;">Finance-grade methodology</p>
-          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Built by finance professionals. Our comparable weighting and valuation methodology mirrors institutional investment analysis — not a black-box algorithm.</p>
+          <p style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:3px;">Confidence-scored — always</p>
+          <p style="font-size:12.5px;color:var(--ink-mid);line-height:1.55;">Every report says HIGH, MEDIUM or LOW confidence and why. When the data is thin we widen the range and tell you — we never hide uncertainty.</p>
         </div>
       </div>
 
     </div>
+
+    <p class="fade-up" style="margin-top:32px;font-size:15px;"><a href="/white-paper/" style="color:var(--teal);font-weight:600;text-decoration:none;">Read our full methodology →</a></p>
   </div>
 </section>
 
@@ -1076,6 +1181,26 @@ footer {
       <div class="faq-item fade-up">
         <div class="faq-q">Will the estate agent know I've used HouseOffer? <span>↓</span></div>
         <div class="faq-a">No. Your report is private — we never share information with estate agents, developers, or any third party. Our model is built on being entirely independent from the selling side.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <div class="faq-q">Why should I trust your number over the estate agent's? <span>↓</span></div>
+        <div class="faq-a">The estate agent is paid by the seller, and the valuation that wins the listing is usually the flattering one. Our number has no side to please: it's built from what similar homes actually sold for (HM Land Registry), adjusted to today's market with the ONS House Price Index, and cross-checked across ten independent valuation methods. And unlike anyone else, we tell you how much to trust the result — every report carries a HIGH / MEDIUM / LOW confidence score with the reason in plain English.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <div class="faq-q">What does HIGH / MEDIUM / LOW confidence mean? <span>↓</span></div>
+        <div class="faq-a">It's our honest score of how strong the data behind your valuation is. HIGH means we found genuinely comparable sales — matched on size or bedrooms — that agree with each other. MEDIUM means the evidence is decent but less directly matched. LOW means the data is thin or the property is unusual, and you should treat the number with caution. In our latest validation run, HIGH-confidence reports landed within 10% of the asking price 56% of the time — and the score is doing its job precisely because HIGH beats MEDIUM beats LOW.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <div class="faq-q">What if my report comes back LOW confidence? <span>↓</span></div>
+        <div class="faq-a">We tell you, we widen the ranges, and we never hide the uncertainty. LOW confidence usually means something real: thin local sold data, an unusual property, or a listing that isn't standard market stock (auctions, shared ownership, retirement schemes — we detect and flag these). Most valuation sites would hand you a confident-looking number anyway. We think knowing the number is shaky is worth more than pretending it isn't.</div>
+      </div>
+      <div class="faq-item fade-up">
+        <div class="faq-q">Some sites say homes sell 17% below asking — why is your number smaller? <span>↓</span></div>
+        <div class="faq-a">Because those figures compare the average asking price of homes currently <em>listed</em> with the average price of homes that <em>sold</em> — two different sets of homes, so the gap comes out inflated (unsold, overpriced stock drags the listed average up). We compare each sold home with its own asking price, which is the question you actually care about: how much below asking do homes like this one really go for?</div>
+      </div>
+      <div class="faq-item fade-up">
+        <div class="faq-q">Is this financial or professional advice? <span>↓</span></div>
+        <div class="faq-a">No. HouseOffer reports are information only. They are not a RICS valuation, not a survey, and not financial advice. We show you the data and how we read it — the decision, and the offer, are always yours. For a mortgage or structural assessment, use a qualified professional.</div>
       </div>
       <p class="fade-up" style="margin-top:22px;font-size:14px;"><a href="/faq/" style="color:var(--teal);font-weight:600;text-decoration:none;">Read all frequently asked questions →</a></p>
     </div>
@@ -1114,9 +1239,9 @@ footer {
   <h2 style="color:white; margin-bottom: 14px;">Estate agents know what they want you to pay.<br>Now you'll know what you should.</h2>
   <p>Paste any Rightmove link. Get a free report backed by real Land Registry data — in minutes.</p>
   <div style="margin-top: 20px;">
-    <a href="#hero-form" class="btn-white" onclick="setTimeout(()=>document.getElementById('propUrl').focus(),400)">Get my free report →</a>
+    <a href="#hero-form" class="btn-white" onclick="focusHeroForm()">Get my free report →</a>
   </div>
-  <p class="cta-note">Free to start · No account needed · Instant delivery</p>
+  <p class="cta-note">Free to start · No account needed · Instant online report</p>
 </section>
 
 <!-- FOOTER -->
@@ -1228,22 +1353,9 @@ async function handleHeroSubmit(e) {
   }
 }
 
-// CTA form — Netlify early access capture
-function handleCtaSubmit(e) {
-  e.preventDefault();
-  const form = e.target;
-  const btn = document.getElementById('ctaBtn');
-  const data = new FormData(form);
-  fetch('/', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(data).toString() })
-    .then(() => {
-      btn.textContent = "✓ You're on the list!";
-      btn.style.background = '#0f6e56';
-      btn.style.color = 'white';
-      form.querySelector('input[type=email]').value = '';
-      setTimeout(() => { btn.textContent = 'Get early access →'; btn.style.background = ''; btn.style.color = ''; }, 4000);
-    })
-    .catch(() => { btn.textContent = 'Something went wrong — try again'; });
+// Every "start free" CTA scrolls to the hero form and focuses the URL input
+function focusHeroForm() {
+  setTimeout(() => document.getElementById('propUrl').focus(), 400);
 }
 // FAQ toggle
 document.querySelectorAll('.faq-q').forEach(q => {

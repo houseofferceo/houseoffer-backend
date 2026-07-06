@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sample £29 report — HouseOffer</title>
+<meta name="description" content="A full sample of the HouseOffer £29 report for a fictional property — every section visible, figures blurred.">
+<meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --sand: #f7f3ed; --sand-dark: #ece7de; --sand-border: #e0d9ce;
+  --ink: #1e1c18; --ink-mid: #5c5849; --ink-light: #9b9488;
+  --teal: #1a6b5a; --teal-mid: #238f77; --teal-light: #e3f4ef; --teal-border: #b8dfd5;
+  --amber: #c06a1a; --amber-light: #fdf0e3; --amber-border: #f0c98a;
+  --red: #b83232; --red-light: #fdf0f0;
+  --purple: #7a8fd0; --purple-light: #eaedf9;
+  --white: #ffffff;
+  --shadow-sm: 0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);
+  --radius: 14px;
+}
+body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; min-height: 100vh; }
+
+/* Blurred figure — same pattern as the report's locked sections */
+.fig { filter: blur(5px); user-select: none; pointer-events: none; }
+
+nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--sand-border); padding: 0 24px; position: sticky; top: 0; z-index: 50; }
+.nav-inner { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 58px; }
+.logo { font-family: 'Lora', serif; font-size: 20px; font-weight: 700; color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+.nav-tag { font-size: 12px; font-weight: 600; color: var(--amber); background: var(--amber-light); border: 1px solid var(--amber-border); padding: 4px 10px; border-radius: 20px; }
+.wrapper { max-width: 720px; margin: 0 auto; padding: 28px 24px 80px; }
+
+.sample-banner { background: var(--ink); color: rgba(255,255,255,0.85); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 20px; font-size: 13.5px; line-height: 1.6; display: flex; gap: 12px; align-items: flex-start; }
+.sample-banner strong { color: white; }
+.sample-banner-icon { font-size: 18px; flex-shrink: 0; }
+
+.report-header { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 26px 26px 22px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.report-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; }
+.report-address { font-family: 'Lora', serif; font-size: 22px; font-weight: 700; line-height: 1.25; margin-bottom: 6px; }
+.report-sub { font-size: 14px; color: var(--ink-mid); margin-bottom: 18px; }
+.meta-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { display: flex; align-items: center; gap: 5px; background: var(--sand); border: 1px solid var(--sand-border); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 500; color: var(--ink-mid); }
+
+/* OFFER HEADLINE */
+.offer-card { background: var(--teal); border-radius: var(--radius); padding: 26px 26px 22px; margin-bottom: 20px; }
+.offer-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.7); margin-bottom: 8px; }
+.offer-headline { font-family: 'Lora', serif; font-size: 34px; font-weight: 700; color: white; line-height: 1.1; margin-bottom: 18px; }
+.offer-trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.offer-trio-item { background: rgba(255,255,255,0.12); border-radius: 10px; padding: 14px 16px; }
+.offer-trio-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.6); margin-bottom: 4px; }
+.offer-trio-value { font-family: 'Lora', serif; font-size: 18px; font-weight: 700; color: white; }
+.offer-note { font-size: 13px; color: rgba(255,255,255,0.8); line-height: 1.6; }
+.offer-note strong { color: white; }
+
+/* APPROACH */
+.approach-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.approach-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; }
+.approach-list { list-style: none; }
+.approach-list li { font-size: 13.5px; color: var(--ink-mid); line-height: 1.65; padding: 7px 0 7px 22px; position: relative; }
+.approach-list li::before { content: "→"; position: absolute; left: 0; color: var(--teal); font-weight: 700; }
+.approach-list li strong { color: var(--ink); }
+.approach-stance { font-size: 13px; color: var(--ink-mid); background: var(--sand); border: 1px dashed var(--sand-border); border-radius: 10px; padding: 10px 14px; margin-top: 10px; line-height: 1.55; }
+
+/* VERDICT */
+.verdict-card { border-radius: var(--radius); padding: 22px 26px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1.5px solid #e8b4b4; background: var(--red-light); }
+.verdict-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; color: var(--red); }
+.verdict-headline { font-family: 'Lora', serif; font-size: 24px; font-weight: 700; line-height: 1.2; margin-bottom: 10px; color: var(--red); }
+.verdict-body { font-size: 14px; color: var(--ink-mid); line-height: 1.65; }
+.verdict-body strong { color: var(--ink); }
+
+/* CONFIDENCE */
+.conf-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+.conf-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; background: var(--teal-light); color: var(--teal); border: 1px solid var(--teal-border); padding: 4px 12px; border-radius: 20px; }
+.conf-reason { font-size: 12.5px; color: var(--ink-light); }
+
+.section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin: 26px 0 12px; }
+
+/* FOOTBALL FIELD (HTML bars) */
+.ff-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 8px; box-shadow: var(--shadow-sm); }
+.ff-card-title { font-family: 'Lora', serif; font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+.ff-card-sub { font-size: 12.5px; color: var(--ink-light); margin-bottom: 18px; line-height: 1.5; }
+.ff-row { display: grid; grid-template-columns: 158px 1fr 74px; gap: 10px; align-items: center; margin-bottom: 9px; }
+.ff-label { font-size: 12px; color: var(--ink-mid); line-height: 1.3; }
+.ff-label .ctx { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-light); background: var(--sand-dark); border-radius: 4px; padding: 0 5px; margin-left: 4px; }
+.ff-track { height: 14px; background: var(--sand); border-radius: 7px; position: relative; }
+.ff-fill { position: absolute; top: 0; height: 100%; border-radius: 7px; background: var(--teal-light); border: 1.5px solid var(--teal); }
+.ff-fill.weighted { background: var(--teal); }
+.ff-fill.muted { background: var(--sand-dark); border-color: var(--ink-light); }
+.ff-dot { position: absolute; top: 50%; transform: translate(-50%,-50%); width: 8px; height: 8px; border-radius: 50%; background: var(--teal); }
+.ff-dot.white { background: white; border: 1.5px solid var(--teal); }
+.ff-figs { font-size: 11px; font-weight: 600; color: var(--teal); white-space: nowrap; }
+.ff-asking-row .ff-label { color: var(--red); font-weight: 600; }
+.ff-asking-line { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px dashed var(--red); }
+.ff-source { font-size: 11.5px; color: var(--ink-light); margin-top: 12px; }
+
+/* METHOD TABLE + COMP TABLE */
+.comp-table-section { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.comp-table-header { padding: 16px 22px 12px; border-bottom: 1px solid var(--sand-border); }
+.comp-table-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.comp-table-sub { font-size: 12px; color: var(--ink-light); margin-top: 2px; }
+.comp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.comp-table th { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-light); padding: 8px 16px; text-align: left; background: var(--sand); border-bottom: 1px solid var(--sand-border); }
+.comp-table td { padding: 9px 16px; border-bottom: 1px solid var(--sand-border); color: var(--ink-mid); vertical-align: middle; }
+.comp-table tr:last-child td { border-bottom: none; }
+.comp-table td.price { font-family: 'Lora', serif; font-weight: 600; color: var(--ink); }
+.comp-table td.date { color: var(--ink-light); font-size: 12px; white-space: nowrap; }
+.row-muted td { color: var(--ink-light); }
+
+/* SELLER MOTIVATION */
+.signal-card { border-radius: var(--radius); padding: 18px 22px; margin-bottom: 14px; border: 1.5px solid var(--teal-border); background: var(--teal-light); box-shadow: var(--shadow-sm); }
+.signal-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 8px; color: white; background: var(--teal); }
+.signal-summary { font-size: 14px; color: var(--ink-mid); line-height: 1.6; }
+.dom-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 18px 22px; margin-bottom: 14px; box-shadow: var(--shadow-sm); display: flex; align-items: flex-start; gap: 14px; }
+.dom-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 19px; flex-shrink: 0; background: var(--amber-light); }
+.dom-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.dom-body { font-size: 13.5px; color: var(--ink-mid); line-height: 1.6; }
+.dom-body strong { color: var(--ink); }
+.discount-strip { background: var(--teal-light); border: 1px solid var(--teal-border); border-radius: 10px; padding: 10px 14px; margin-top: 10px; font-size: 12.5px; color: var(--teal); line-height: 1.55; }
+
+/* FRONTIER */
+.ff2-card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.ff2-head { padding: 18px 24px 6px; }
+.ff2-title { font-family: 'Lora', serif; font-size: 17px; font-weight: 600; }
+.ff2-sub { font-size: 12.5px; color: var(--ink-light); margin-top: 4px; line-height: 1.5; }
+.ff2-body { padding: 6px 18px 18px; }
+.pos-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 0 24px 20px; }
+.pos-card { border: 1.5px solid var(--sand-border); border-radius: 10px; padding: 14px 14px 12px; position: relative; }
+.pos-card.emph { border-color: var(--amber); }
+.pos-card.emph::after { content: "Suggested for you"; position: absolute; top: -9px; right: 10px; background: var(--amber); color: white; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 10px; }
+.pos-name { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.pos-dot { width: 8px; height: 8px; border-radius: 50%; }
+.pos-secure .pos-name { color: var(--teal); } .pos-secure .pos-dot { background: var(--teal); }
+.pos-balanced .pos-name { color: var(--amber); } .pos-balanced .pos-dot { background: var(--amber); }
+.pos-aggressive .pos-name { color: var(--ink); } .pos-aggressive .pos-dot { background: var(--ink); }
+.pos-price { font-family: 'Lora', serif; font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+.pos-desc { font-size: 11.5px; color: var(--ink-mid); line-height: 1.5; }
+.ff2-footnote { font-size: 11.5px; color: var(--ink-light); padding: 0 24px 18px; line-height: 1.55; }
+
+/* CTA */
+.get-yours { background: var(--teal); border-radius: var(--radius); padding: 30px 28px; text-align: center; margin: 28px 0 20px; }
+.get-yours-title { font-family: 'Lora', serif; font-size: 22px; font-weight: 700; color: white; margin-bottom: 8px; }
+.get-yours-body { font-size: 14px; color: rgba(255,255,255,0.8); line-height: 1.6; margin-bottom: 20px; max-width: 440px; margin-left: auto; margin-right: auto; }
+.btn-white { display: inline-block; background: white; color: var(--teal); font-size: 15px; font-weight: 700; padding: 13px 32px; border-radius: 10px; text-decoration: none; box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+.attribution { text-align: center; font-size: 12px; color: var(--ink-light); padding-top: 8px; line-height: 1.6; }
+.attribution a { color: var(--ink-light); }
+
+@media (max-width: 600px) {
+  .offer-trio, .pos-grid { grid-template-columns: 1fr; }
+  .ff-row { grid-template-columns: 110px 1fr 60px; }
+  .report-address { font-size: 18px; }
+  .offer-headline { font-size: 28px; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="/" class="logo"><svg width="30" height="30" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="56" y="0" width="14" height="22" rx="2" fill="#c9dfd8"/>
+      <polygon points="44,6 84,30 4,30" fill="#b8dfd5"/>
+      <polygon points="44,6 84,30 84,78 4,78 4,30" fill="#1a6b5a"/>
+      <rect x="8" y="36" width="20" height="18" rx="2" fill="#238f77"/>
+      <rect x="60" y="36" width="20" height="18" rx="2" fill="#238f77"/>
+      <rect x="31" y="48" width="26" height="30" rx="3" fill="#e3f4ef"/>
+      <circle cx="70" cy="16" r="17" fill="#e3f4ef" stroke="#1a6b5a" stroke-width="2"/>
+      <text x="70" y="23" text-anchor="middle" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#1a6b5a">£</text>
+    </svg>HouseOffer</a>
+    <span class="nav-tag">Sample report</span>
+  </div>
+</nav>
+
+<div class="wrapper">
+
+  <div class="sample-banner">
+    <span class="sample-banner-icon">👀</span>
+    <span><strong>This is a sample £29 report for a fictional property.</strong> Every section, chart and table is exactly what you get — only the £ figures are blurred here. Your own report shows them all in full, instantly online.</span>
+  </div>
+
+  <!-- HEADER -->
+  <div class="report-header">
+    <div class="report-label">HouseOffer Analysis — Full Report</div>
+    <div class="report-address">14 Maple Close, Bristol BS6</div>
+    <div class="report-sub">Fictional example · HM Land Registry sold data</div>
+    <div class="meta-pills">
+      <span class="pill">🏷️ Asking: <strong>&nbsp;£385,000</strong></span>
+      <span class="pill">🏠 Semi-detached</span>
+      <span class="pill">🛏 3 bedrooms</span>
+      <span class="pill">📐 94 m²</span>
+    </div>
+  </div>
+
+  <!-- OFFER HEADLINE -->
+  <div class="offer-card">
+    <div class="offer-eyebrow">Recommended opening offer</div>
+    <div class="offer-headline"><span class="fig">£355,000</span></div>
+    <div class="offer-trio">
+      <div class="offer-trio-item">
+        <div class="offer-trio-label">Open with</div>
+        <div class="offer-trio-value"><span class="fig">£355,000</span></div>
+      </div>
+      <div class="offer-trio-item">
+        <div class="offer-trio-label">Target price</div>
+        <div class="offer-trio-value"><span class="fig">£360,000</span></div>
+      </div>
+      <div class="offer-trio-item">
+        <div class="offer-trio-label">Walk away above</div>
+        <div class="offer-trio-value"><span class="fig">£368,000</span></div>
+      </div>
+    </div>
+    <div class="offer-note">Your opening offer is <strong><span class="fig">7.8%</span> below the asking price</strong> — but only <strong><span class="fig">1.4%</span> below what comparable homes have actually sold for</strong>. That is a credible, evidence-backed position.</div>
+  </div>
+
+  <!-- NEGOTIATION APPROACH (personalised to buyer answers) -->
+  <div class="approach-card">
+    <div class="approach-eyebrow">🎯 Your negotiation approach — written for your situation</div>
+    <ul class="approach-list">
+      <li><strong>You're chain-free.</strong> First-time buyers carry no chain risk, and sellers value that certainty. Make sure the agent records you as chain-free the moment you offer — it strengthens a below-asking number.</li>
+      <li><strong>Comparing several properties is leverage.</strong> Sellers and agents can tell when a buyer has options. Stay visibly willing to walk away — it makes every number on this page more credible.</li>
+      <li><strong>Flexibility is an underrated card.</strong> Ask the agent what completion timing suits the seller, then offer it — matched timing can be worth as much as a small price concession.</li>
+    </ul>
+    <div class="approach-stance">Three quick questions after unlock personalise this section — your buying position, how attached you are, and your timeline. The emphasis changes; the evidence never does.</div>
+  </div>
+
+  <!-- VERDICT -->
+  <div class="verdict-card">
+    <div class="verdict-eyebrow">Our verdict</div>
+    <div class="verdict-headline">This seller is asking for more than the market says it's worth</div>
+    <div class="verdict-body">Based on 12 completed sales of similar semi-detached homes in BS6, adjusted to today's value, this property is asking <strong><span class="fig">7%</span> more</strong> than what similar homes have actually sold for. That gap is real money — and it's your opening position at the negotiating table.</div>
+  </div>
+
+  <div class="conf-row">
+    <span class="conf-badge">● HIGH confidence</span>
+    <span class="conf-reason">12 comparable sales · postcode-matched · methods agree</span>
+  </div>
+
+  <!-- FOOTBALL FIELD -->
+  <div class="section-title">Valuation range — ten methods</div>
+  <div class="ff-card">
+    <div class="ff-card-title">Football field valuation</div>
+    <div class="ff-card-sub">Each bar shows the low-to-high range for that method. The solid teal band is our weighted range; the dashed red line is the asking price. Weighted by data quality — context-only methods are listed but excluded from the weighted range.</div>
+
+    <div class="ff-row">
+      <div class="ff-label">Comparable sales (adjusted)</div>
+      <div class="ff-track"><div class="ff-fill" style="left:28%;width:38%;"></div><div class="ff-dot" style="left:47%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig">£345–375k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Comparable sales (raw)</div>
+      <div class="ff-track"><div class="ff-fill" style="left:24%;width:36%;"></div><div class="ff-dot" style="left:42%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig">£341–370k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Previous sold price (adjusted)</div>
+      <div class="ff-track"><div class="ff-fill" style="left:31%;width:28%;"></div><div class="ff-dot" style="left:45%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig">£348–370k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Area price trend</div>
+      <div class="ff-track"><div class="ff-fill" style="left:19%;width:42%;"></div><div class="ff-dot" style="left:40%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig">£338–372k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Price per square metre</div>
+      <div class="ff-track"><div class="ff-fill" style="left:34%;width:20%;"></div><div class="ff-dot" style="left:44%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig">£350–366k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Bedroom-matched local price</div>
+      <div class="ff-track"><div class="ff-fill" style="left:26%;width:34%;"></div><div class="ff-dot" style="left:43%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig">£343–369k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Automated valuation</div>
+      <div class="ff-track"><div class="ff-fill" style="left:25%;width:37%;"></div><div class="ff-dot" style="left:41%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig">£342–371k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Est. lender range (modelled)</div>
+      <div class="ff-track"><div class="ff-fill" style="left:22%;width:27%;"></div><div class="ff-dot" style="left:34%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig">£340–362k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Rental yield implied value <span class="ctx">context</span></div>
+      <div class="ff-track"><div class="ff-fill muted" style="left:15%;width:38%;"></div><div class="ff-dot" style="left:33%;background:var(--ink-light);"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig" style="color:var(--ink-light);">£332–366k</div>
+    </div>
+    <div class="ff-row">
+      <div class="ff-label">Asking-to-sold discount <span class="ctx">context</span></div>
+      <div class="ff-track"><div class="ff-fill muted" style="left:27%;width:33%;"></div><div class="ff-dot" style="left:42%;background:var(--ink-light);"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig" style="color:var(--ink-light);">£343–370k</div>
+    </div>
+    <div class="ff-row" style="margin-top:14px;">
+      <div class="ff-label" style="font-weight:700;color:var(--teal);">Our weighted range</div>
+      <div class="ff-track"><div class="ff-fill weighted" style="left:36%;width:19%;"></div><div class="ff-dot white" style="left:45%;"></div><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs fig" style="font-weight:700;">£352–368k</div>
+    </div>
+    <div class="ff-row ff-asking-row">
+      <div class="ff-label">Asking price</div>
+      <div class="ff-track" style="background:none;"><div class="ff-asking-line" style="left:82%;"></div></div>
+      <div class="ff-figs" style="color:var(--red);">£385,000</div>
+    </div>
+
+    <div class="ff-source">🏛️ Source: HM Land Registry Price Paid Data · completed sales · price-index adjusted · interquartile mean. Lender range is modelled — not sourced from lender data.</div>
+  </div>
+
+  <!-- METHOD TABLE -->
+  <div class="comp-table-section" style="margin-top:14px;">
+    <div class="comp-table-header">
+      <div class="comp-table-title">Valuation method breakdown</div>
+      <div class="comp-table-sub">Every method we ran — "context only" rows are shown for transparency but excluded from the weighted range</div>
+    </div>
+    <table class="comp-table">
+      <thead><tr><th>Method</th><th>Source</th><th>Weight</th><th>Midpoint</th></tr></thead>
+      <tbody>
+        <tr><td>Comparable sales (adjusted)</td><td class="date">HM Land Registry</td><td>×2</td><td class="price fig">£360,000</td></tr>
+        <tr><td>Previous sold price (adjusted)</td><td class="date">ONS House Price Index</td><td>×2</td><td class="price fig">£359,000</td></tr>
+        <tr><td>Comparable sales (raw)</td><td class="date">HM Land Registry</td><td>×1</td><td class="price fig">£356,000</td></tr>
+        <tr><td>Price per square metre</td><td class="date">EPC register + market data</td><td>×1</td><td class="price fig">£358,000</td></tr>
+        <tr><td>Area price trend</td><td class="date">ONS House Price Index</td><td>×1</td><td class="price fig">£355,000</td></tr>
+        <tr><td>Bedroom-matched local price</td><td class="date">HM Land Registry</td><td>×1</td><td class="price fig">£356,000</td></tr>
+        <tr><td>Automated valuation</td><td class="date">Automated valuation model</td><td>×1</td><td class="price fig">£356,500</td></tr>
+        <tr><td>Est. lender range (modelled)</td><td class="date">Modelled — not lender data</td><td>×1</td><td class="price fig">£351,000</td></tr>
+        <tr class="row-muted"><td>Rental yield implied value</td><td class="date">Average local rents</td><td>context</td><td class="price fig">£349,000</td></tr>
+        <tr class="row-muted"><td>Asking-to-sold discount</td><td class="date">Local sold-vs-asking gaps</td><td>context</td><td class="price fig">£356,500</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SELLER MOTIVATION -->
+  <div class="section-title">Seller motivation</div>
+  <div class="signal-card">
+    <span class="signal-badge">STRONG seller motivation</span>
+    <div class="signal-summary">Multiple public signals point the same way: the listing has sat well beyond the local average, and the seller has already reduced the price once. Pressure like this is leverage — use it politely.</div>
+  </div>
+
+  <div class="dom-card">
+    <div class="dom-icon">⏳</div>
+    <div>
+      <div class="dom-title">Listed for 47 days — a strong negotiation signal</div>
+      <div class="dom-body">Properties in this area typically sell within <strong>32 days</strong>. Sellers waiting this long are usually open to offers below asking.
+        <div class="discount-strip">Properties on the market this long typically go <strong><span class="fig">3–7%</span></strong> below asking — roughly <strong><span class="fig">£11,500–£27,000</span></strong> here. That's the typical range for this time on market, not a prediction — your recommended numbers come from the valuation methods, not the clock.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dom-card" style="border-left: 3px solid var(--amber); background: var(--amber-light);">
+    <div class="dom-icon">📉</div>
+    <div>
+      <div class="dom-title">Price reduced — the seller has already moved</div>
+      <div class="dom-body">Originally listed at <strong><span class="fig">£399,950</span></strong>, now asking <strong><span class="fig">£385,000</span></strong> — a <strong><span class="fig">3.7%</span> reduction</strong>. A price reduction is evidence the seller's position has softened and strengthens your negotiating hand.</div>
+    </div>
+  </div>
+
+  <div class="dom-card">
+    <div class="dom-icon" style="background:var(--teal-light);">🤝</div>
+    <div>
+      <div class="dom-title">Buyers around here agree deals at <span class="fig">4.2%</span> below asking on average</div>
+      <div class="dom-body">A typical negotiating margin for the area — the property-specific signals above carry more weight than this average.</div>
+    </div>
+  </div>
+
+  <!-- OFFER FRONTIER -->
+  <div class="section-title">The efficient frontier — where to position your offer</div>
+  <div class="ff2-card">
+    <div class="ff2-head">
+      <div class="ff2-title">Discount sought vs risk of losing it</div>
+      <div class="ff2-sub">Built from this area's actual asking-to-sold discounts, shifted by 47 days on the market. You can't seek a bigger saving without accepting more risk — pick your position deliberately.</div>
+    </div>
+    <div class="ff2-body">
+      <svg viewBox="0 0 640 240" style="width:100%;display:block;" role="img" aria-label="Offer positioning curve: discount sought against qualitative risk of losing the property">
+        <line x1="60" y1="200" x2="610" y2="200" stroke="#e0d9ce" stroke-width="1.5"/>
+        <line x1="60" y1="200" x2="60" y2="20" stroke="#e0d9ce" stroke-width="1.5"/>
+        <text x="335" y="228" text-anchor="middle" font-size="11" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif">Discount sought below asking →</text>
+        <text x="26" y="110" text-anchor="middle" font-size="11" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif" transform="rotate(-90 26 110)">Risk of losing it →</text>
+        <text x="54" y="196" text-anchor="end" font-size="10" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif">Low</text>
+        <text x="54" y="34" text-anchor="end" font-size="10" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif">High</text>
+        <path d="M 60 196 Q 200 190 300 120 T 430 30" fill="none" stroke="#c9c2b4" stroke-width="2" stroke-dasharray="6,5"/>
+        <text x="240" y="105" font-size="10.5" fill="#9b9488" font-family="Plus Jakarta Sans,sans-serif">fresh listing</text>
+        <line x1="330" y1="150" x2="416" y2="150" stroke="#c06a1a" stroke-width="1.5" marker-end="url(#ff2arr)"/>
+        <defs><marker id="ff2arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#c06a1a"/></marker></defs>
+        <text x="373" y="166" text-anchor="middle" font-size="10" fill="#c06a1a" font-weight="600" font-family="Plus Jakarta Sans,sans-serif">time on market shifts the curve your way</text>
+        <path d="M 60 197 Q 280 192 420 110 T 590 26" fill="none" stroke="#1a6b5a" stroke-width="3"/>
+        <circle cx="215" cy="188" r="7" fill="#1a6b5a" stroke="white" stroke-width="2.5"/>
+        <text x="215" y="175" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1a6b5a" font-family="Plus Jakarta Sans,sans-serif">SECURE</text>
+        <circle cx="400" cy="128" r="10" fill="#c06a1a" stroke="white" stroke-width="3"/>
+        <text x="400" y="112" text-anchor="middle" font-size="10.5" font-weight="700" fill="#c06a1a" font-family="Plus Jakarta Sans,sans-serif">BALANCED</text>
+        <circle cx="530" cy="58" r="7" fill="#1e1c18" stroke="white" stroke-width="2.5"/>
+        <text x="530" y="45" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1e1c18" font-family="Plus Jakarta Sans,sans-serif">AGGRESSIVE</text>
+      </svg>
+    </div>
+    <div class="pos-grid">
+      <div class="pos-card pos-secure">
+        <div class="pos-name"><span class="pos-dot"></span>Secure</div>
+        <div class="pos-price"><span class="fig">£372,000</span></div>
+        <div class="pos-desc">Protect the purchase. Smallest saving, lowest risk of losing the home.</div>
+      </div>
+      <div class="pos-card pos-balanced emph">
+        <div class="pos-name"><span class="pos-dot"></span>Balanced</div>
+        <div class="pos-price"><span class="fig">£362,500</span></div>
+        <div class="pos-desc">In line with what actually clears in this market for listings this old.</div>
+      </div>
+      <div class="pos-card pos-aggressive">
+        <div class="pos-name"><span class="pos-dot"></span>Aggressive</div>
+        <div class="pos-price"><span class="fig">£355,000</span></div>
+        <div class="pos-desc">Test the seller. Biggest saving sought, highest chance of a "no".</div>
+      </div>
+    </div>
+    <div class="ff2-footnote">All three positions always show — your answers change the emphasis, never the evidence. No position is ever above your walk-away ceiling, and we don't invent acceptance percentages: nobody has that data, so we won't pretend to.</div>
+  </div>
+
+  <!-- FULL COMPARABLES TABLE -->
+  <div class="section-title">Every comparable sale used</div>
+  <div class="comp-table-section">
+    <div class="comp-table-header">
+      <div class="comp-table-title">12 sold prices used in this analysis</div>
+      <div class="comp-table-sub">Semi-detached homes near BS6 · completed sales · adjusted to today's value with the ONS House Price Index</div>
+    </div>
+    <table class="comp-table">
+      <thead><tr><th>Address</th><th>Date</th><th>Sold price</th><th>Adjusted today</th></tr></thead>
+      <tbody>
+        <tr><td>18 Maple Close, BS6</td><td class="date">2026-03</td><td class="price fig">£355,000</td><td class="price fig">£357,500</td></tr>
+        <tr><td>4 Orchard Road, BS6</td><td class="date">2026-01</td><td class="price fig">£345,000</td><td class="price fig">£349,000</td></tr>
+        <tr><td>27 Fern Grove, BS6</td><td class="date">2025-11</td><td class="price fig">£364,000</td><td class="price fig">£371,000</td></tr>
+        <tr><td>31 Maple Close, BS6</td><td class="date">2025-10</td><td class="price fig">£336,000</td><td class="price fig">£344,000</td></tr>
+        <tr><td>9 Elton Lane, BS6</td><td class="date">2025-09</td><td class="price fig">£353,500</td><td class="price fig">£362,500</td></tr>
+        <tr><td>44 Cranbrook Road, BS6</td><td class="date">2025-08</td><td class="price fig">£347,000</td><td class="price fig">£357,000</td></tr>
+        <tr><td>12 Ashley Down Road, BS6</td><td class="date">2025-07</td><td class="price fig">£339,950</td><td class="price fig">£351,000</td></tr>
+        <tr><td>3 Longmead Avenue, BS6</td><td class="date">2025-06</td><td class="price fig">£358,000</td><td class="price fig">£370,500</td></tr>
+        <tr><td>21 Fern Grove, BS6</td><td class="date">2025-05</td><td class="price fig">£342,000</td><td class="price fig">£354,500</td></tr>
+        <tr><td>56 Brynland Avenue, BS6</td><td class="date">2025-03</td><td class="price fig">£350,000</td><td class="price fig">£364,000</td></tr>
+        <tr><td>8 Maple Close, BS6</td><td class="date">2025-01</td><td class="price fig">£331,500</td><td class="price fig">£346,000</td></tr>
+        <tr><td>17 Kings Drive, BS6</td><td class="date">2024-12</td><td class="price fig">£346,000</td><td class="price fig">£362,000</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- CTA -->
+  <div class="get-yours">
+    <div class="get-yours-title">This report, for your property, in minutes</div>
+    <div class="get-yours-body">Start with the free report — valuation, verdict and confidence score. Unlock the full analysis above for £29 when you're ready to decide your offer.</div>
+    <a class="btn-white" href="/#hero-form">Start with a free report →</a>
+  </div>
+
+  <div class="attribution">
+    Sample report for a fictional property — all addresses and figures are illustrative.
+    Contains HM Land Registry data © Crown copyright and database right 2026.
+    Licensed under the Open Government Licence v3.0 ·
+    <a href="/">HouseOffer.uk</a>
+  </div>
+
+</div>
+</body>
+</html>
