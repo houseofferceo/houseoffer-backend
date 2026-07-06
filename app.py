@@ -2468,23 +2468,6 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         ratio = days_on_market / local_avg_dom
         dom_signal = "high" if ratio > 1.5 else ("medium" if ratio > 1.0 else "low")
 
-    # DOM → typical-discount RANGE (2026-07-05, paid-tier context). Keyed off
-    # dom_signal so the buckets can never drift from the ratio thresholds above.
-    # Deliberately a range, never a precise figure, and deliberately NOT an
-    # input to the open/target/walk_away calculation — market context only.
-    # Bucket values anchor on the observed asking-vs-sold discounts (national
-    # avg ~4.5%, method 7 uses ±1%): at/below local pace 0-3%, moderately
-    # above 2-5%, well above 3-7%.
-    dom_shift_low_pct = dom_shift_high_pct = None
-    dom_shift_low_amount = dom_shift_high_amount = None
-    if dom_signal:
-        dom_shift_low_pct, dom_shift_high_pct = {
-            "high": (3, 7), "medium": (2, 5), "low": (0, 3)}[dom_signal]
-        if asking_price:
-            # Nearest £500: precise-looking pounds would contradict "range".
-            dom_shift_low_amount = round(asking_price * dom_shift_low_pct / 100 / 500) * 500
-            dom_shift_high_amount = round(asking_price * dom_shift_high_pct / 100 / 500) * 500
-
     # Seller-motivation signal (2026-07-05, paid-tier section). Uses the RAW
     # local discount_pct — method 7 below substitutes a national fallback into
     # this variable, which must not masquerade as local evidence here.
@@ -2959,16 +2942,13 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "days_on_market": days_on_market,
         "local_avg_dom": local_avg_dom,
         "dom_signal": dom_signal,
-        # Seller-motivation signal + DOM discount range (paid-tier section).
-        # Context/display only — none of these feed the offer calculation.
+        # Seller-motivation signal (paid-tier section). Context/display only —
+        # none of these feed the offer calculation. The raw local discount also
+        # anchors the render-time offer frontier (_offer_frontier).
         "seller_signal_score": seller_signal_score,
         "seller_signal_reasons": seller_signal_reasons,
         "seller_signal_summary": seller_signal_summary,
         "local_sold_discount_pct": local_sold_discount_pct,
-        "dom_shift_low_pct": dom_shift_low_pct,
-        "dom_shift_high_pct": dom_shift_high_pct,
-        "dom_shift_low_formatted": _fmt(dom_shift_low_amount),
-        "dom_shift_high_formatted": _fmt(dom_shift_high_amount),
         "price_reduced": price_reduced,
         "original_asking_price": original_asking_price,
         "original_asking_price_formatted": original_asking_price_formatted,
@@ -3282,84 +3262,119 @@ BUYER_PROFILE_FIELDS = {
     "timeline": {"fast", "one_three", "flexible"},
 }
 
-# Positions that make a buyer fully proceedable (chain-free or sale agreed).
-_PROCEEDABLE_POSITIONS = {"cash", "investor", "sold_stc", "first_time"}
+
+# ── OFFER POSITIONING FRONTIER (Frontier v2, CEO-approved 2026-07-05) ─────────
+# Replaces both the Task 3 static DOM buckets and the Task 5(B) numeric stance
+# shift (approved supersession): a continuous curve anchored on the local
+# asking-to-sold discount, shifted by time on market, presented as three named
+# positions. Computed at RENDER TIME from stored values — display layer only,
+# works retroactively for already-stored paid reports, and the stored
+# open/target/walk_away are never modified.
+
+_FRONTIER_RISK = {
+    "secure": "Very likely to be taken seriously. Low risk of losing it on "
+              "price — but you leave the most money on the table.",
+    "balanced": "In line with what actually clears in this market once time on "
+                "market is counted. Serious and defensible — expect "
+                "negotiation, not offence.",
+    "aggressive": "Beyond what typically clears here. Real chance of rejection "
+                  "or being beaten by another buyer — take this position only "
+                  "if you can genuinely walk away.",
+}
+# CEO 2026-07-05: 2.2·A read too bold (16% on the stale/soft example). Deep end
+# is 2.0·A with a hard ceiling — the frontier never shows more than this many
+# percent below asking, whatever the inputs.
+_FRONTIER_DEEP_CAP_PCT = 13.0
+_FRONTIER_NATIONAL_DISCOUNT = 4.5  # same national fallback as method 7
 
 
-def _personalised_offer_display(report, profile):
-    """Task 5(B): render-time presentation of the offer numbers, shaped by the
-    buyer's answers. Returns template-context OVERRIDES only — the stored
-    report dict is never touched, and the calculation itself is unchanged.
+def _offer_frontier(report, profile=None):
+    """Build the offer-positioning frontier from values already on the stored
+    report. Returns None when the report lacks the essentials (asking price /
+    walk-away), else a dict with the anchor, honesty flags and three positions.
 
-    Movement rules (documented in SESSION_LOG_2026-07-05.md):
-    - Proceedable buyer comparing several options → the displayed opening
-      stretches DOWN by half the open→target gap, floored at weighted_low
-      (never outside the data-justified range).
-    - "THE one" + a chain still to settle → displayed opening moves UP by half
-      the open→target gap (fewer rounds, less risk), capped below target.
-    - Everything else → numbers exactly as stored.
+    Model (FRONTIER_V2_PROPOSAL, approved): pressure multiplier
+    m = clamp(0.5 + 0.5·r, 0.75, 1.75) on the local asking-to-sold discount,
+    plus a price-cut bonus (+1.0pp for a ≥5% cut, +0.5pp for any), clamped to
+    [1%, 12%] as the anchor A. Positions: SECURE 0.5A–A, BALANCED A–1.5A,
+    AGGRESSIVE 1.5A–2.0A hard-capped at _FRONTIER_DEEP_CAP_PCT. National
+    fallback widens each band ×1.25 and is labelled plainly. Qualitative risk
+    only — no acceptance probabilities anywhere.
 
-    HARD GUARDRAIL: the displayed walk-away NEVER exceeds the stored
-    data-derived walk_away. Answers move where you play WITHIN the range;
-    they never raise the ceiling."""
-    if not profile:
-        return {}
-    open_v = report.get("open_offer")
-    target = report.get("target_price")
-    walk = report.get("walk_away")
-    if not (open_v and target and walk):
-        return {}
-
-    position = profile.get("position")
-    attachment = profile.get("attachment")
-    stance = None
-    display_open = open_v
-
-    if position in _PROCEEDABLE_POSITIONS and attachment == "several":
-        # Floor at weighted_low (the bottom of the data-justified range) — but
-        # never ABOVE the stored opening, which the asking-price caps can
-        # already have pushed below weighted_low. An "aggressive" answer must
-        # never display a higher opening than the neutral one.
-        floor = min(report.get("weighted_low") or open_v, open_v)
-        display_open = max(floor, open_v - round(0.5 * (target - open_v)))
-        display_open = round(display_open / 1000) * 1000
-        stance = "aggressive"
-    elif attachment == "the_one" and position == "need_to_sell":
-        display_open = min(target - 1000, open_v + round(0.5 * (target - open_v)))
-        display_open = round(display_open / 1000) * 1000
-        stance = "tight"
-
-    # Re-enforce the universal caps after rounding: below target, below asking.
-    display_open = min(display_open, target - 1000)
+    Guardrails: implied prices are floored at weighted_low and HARD-CAPPED at
+    the stored walk_away (explicit min() below) — a position whose whole range
+    falls outside collapses onto the bound and says so."""
     asking = report.get("asking_price")
-    if asking:
-        display_open = min(display_open, asking - 1000)
+    walk = report.get("walk_away")
+    if not asking or not walk:
+        return None
+    floor = report.get("weighted_low")
 
-    # Personalisation never proposes a different ceiling today, but the cap is
-    # enforced in code so no future stance can breach it:
-    display_walk_candidate = walk
-    # HARD GUARDRAIL (explicit cap, not a convention): whatever the profile
-    # says, the displayed walk-away NEVER exceeds the stored data-derived value.
-    display_walk = min(display_walk_candidate, walk)
+    d_local = report.get("local_sold_discount_pct")
+    is_fallback = d_local is None
+    d_bar = _FRONTIER_NATIONAL_DISCOUNT if is_fallback else d_local
 
-    if stance is None and display_open == open_v:
-        return {"offer_stance": None}
+    days, avg_dom = report.get("days_on_market"), report.get("local_avg_dom")
+    dom_shifted = bool(days and avg_dom)
+    m = min(max(0.5 + 0.5 * (days / avg_dom), 0.75), 1.75) if dom_shifted else 1.0
+    b = (1.0 if (report.get("reduction_pct") or 0) >= 5
+         else (0.5 if report.get("price_reduced") else 0.0))
+    anchor = min(max(d_bar * m + b, 1.0), 12.0)
 
-    overrides = {
-        "offer_stance": stance,
-        "open_offer": display_open,
-        "open_offer_formatted": _fmt(display_open),
-        "recommended_offer": display_open,
-        "recommended_offer_formatted": _fmt(display_open),
-        "walk_away": display_walk,
-        "walk_away_formatted": _fmt(display_walk),
+    bands = {
+        "secure": (0.5 * anchor, anchor),
+        "balanced": (anchor, 1.5 * anchor),
+        "aggressive": (1.5 * anchor, 2.0 * anchor),
     }
-    if asking:
-        overrides["open_offer_vs_asking_pct"] = round((asking - display_open) / asking * 100, 1)
-    if report.get("local_avg_sold"):
-        overrides["open_offer_vs_comps_pct"] = round(
-            (report["local_avg_sold"] - display_open) / report["local_avg_sold"] * 100, 1)
-    return overrides
+    positions = []
+    for key in ("secure", "balanced", "aggressive"):
+        lo, hi = bands[key]
+        if is_fallback:
+            mid, half = (lo + hi) / 2, (hi - lo) / 2 * 1.25
+            lo, hi = mid - half, mid + half
+        hi = min(hi, _FRONTIER_DEEP_CAP_PCT)
+        lo = max(min(lo, hi), 0.0)
+        lo, hi = round(lo * 2) / 2, round(hi * 2) / 2  # 0.5pp steps, no false precision
+        price_hi = asking - round(asking * lo / 100 / 500) * 500  # shallow end → higher £
+        price_lo = asking - round(asking * hi / 100 / 500) * 500  # deep end → lower £
+
+        collapsed = None
+        if floor and price_hi < floor:
+            # Whole range below the data-justified floor: the evidence can't
+            # credibly support opening lower — collapse onto the floor.
+            collapsed = "floor"
+            price_lo = price_hi = floor
+        elif floor and price_lo < floor:
+            price_lo = floor
+        # HARD GUARDRAIL (explicit cap, not a convention): no frontier position
+        # ever displays a price above the stored data-derived walk_away.
+        if price_lo > walk:
+            collapsed = "ceiling"
+            price_lo = price_hi = walk
+        else:
+            price_hi = min(price_hi, walk)
+
+        pct_label = f"about {hi:g}%" if lo == hi else f"{lo:g}–{hi:g}%"
+        price_label = (_fmt(price_lo) if price_lo == price_hi
+                       else f"{_fmt(price_lo)}–{_fmt(price_hi)}")
+        positions.append({
+            "key": key, "name": key.capitalize(),
+            "lo_pct": lo, "hi_pct": hi, "pct_label": pct_label,
+            "price_lo": price_lo, "price_hi": price_hi, "price_label": price_label,
+            "collapsed": collapsed, "risk": _FRONTIER_RISK[key],
+        })
+
+    emphasis = {"several": "aggressive", "this_one": "balanced",
+                "the_one": "secure"}.get((profile or {}).get("attachment"), "balanced")
+    return {
+        "anchor_pct": round(anchor, 1),
+        "is_fallback": is_fallback,
+        "dom_shifted": dom_shifted,
+        "days_on_market": days if dom_shifted else None,
+        "positions": positions,
+        "emphasis": emphasis,
+        "walk_away_formatted": _fmt(walk),
+    }
 
 
 @app.route("/r/<report_id>/buyer-profile", methods=["POST"])
@@ -3471,13 +3486,14 @@ def view_report(report_id):
             postcode=report.get("postcode"))
 
     template = "report_paid.html" if paid else "report_free.html"
-    ctx = dict(report)
     profile = stored.get("buyer_profile") if paid else None
-    if profile:
-        # Display layer only: overrides how the stored numbers are presented.
-        ctx.update(_personalised_offer_display(report, profile))
+    # Frontier v2: display-layer positioning computed from stored values at
+    # render time (works for previously stored paid reports too). The stored
+    # numbers themselves are passed through untouched.
+    frontier = _offer_frontier(report, profile) if paid else None
     return render_template(template, report_url=report_url, report_id=report_id,
-                           buyer_profile=profile, **ctx)
+                           buyer_profile=profile, offer_frontier=frontier,
+                           **report)
 
 
 @app.route("/r/<report_id>/status")

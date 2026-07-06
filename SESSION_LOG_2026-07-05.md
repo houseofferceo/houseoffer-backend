@@ -275,3 +275,76 @@ answered question, .dom-card visual language. Full variants:
 - Visual verification in headless Chromium at 760px: header, offer headline,
   verdict, confidence row, crowd card, chart, method table, playbook card,
   and the opened modal all render correctly.
+
+═══════════════════════════════════════════════════════════════════════
+# PART 3 — Frontier v2: offer positioning curve (CEO-approved method)
+═══════════════════════════════════════════════════════════════════════
+
+Phase 1 proposal approved with three decisions: (1) fold the Task 5(B)
+numeric stance shift into the frontier, (2) tame the aggressive deep end
+(16% read too bold), (3) collapse copy as proposed.
+
+## What shipped
+- _offer_frontier(report, profile) in app.py: anchor A = clamp(d̄·m + b,
+  1%, 12%) with m = clamp(0.5 + 0.5·r, 0.75, 1.75) and price-cut bonus
+  b (+1.0pp for a ≥5% cut, +0.5pp any cut). Positions: SECURE 0.5A–A,
+  BALANCED A–1.5A, AGGRESSIVE 1.5A–2.0A.
+- CEO tuning applied: deep multiplier 2.2 → 2.0 PLUS a hard ceiling
+  _FRONTIER_DEEP_CAP_PCT = 13.0 — the frontier never displays more than
+  13% below asking whatever the inputs (worked example: 16.0% → 13.0%).
+  When 1.5A itself exceeds the cap the band collapses to a point and is
+  labelled "about X%" rather than inverting.
+- Computed at RENDER TIME in view_report (display layer): works
+  retroactively for every already-stored paid report; stored
+  open/target/walk_away untouched (asserted in tests).
+- Guardrails: implied prices floored at weighted_low (whole-band breach
+  collapses onto the floor with "the sold evidence can't credibly
+  support opening lower"); HARD-CAPPED at stored walk_away via explicit
+  min() (whole-band breach collapses with "paying more than £X isn't
+  'secure', it's overpaying"). A 720-combination sweep asserts no
+  position ever displays a price above walk_away.
+- Fallback honesty: no local discount → national 4.5%, bands widened
+  ×1.25, amber pill "Based on national patterns — local asking-to-sold
+  data unavailable". No DOM comparison → curve unshifted + pill.
+  Pre-Part-2 stored reports (no local_sold_discount_pct key) get the
+  fallback state — truthful, since the local figure wasn't stored.
+- Emphasis (Q2 only, per approved §4): several→AGGRESSIVE,
+  this_one→BALANCED, the_one→SECURE, skip/unanswered→BALANCED. All three
+  positions always render; emphasis is a tag + enlarged dot, never
+  hiding.
+- SUPERSESSIONS (approved decision 1): Task 3's dom_shift_* buckets
+  removed from build_report_data and the template strip deleted; Task
+  5(B)'s _personalised_offer_display removed — the headline trio now
+  always shows the stored numbers, and the approach card's stance note
+  points at the emphasised frontier position instead. The 5(B) copy
+  variants are retained unchanged.
+- Template: frontier card at the end of the Seller Motivation section —
+  qualitative SVG curve (no numbers on the risk axis), ghost
+  fresh-listing curve + shift arrow only when DOM data exists, three
+  position cards in the offer-trio grid pattern, footer note including
+  the no-probabilities statement.
+
+## Judgment calls
+- The 13% absolute cap is my number for "a bit less aggressive": 2.0A
+  alone still allowed 19%+ in soft markets after fallback widening; the
+  cap makes the promise checkable ("never more than 13% below asking
+  shown"). Trivially tunable constant.
+- Defensive template guard added on local_sold_discount_pct (is defined)
+  — an inconsistent-fixture render error surfaced in testing; unreachable
+  with real stored data but cheap to guard.
+- Curve dot positions are fixed (the curve is qualitative); only
+  emphasis size/tag change per profile.
+
+## Testing (Part 3)
+- test_frontier_v2.py: 44 checks — anchor maths (m clamps, b tiers, A
+  clamp), band multipliers + 13% cap + non-inversion, floor/ceiling
+  partial trims and full collapses, the 720-combination walk-away sweep,
+  fallback widening + flags, emphasis mapping, and integration: frontier
+  renders for paid (incl. pre-frontier stored reports → fallback), not
+  for free; headline shows stored opening; stored values unchanged.
+- Prior suites updated for the approved supersession and green: 3-suite
+  total ALL PASS.
+- Screenshots: fr_aggr / fr_bal / fr_sec / fr_fallback (all three
+  emphasis states + fallback).
+
+NOT merged, NOT deployed — awaiting sign-off on the build.
