@@ -3248,7 +3248,7 @@ def track():
         print(f"Track notify error: {e}")
     
     from flask import redirect
-    return redirect("https://houseoffer.netlify.app/#pricing")
+    return redirect("https://houseoffer.uk/#pricing")
 
 # ── POST-UNLOCK BUYER PROFILE (2026-07-05) ───────────────────────────────────
 # Three single-choice questions shown after unlock, before the paid report
@@ -3435,7 +3435,7 @@ def view_report(report_id):
         return ("<html><body style='font-family:sans-serif;padding:40px;text-align:center;'>"
                 "<h1>Report not found</h1>"
                 "<p>This report may have expired. Reports are kept for a limited time.</p>"
-                "<p><a href='https://houseoffer.netlify.app'>Generate a new report →</a></p>"
+                "<p><a href='https://houseoffer.uk'>Generate a new report →</a></p>"
                 "</body></html>", 404)
 
     # Background builds: serve the self-refreshing page until ready. Builds older
@@ -3463,7 +3463,7 @@ def view_report(report_id):
         return ("<html><body style='font-family:sans-serif;padding:60px;text-align:center;'>"
                 "<h1>Sorry, we could not build this report</h1>"
                 f"<p style='color:#51606f;'>{stored.get('error', 'Unknown error')}</p>"
-                "<p><a href='https://houseoffer.netlify.app'>Try again →</a></p>"
+                "<p><a href='https://houseoffer.uk'>Try again →</a></p>"
                 "</body></html>", 500)
 
     log_event(report_id, "report_viewed", {
