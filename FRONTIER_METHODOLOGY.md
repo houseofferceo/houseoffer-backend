@@ -1,6 +1,7 @@
 # HouseOffer Efficient Frontier — Methodology, Formula & Assumptions
 
-Version 1.0 · 5 July 2026 · Status: **live on the £29 Full Report** (merged `0a0c85c`)
+Version 1.1 · 7 July 2026 · Status: **live on the £29 Full Report** (merged `0a0c85c`)
+v1.1 adds §13 — the two-lens reconciliation with the offer trio (no calculation changes).
 Implementation: `_offer_frontier()` in `app.py` · Tests: `test_frontier_v2.py` (44 checks)
 Audience: management review + marketing content. Assumptions are numbered so they
 can be referenced, challenged and re-calibrated individually.
@@ -205,3 +206,78 @@ For marketing and customer-facing copy, the following must never be claimed:
 - Data sources: HM Land Registry Price Paid Data (© Crown copyright, OGL v3.0); ONS/Land
   Registry House Price Index; PropertyData API (`/asking-vs-sold`, `/avg-days-on-market`);
   Rightmove listing metadata (days on market, price reductions)
+
+## 13. Two lenses — reconciliation with the offer trio (v1.1)
+
+The £29 report carries **two intentionally distinct calculations** that were, until
+this section, documented in isolation. That gap let a hand-built marketing sample
+ship numbers the live guardrails can never emit (a "Secure" price above the
+walk-away). This section is the single place both are specified together so the
+relationship is never re-derived, re-litigated, or mistaken for a bug again.
+
+### 13.1 The value lens — the offer trio (`app.py`, inside `build_report_data`)
+
+Anchored on the **weighted valuation range** (what the home is worth):
+
+```
+weighted_low  = Σ(method.low  × weight) / Σweight     over available methods
+weighted_high = Σ(method.high × weight) / Σweight
+midpoint      = (weighted_low + weighted_high) / 2
+
+open_offer  = round₁ₖ(weighted_low + 0.30 × (weighted_high − weighted_low))
+target      = round₁ₖ(midpoint)
+walk_away   = round₁ₖ(weighted_high)
+```
+
+Caps and ordering, applied in this sequence:
+1. `open_offer ≤ target − 1k`, `walk_away ≥ target + 1k` (initial ordering)
+2. `open_offer ≤ asking − 1k` — never open at or above asking, on any verdict
+3. `walk_away ≤ asking × 1.05` — wide comparable sets must not inflate the ceiling
+4. verdict `overpriced` → `walk_away ≤ asking − 1k` — never advise paying above
+   asking for a property priced above its comparables
+5. re-enforce `target ≤ walk_away − 1k`, then `open_offer ≤ target − 1k`
+
+### 13.2 The pressure lens — the Offer Frontier (`_offer_frontier`, §3)
+
+Anchored on **discount-off-asking scaled by seller pressure** (DOM multiplier,
+price-cut bonus, clamped 1–12%) — full formula in §3. It measures how deep a
+discount the seller's position justifies, not what the home is worth.
+
+### 13.3 What they share — and what they don't
+
+The two lenses share **only their outer bounds**:
+
+- the frontier's implied prices are **floored at `weighted_low`** (§5.1) and
+- **hard-capped at the trio's `walk_away`** (§5.2).
+
+Everything between the bounds is computed from different anchors, on purpose.
+The trio answers "where inside the home's value range should I land"; the frontier
+answers "how hard does this seller's position let me push". They are **never to be
+merged into one calculation** (CEO decision, Option B, 7 July 2026) — they are
+presented as complementary lenses ("One offer, two lenses") on every surface.
+
+One-sentence model (canonical, used verbatim in the consistency check across
+surfaces): *"The value lens (open · target · walk-away) tells you where to land
+inside what the home is worth; the pressure lens (Secure · Balanced · Aggressive)
+tells you how hard the seller's position lets you push — two readings of one offer,
+and neither ever points past your walk-away."*
+
+### 13.4 Convergence on overpriced stock — expected, not a bug
+
+On an overpriced listing both lenses compress toward the value floor: the frontier's
+deep bands land below `weighted_low` and collapse up onto it (§5.1), while the trio's
+open sits only 30% above the same floor, and cap 4 in §13.1 pulls `walk_away` down to
+`asking − 1k`. Result: Aggressive ≈ (or =) `open_offer`, and Secure clips at the
+ceiling. **Both lenses agreeing that the asking price is the out-of-line number is
+the designed behaviour.** Do not "fix" it.
+
+### 13.5 Marketing samples must be generated, never authored
+
+`tools/demo_two_lenses.py` executes the real trio source and `_offer_frontier`
+against the canonical fictional property (14 Maple Close, BS6: asking £385,000,
+weighted £352k–£368k, DOM 47 vs 32, one 3.7% cut, local discount 3.8%). Its output —
+trio £357,000 / £360,000 / £368,000; frontier Secure £366,000–£368,000 (2.5–5%),
+Balanced £354,000–£366,000 (5–8%), Aggressive £352,000–£354,000 (8–10.5%), anchor
+5.2% — is the only source of truth for demo figures on the homepage, /sample-report/
+and the white paper worked example. If the demo property or either formula changes,
+re-run the script and update the surfaces from its output.

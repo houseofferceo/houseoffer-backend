@@ -242,6 +242,21 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   .offer-trio { grid-template-columns: 1fr; gap: 8px; }
   .nav-tag { display: none; }
 }
+
+/* ── TWO LENSES (presentation only) ── */
+.lens-chip { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; border-radius: 12px; padding: 2px 9px; margin-bottom: 6px; }
+.lens-chip.value { background: var(--teal-light); color: var(--teal); border: 1px solid var(--teal-border); }
+.lens-chip.pressure { background: var(--amber-light); color: var(--amber); border: 1px solid var(--amber-border); }
+.lens-intro { font-size: 13.5px; color: var(--ink-mid); line-height: 1.65; margin: 0 0 16px; }
+.lens-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+@media (max-width: 640px) { .lens-grid { grid-template-columns: 1fr; } }
+.lens-panel { background: var(--sand); border: 1px solid var(--sand-border); border-radius: 10px; padding: 14px 16px; }
+.lens-panel-title { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+.lens-panel-body { font-size: 12.5px; color: var(--ink-mid); line-height: 1.6; }
+.lens-trio-recap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.lens-trio-recap span { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 14px; background: white; border: 1px solid var(--sand-border); color: var(--ink); }
+.lens-meet { margin-top: 14px; padding: 12px 16px; background: var(--teal-light); border: 1px solid var(--teal-border); border-radius: 10px; font-size: 12.5px; color: var(--ink-mid); line-height: 1.6; }
+.lens-meet strong { color: var(--ink); }
 </style>
 </head>
 <body>
@@ -374,6 +389,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <div class="offer-trio-value">{{ walk_away_formatted or weighted_high_formatted }}</div>
       </div>
     </div>
+    <div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.75);">These three numbers are the value lens — where to land inside what the home is worth. How hard this seller's position lets you push is the pressure lens: see "One offer, two lenses" below.</div>
     {% if open_offer_vs_asking_pct is not none %}
     <div style="margin-top:14px;padding:12px 16px;background:rgba(255,255,255,0.1);border-radius:8px;font-size:13px;color:rgba(255,255,255,0.9);line-height:1.6;">
       Your opening offer is <strong style="color:white;">{{ open_offer_vs_asking_pct }}% below the asking price</strong>
@@ -870,10 +886,28 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 
   <!-- OFFER POSITIONING FRONTIER (Frontier v2) -->
   {% if offer_frontier is defined and offer_frontier %}
-  <div class="section-title">The efficient frontier — where to position your offer</div>
+  <div class="section-title">One offer, two lenses</div>
   <div class="ff2-card">
+    <div class="lens-intro">Your offer answers two different questions. What is this home actually worth? And how hard will the seller's position let you push? They sound like the same question — they're not, and one number can't answer both.</div>
+    <div class="lens-grid">
+      <div class="lens-panel">
+        <span class="lens-chip value">Value lens</span>
+        <div class="lens-panel-title">What it's worth</div>
+        <div class="lens-panel-body">The ten-method valuation range above sets your three numbers. The walk-away is the line the data can defend — nothing in this report ever points past it.</div>
+        <div class="lens-trio-recap">
+          <span>Open {{ open_offer_formatted or recommended_offer_formatted }}</span>
+          <span>Target {{ target_price_formatted or weighted_midpoint_formatted }}</span>
+          <span>Walk away {{ walk_away_formatted or weighted_high_formatted }}</span>
+        </div>
+      </div>
+      <div class="lens-panel">
+        <span class="lens-chip pressure">Pressure lens</span>
+        <div class="lens-panel-title">How hard you can push</div>
+        <div class="lens-panel-body">The seller's position — time on market, price cuts, what local sellers actually accept below asking — sets how deep a discount you can credibly seek. Use the Offer Frontier below to choose how hard to push; use the value lens to know when to stop.</div>
+      </div>
+    </div>
     <div class="ff2-head">
-      <div class="ff2-title">Discount sought vs risk of losing it</div>
+      <div class="ff2-title">The Offer Frontier — discount sought vs risk of losing it</div>
       <div class="ff2-sub">
         {% if offer_frontier.is_fallback %}Built from national asking-to-sold patterns{% else %}Built from this area's actual asking-to-sold discounts{% endif %}{% if offer_frontier.dom_shifted %}, shifted by {{ offer_frontier.days_on_market }} days on the market{% endif %}. You can't seek a bigger saving without accepting more risk — pick your position deliberately.
       </div>
@@ -926,7 +960,15 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </div>
 
       <div class="ff2-note">
-        Positions come from {% if offer_frontier.is_fallback %}national{% else %}this area's{% endif %} asking-to-sold discounts{% if offer_frontier.dom_shifted %}, shifted by time on market{% endif %}. They never go below the valuation floor or above your walk-away ceiling of <strong>{{ offer_frontier.walk_away_formatted }}</strong> — whichever position you play, the ceiling doesn't move. Qualitative risk only: nobody can honestly give you an acceptance percentage, so we don't.
+        Positions come from {% if offer_frontier.is_fallback %}national{% else %}this area's{% endif %} asking-to-sold discounts{% if offer_frontier.dom_shifted %}, shifted by time on market{% endif %}. Qualitative risk only: nobody can honestly give you an acceptance percentage, so we don't.
+      </div>
+      <div class="lens-meet">
+        <strong>Where the lenses meet:</strong> both stop at the same lines — the Frontier never goes below the valuation floor or above your walk-away of <strong>{{ offer_frontier.walk_away_formatted }}</strong>. The Frontier flexes with the seller's weakness; the walk-away never moves.
+        {% if verdict == 'overpriced' %}
+        On an overpriced home like this one, the two lenses squeeze together: even deep discounts off the inflated asking price only bring you back to what the home is actually worth, so the Aggressive position and your opening offer can land close — or on the same number. That's not a glitch; it's both lenses agreeing that the asking price, not your offer, is the number out of line.
+        {% else %}
+        When the Frontier's Balanced position sits on your value-lens target, that's the strongest read this report can give: the seller's position and the sold-price evidence are telling the same story.
+        {% endif %}
       </div>
       {% if offer_frontier.is_fallback %}
       <div class="fallback-pill">ⓘ Based on national patterns — local asking-to-sold data unavailable. Ranges widened accordingly.</div>
