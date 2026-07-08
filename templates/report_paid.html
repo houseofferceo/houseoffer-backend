@@ -562,13 +562,13 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     </div>
     <div class="ff-chart-wrap">
       {% set ch_w = 460 %}
-      {% set ch_x0 = 175 %}
+      {% set ch_x0 = 210 %}
       {% set row_h = 46 %}
       {% set n = ff_avail | length %}
-      {% set chart_h = n * row_h + 70 %}
+      {% set chart_h = n * row_h + 82 %}
       {% set price_range = chart_price_max - chart_price_min %}
 
-      <svg viewBox="0 0 680 {{ chart_h }}" style="width:100%;display:block;" role="img" aria-label="Football field valuation chart">
+      <svg viewBox="0 0 715 {{ chart_h }}" style="width:100%;display:block;" role="img" aria-label="Football field valuation chart">
 
         <!-- Weighted range band -->
         {% if weighted_low and weighted_high %}
@@ -631,14 +631,32 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
               font-family="Plus Jakarta Sans,sans-serif" fill="#1a6b5a" font-weight="600">Open with</text>
         {% endif %}
 
+        <!-- Target vertical line -->
+        {% if target_price %}
+        {% set target_x = ch_x0 + ((target_price - chart_price_min) / price_range) * ch_w %}
+        <line x1="{{ target_x | round(1) }}" y1="6" x2="{{ target_x | round(1) }}" y2="{{ n * row_h + 16 }}"
+              stroke="#c06a1a" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="{{ target_x | round(1) }}" y="{{ n * row_h + 40 }}" text-anchor="middle" font-size="10"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#c06a1a" font-weight="600">Target</text>
+        {% endif %}
+
+        <!-- Walk-away vertical line -->
+        {% if walk_away %}
+        {% set walk_x = ch_x0 + ((walk_away - chart_price_min) / price_range) * ch_w %}
+        <line x1="{{ walk_x | round(1) }}" y1="6" x2="{{ walk_x | round(1) }}" y2="{{ n * row_h + 16 }}"
+              stroke="#b83232" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="{{ walk_x | round(1) }}" y="{{ n * row_h + 28 }}" text-anchor="middle" font-size="10"
+              font-family="Plus Jakarta Sans,sans-serif" fill="#b83232" font-weight="600">Walk away</text>
+        {% endif %}
+
         <!-- Price axis line -->
         <line x1="{{ ch_x0 }}" y1="{{ n * row_h + 16 }}" x2="{{ ch_x0 + ch_w }}" y2="{{ n * row_h + 16 }}"
               stroke="#e0d9ce" stroke-width="1"/>
 
         <!-- Left axis label £ -->
-        <text x="{{ ch_x0 }}" y="{{ n * row_h + 46 }}" text-anchor="middle" font-size="9"
+        <text x="{{ ch_x0 }}" y="{{ n * row_h + 58 }}" text-anchor="middle" font-size="9"
               font-family="Plus Jakarta Sans,sans-serif" fill="#9b9488">£{{ (chart_price_min // 1000) }}k</text>
-        <text x="{{ ch_x0 + ch_w }}" y="{{ n * row_h + 46 }}" text-anchor="middle" font-size="9"
+        <text x="{{ ch_x0 + ch_w }}" y="{{ n * row_h + 58 }}" text-anchor="middle" font-size="9"
               font-family="Plus Jakarta Sans,sans-serif" fill="#9b9488">£{{ (chart_price_max // 1000) }}k</text>
 
       </svg>
@@ -648,7 +666,9 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <div class="ff-legend-item"><div class="ff-legend-dot" style="background:#9b9488;"></div>Standard method</div>
         <div class="ff-legend-item"><div class="ff-legend-dot" style="background:rgba(26,107,90,0.15);border:1px solid #1a6b5a;"></div>Weighted range</div>
         <div class="ff-legend-item"><div style="width:14px;height:2px;background:#b83232;border-top:2px dashed #b83232;"></div>&nbsp;Asking price</div>
-        <div class="ff-legend-item"><div style="width:14px;height:2px;background:#1a6b5a;border-top:2px dashed #1a6b5a;"></div>&nbsp;Recommended offer</div>
+        <div class="ff-legend-item"><div style="width:14px;height:2px;background:#1a6b5a;border-top:2px dashed #1a6b5a;"></div>&nbsp;Open with</div>
+        <div class="ff-legend-item"><div style="width:14px;height:2px;background:#c06a1a;border-top:2px dashed #c06a1a;"></div>&nbsp;Target</div>
+        <div class="ff-legend-item"><div style="width:14px;height:2px;background:#b83232;border-top:2px dashed #b83232;"></div>&nbsp;Walk away</div>
       </div>
     </div>
   </div>

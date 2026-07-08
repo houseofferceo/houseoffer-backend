@@ -75,3 +75,17 @@ ever points past your walk-away."
 - `git diff app.py` → empty (hard constraint honoured).
 - Jinja parse of report_paid.html → OK.
 - tools/demo_two_lenses.py runs green; output embedded above and in §13.5.
+
+═══════════════════════════════════════════════════════════════════════
+# ADDENDUM 2 (backend) — offer lines on the football field
+═══════════════════════════════════════════════════════════════════════
+report_paid.html, presentation only (no calc change; git diff app.py empty).
+The football-field SVG now draws all three offer lines, not just the
+recommended offer: Open with (teal, existing), Target (amber #c06a1a) and
+Walk away (red #b83232), each a dashed vertical at target_price / walk_away
+(already in the render context). Labels stagger onto two tiers so the close
+Open/Target values don't collide. Legend gains Target + Walk away and the
+old "Recommended offer" item is renamed "Open with". Label gutter widened
+so long method names no longer clip: ch_x0 175→210, viewBox width 680→715,
+chart_h +12, axis £-labels +12. Jinja validated; rendered from the real
+template with the demo property to confirm.
