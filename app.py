@@ -3266,7 +3266,8 @@ def track():
     # funnel starts at the free-report form (next=form). Report-page CTAs go
     # straight to Stripe via /r/<id>/checkout and never come through here.
     if request.args.get("next") == "form":
-        return redirect("https://houseoffer.uk/#hero-form")
+        # ?unlock=29 makes the homepage show the "free report first" callout
+        return redirect("https://houseoffer.uk/?unlock=29#hero-form")
     return redirect("https://houseoffer.uk/#pricing")
 
 # ── POST-UNLOCK BUYER PROFILE (2026-07-05) ───────────────────────────────────
