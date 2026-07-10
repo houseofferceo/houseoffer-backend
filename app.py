@@ -19,11 +19,13 @@ app = Flask(__name__)
 CORS(app, origins=["https://houseoffer.uk", "https://www.houseoffer.uk", "https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
 
 # ── REPORT STORAGE ────────────────────────────────────────────────────────────
-# Reports stored as JSON files on disk under /tmp/reports/<uuid>.json
-# Engagement events stored under /tmp/events/<uuid>.json
-# Note: /tmp is ephemeral on Render — fine for now, swap to S3/Redis when needed
-REPORTS_DIR = "/tmp/houseoffer_reports"
-EVENTS_DIR = "/tmp/houseoffer_events"
+# Reports and engagement events are stored as JSON files under DATA_DIR.
+# On Render, DATA_DIR points at a mounted PERSISTENT DISK (/var/data) so reports
+# and events survive deploys and restarts — a shareable /r/<id> link keeps working.
+# Falls back to /tmp when DATA_DIR is unset (e.g. local dev), which is ephemeral.
+DATA_DIR = os.environ.get("DATA_DIR", "/tmp")
+REPORTS_DIR = os.path.join(DATA_DIR, "houseoffer_reports")
+EVENTS_DIR = os.path.join(DATA_DIR, "houseoffer_events")
 os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(EVENTS_DIR, exist_ok=True)
 
