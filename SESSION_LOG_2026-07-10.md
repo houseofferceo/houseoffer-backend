@@ -10,9 +10,11 @@ Resend/PropertyData/Sheets are integrated, so requirements.txt is unchanged.
 
 1. Free-report CTA → `GET /r/<report_id>/checkout?src=<cta>` — creates a
    Stripe Checkout session server-side (GBP, amount from
-   `STRIPE_REPORT_PRICE_PENCE`, default 2900; buyer email prefilled;
-   `report_id` in session + payment-intent metadata) and 303-redirects to
-   Stripe's hosted payment page. Logs a `checkout_started` event with the
+   `STRIPE_REPORT_PRICE_PENCE`, default 2900; line item bills against the
+   dashboard product `prod_UrNYSfZHnc85pz` via `STRIPE_REPORT_PRODUCT_ID`,
+   so every sale rolls up under the one "£29 Offer Report" product; buyer
+   email prefilled; `report_id` in session + payment-intent metadata) and
+   303-redirects to Stripe's hosted payment page. Logs a `checkout_started` event with the
    CTA source. If the report is already paid it just redirects to `/r/<id>`.
 2. On payment, Stripe redirects to `/r/<id>/checkout/success?session_id=…`.
    The session is re-fetched with the secret key (the query string alone is

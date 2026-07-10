@@ -196,6 +196,10 @@ SHEETS_WEBHOOK_SECRET = os.environ.get("SHEETS_WEBHOOK_SECRET", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_REPORT_PRICE_PENCE = int(os.environ.get("STRIPE_REPORT_PRICE_PENCE", "2900"))
+# The "£29 Offer Report" product in the Stripe dashboard. Checkout references
+# it via price_data[product] so all sales roll up under one product; if it's
+# ever empty, checkout falls back to creating ad-hoc product_data per session.
+STRIPE_REPORT_PRODUCT_ID = os.environ.get("STRIPE_REPORT_PRODUCT_ID", "prod_UrNYSfZHnc85pz")
 MIN_COMPARABLES = 10
 # Sector (e.g. "LS17 9") queries cover a smaller area than the district but
 # can still be thin for less-traded property types. Require more records than
@@ -3879,13 +3883,16 @@ def start_checkout(report_id):
         "line_items[0][quantity]": "1",
         "line_items[0][price_data][currency]": "gbp",
         "line_items[0][price_data][unit_amount]": str(STRIPE_REPORT_PRICE_PENCE),
-        "line_items[0][price_data][product_data][name]": "HouseOffer Offer Report",
         "success_url": f"{BASE_URL.rstrip('/')}/r/{report_id}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{BASE_URL.rstrip('/')}/r/{report_id}",
     }
-    if address:
-        params["line_items[0][price_data][product_data][description]"] = \
-            f"Full negotiation report for {address}"[:250]
+    if STRIPE_REPORT_PRODUCT_ID:
+        params["line_items[0][price_data][product]"] = STRIPE_REPORT_PRODUCT_ID
+    else:
+        params["line_items[0][price_data][product_data][name]"] = "HouseOffer Offer Report"
+        if address:
+            params["line_items[0][price_data][product_data][description]"] = \
+                f"Full negotiation report for {address}"[:250]
     if stored.get("email"):
         params["customer_email"] = stored["email"]
     try:
