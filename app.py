@@ -6,6 +6,7 @@ import time
 import uuid
 import base64
 import hashlib
+import hmac
 import threading
 import requests
 from concurrent.futures import ThreadPoolExecutor
@@ -187,6 +188,14 @@ BASE_URL = os.environ.get("BASE_URL", "https://houseoffer-backend.onrender.com")
 # Google Sheets webhook (Apps Script web app) — receives submissions & events
 SHEETS_WEBHOOK_URL = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL", "")
 SHEETS_WEBHOOK_SECRET = os.environ.get("SHEETS_WEBHOOK_SECRET", "")
+# Stripe — £29 report unlock. Checkout sessions are created server-side via the
+# REST API (same requests-based pattern as Resend/PropertyData, no SDK).
+# Fulfilment (paid=True + paid-tier rebuild) runs from BOTH the success
+# redirect and the webhook; whichever lands first unlocks, the other no-ops.
+# While STRIPE_SECRET_KEY is unset, checkout CTAs fall back to the pricing page.
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_REPORT_PRICE_PENCE = int(os.environ.get("STRIPE_REPORT_PRICE_PENCE", "2900"))
 MIN_COMPARABLES = 10
 # Sector (e.g. "LS17 9") queries cover a smaller area than the district but
 # can still be thin for less-traded property types. Require more records than
@@ -3248,8 +3257,12 @@ def track():
         )
     except Exception as e:
         print(f"Track notify error: {e}")
-    
-    from flask import redirect
+
+    # Homepage £29 clicks have no report yet — checkout is per-report, so the
+    # funnel starts at the free-report form (next=form). Report-page CTAs go
+    # straight to Stripe via /r/<id>/checkout and never come through here.
+    if request.args.get("next") == "form":
+        return redirect("https://houseoffer.uk/#hero-form")
     return redirect("https://houseoffer.uk/#pricing")
 
 # ── POST-UNLOCK BUYER PROFILE (2026-07-05) ───────────────────────────────────
@@ -3751,30 +3764,216 @@ def voting_page(slug):
     )
 
 
-@app.route("/admin/unlock/<report_id>")
-def admin_unlock(report_id):
-    """Set paid=True for a given report UUID (manual unlock until Stripe is live)."""
-    auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
-        return jsonify({"error": "unauthorized"}), 401
-    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
-        return jsonify({"error": "invalid report_id"}), 400
+# ── PAYMENTS (STRIPE) ─────────────────────────────────────────────────────────
+# Flow: report CTA -> /r/<id>/checkout (creates a Stripe Checkout session,
+# redirects to Stripe's hosted page) -> buyer pays -> Stripe redirects to
+# /r/<id>/checkout/success (verified server-side, unlocks immediately) AND
+# fires checkout.session.completed at /stripe/webhook (the backstop if the
+# buyer closes the tab before returning). Both paths call _unlock_report,
+# which is idempotent, so double-fulfilment is a no-op.
+
+def _unlock_report(report_id, source, extra=None, force=False):
+    """Shared unlock primitive: set paid=True and, because free-tier reports
+    lack the paid-only data (EPC, last sale, rents, AVM, per-sqf), trigger a
+    paid-tier rebuild in the background. Idempotent unless force=True (admin):
+    an already-paid report — or one whose paid rebuild is in flight — is left
+    alone. Returns None if the report doesn't exist."""
     stored = load_report(report_id)
     if not stored:
-        return jsonify({"error": "report not found"}), 404
+        return None
+    already_paid = bool(stored.get("paid"))
+    needs_rebuild = (stored.get("report") or {}).get("tier") != "paid"
+    in_flight = stored.get("status") == "building"
+    if already_paid and not force and (not needs_rebuild or in_flight):
+        return {"status": "already_unlocked", "report_id": report_id,
+                "rebuilding": needs_rebuild and in_flight, "newly_unlocked": False}
     stored["paid"] = True
-    # Free-tier reports lack the paid-only data (EPC, last sale, rents, AVM,
-    # per-sqf), so unlocking triggers a paid-tier rebuild in the background.
-    rebuilding = (stored.get("report") or {}).get("tier") != "paid"
-    if rebuilding:
+    if needs_rebuild:
         stored["status"] = "building"
         stored["build_started_at"] = _now_iso()
         save_report(report_id, stored)
         _start_rebuild(report_id, stored, tier="paid")
     else:
         save_report(report_id, stored)
-    log_event(report_id, "report_unlocked", {})
-    return jsonify({"status": "unlocked", "report_id": report_id, "rebuilding": rebuilding})
+    log_event(report_id, "report_unlocked", dict(extra or {}, source=source))
+    return {"status": "unlocked", "report_id": report_id,
+            "rebuilding": needs_rebuild, "newly_unlocked": not already_paid}
+
+
+def _fulfil_stripe_payment(report_id, session, source):
+    """Unlock after a VERIFIED Stripe payment (verified session retrieval or
+    signature-checked webhook — never from client-supplied data alone) and
+    record the sale durably. Only the first caller notifies; repeats no-op."""
+    result = _unlock_report(report_id, source=source, extra={
+        "session_id": session.get("id", ""),
+        "amount_total": session.get("amount_total"),
+    })
+    if not result or not result.get("newly_unlocked"):
+        return result
+    stored = load_report(report_id) or {}
+    report = stored.get("report") or {}
+    amount = (session.get("amount_total") or 0) / 100
+    currency = (session.get("currency") or "gbp").upper()
+    buyer_email = ((session.get("customer_details") or {}).get("email")
+                   or stored.get("email", ""))
+    post_to_sheets({
+        "type": "payment",
+        "timestamp": _now_iso(),
+        "uuid": report_id,
+        "amount": amount,
+        "currency": currency,
+        "email": buyer_email,
+        "postcode": report.get("postcode"),
+        "session_id": session.get("id", ""),
+        "report_url": f"{BASE_URL.rstrip('/')}/r/{report_id}",
+    })
+    try:
+        requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "from": f"HouseOffer <{EMAIL_ADDRESS}>",
+                "to": [EMAIL_ADDRESS],
+                "subject": f"💰 Payment received: £{amount:,.2f} — {report.get('postcode') or report_id}",
+                "text": (f"Report unlocked by Stripe payment.\n\n"
+                         f"Amount: £{amount:,.2f} {currency}\nBuyer: {buyer_email}\n"
+                         f"Postcode: {report.get('postcode')}\n"
+                         f"Report: {BASE_URL.rstrip('/')}/r/{report_id}\n"
+                         f"Session: {session.get('id', '')}"),
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"Payment notify error: {e}")
+    return result
+
+
+@app.route("/r/<report_id>/checkout")
+def start_checkout(report_id):
+    """Create a Stripe Checkout session for the £29 report unlock and send the
+    buyer to Stripe's hosted payment page. Falls back to the pricing page when
+    Stripe isn't configured or errors, so the CTA is never a dead link."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+    if stored.get("paid"):
+        return redirect(f"/r/{report_id}")
+
+    report = stored.get("report") or {}
+    src = re.sub(r"[^a-z0-9_]", "", request.args.get("src", ""))[:40]
+    log_event(report_id, "checkout_started", {
+        "src": src, "postcode": report.get("postcode"),
+        "verdict": report.get("verdict"),
+    })
+    if not STRIPE_SECRET_KEY:
+        return redirect("https://houseoffer.uk/#pricing")
+
+    address = report.get("address") or report.get("postcode") or ""
+    params = {
+        "mode": "payment",
+        "client_reference_id": report_id,
+        "metadata[report_id]": report_id,
+        "payment_intent_data[metadata][report_id]": report_id,
+        "line_items[0][quantity]": "1",
+        "line_items[0][price_data][currency]": "gbp",
+        "line_items[0][price_data][unit_amount]": str(STRIPE_REPORT_PRICE_PENCE),
+        "line_items[0][price_data][product_data][name]": "HouseOffer Offer Report",
+        "success_url": f"{BASE_URL.rstrip('/')}/r/{report_id}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url": f"{BASE_URL.rstrip('/')}/r/{report_id}",
+    }
+    if address:
+        params["line_items[0][price_data][product_data][description]"] = \
+            f"Full negotiation report for {address}"[:250]
+    if stored.get("email"):
+        params["customer_email"] = stored["email"]
+    try:
+        r = requests.post("https://api.stripe.com/v1/checkout/sessions",
+                          data=params, auth=(STRIPE_SECRET_KEY, ""), timeout=15)
+        if r.status_code == 200 and r.json().get("url"):
+            return redirect(r.json()["url"], code=303)
+        print(f"Stripe checkout error ({report_id}): {r.status_code} — {r.text[:300]}")
+    except Exception as e:
+        print(f"Stripe checkout exception ({report_id}): {e}")
+    return redirect("https://houseoffer.uk/#pricing")
+
+
+@app.route("/r/<report_id>/checkout/success")
+def checkout_success(report_id):
+    """Buyer lands here after paying. The session is re-fetched from Stripe
+    with the secret key (the query string alone proves nothing) and, if paid,
+    the report unlocks immediately — no waiting on webhook delivery."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "report not found"}), 404
+    session_id = request.args.get("session_id", "")
+    if STRIPE_SECRET_KEY and re.fullmatch(r"cs_[A-Za-z0-9_]+", session_id):
+        try:
+            r = requests.get(f"https://api.stripe.com/v1/checkout/sessions/{session_id}",
+                             auth=(STRIPE_SECRET_KEY, ""), timeout=15)
+            session = r.json() if r.status_code == 200 else {}
+            if (session.get("payment_status") == "paid"
+                    and (session.get("metadata") or {}).get("report_id") == report_id):
+                _fulfil_stripe_payment(report_id, session, source="stripe_success")
+        except Exception as e:
+            print(f"Stripe success verify error ({report_id}): {e}")
+    return redirect(f"/r/{report_id}")
+
+
+def _verify_stripe_signature(payload, sig_header, secret, tolerance=300):
+    """Manual Stripe-Signature check (HMAC-SHA256 over 't.payload'), per
+    https://docs.stripe.com/webhooks — keeps us SDK-free like the rest of
+    the codebase. Rejects stale timestamps to block replay."""
+    try:
+        pairs = [p.split("=", 1) for p in sig_header.split(",") if "=" in p]
+        timestamp = next(v for k, v in pairs if k.strip() == "t")
+        candidates = [v.strip() for k, v in pairs if k.strip() == "v1"]
+        if not candidates or abs(time.time() - int(timestamp)) > tolerance:
+            return False
+        signed = f"{timestamp}.".encode() + payload
+        expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+        return any(hmac.compare_digest(expected, c) for c in candidates)
+    except Exception:
+        return False
+
+
+@app.route("/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    """Stripe webhook endpoint (configure checkout.session.completed and
+    checkout.session.async_payment_succeeded in the dashboard). The durable
+    fulfilment path — covers buyers who never return from Stripe's page."""
+    payload = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature", "")
+    if not STRIPE_WEBHOOK_SECRET or not _verify_stripe_signature(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET):
+        return jsonify({"error": "invalid signature"}), 400
+    try:
+        event = json.loads(payload)
+    except ValueError:
+        return jsonify({"error": "invalid payload"}), 400
+    if event.get("type") in ("checkout.session.completed",
+                             "checkout.session.async_payment_succeeded"):
+        session = (event.get("data") or {}).get("object") or {}
+        rid = ((session.get("metadata") or {}).get("report_id")
+               or session.get("client_reference_id") or "")
+        if session.get("payment_status") == "paid" and re.fullmatch(r"[a-f0-9]{8,32}", rid):
+            _fulfil_stripe_payment(rid, session, source="stripe_webhook")
+    return jsonify({"received": True})
+
+
+@app.route("/admin/unlock/<report_id>")
+def admin_unlock(report_id):
+    """Set paid=True for a given report UUID (manual unlock / support tool)."""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "unauthorized"}), 401
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "invalid report_id"}), 400
+    result = _unlock_report(report_id, source="admin", force=True)
+    if result is None:
+        return jsonify({"error": "report not found"}), 404
+    return jsonify({"status": result["status"], "report_id": report_id,
+                    "rebuilding": result["rebuilding"]})
 
 @app.route("/log", methods=["POST"])
 def log_engagement():

@@ -281,7 +281,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 
 <!-- MOBILE STICKY CTA -->
 <div class="mobile-sticky-cta">
-  <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="mobile-cta-btn report">Report — £29</a>
+  <a href="https://houseoffer-backend.onrender.com/r/{{ report_id|default('') }}/checkout?src=mobile_bar" class="mobile-cta-btn report">Report — £29</a>
   <a href="https://houseoffer-backend.onrender.com/track?tier=99&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="mobile-cta-btn playbook">Playbook — £99</a>
 </div>
 
@@ -621,7 +621,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
         <div class="lock-icon">🔒</div>
         <div class="lock-title">Your numbers are ready</div>
         <div class="lock-sub">Opening offer, target, and walk-away price calculated from 7 valuation methods</div>
-        <a class="lock-cta" href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}">Unlock for £29</a>
+        <a class="lock-cta" href="https://houseoffer-backend.onrender.com/r/{{ report_id|default('') }}/checkout?src=locked_section">Unlock for £29</a>
       </div>
 
       <div class="ff-row-clear ff-behind"><div class="ff-label-clear">Price per m²</div><div class="ff-fake-track"><div class="ff-fake-fill ff-blur-only ff-muted" style="width:57%"></div></div><div class="ff-fig"></div></div>
@@ -714,7 +714,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       {% else %}
         The full report shows the typical discount range for properties on the market this long — and how to use it in your offer.
       {% endif %}
-      <a href="https://houseoffer-backend.onrender.com/track-upgrade?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&rid={{ report_id|default('') }}">Unlock the exact numbers →</a>
+      <a href="https://houseoffer-backend.onrender.com/r/{{ report_id|default('') }}/checkout?src=leverage_strip">Unlock the exact numbers →</a>
     </div>
   </div>
   {% endif %}
@@ -754,7 +754,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
           <div class="upg-feat">Full 10–15 comparable sales</div>
           <div class="upg-feat">Written reasoning behind each number</div>
         </div>
-        <a href="https://houseoffer-backend.onrender.com/track?tier=29&postcode={{ postcode_used }}&verdict={{ verdict }}&anchor={{ sold_diff_pct }}&rid={{ report_id|default('') }}" class="btn-upg u-report">Get my report — £29</a>
+        <a href="https://houseoffer-backend.onrender.com/r/{{ report_id|default('') }}/checkout?src=upgrade_card" class="btn-upg u-report">Get my report — £29</a>
         <div class="upg-note">One-time · Instant delivery</div>
       </div>
       <div class="upgrade-card u-playbook">
