@@ -196,10 +196,16 @@ SHEETS_WEBHOOK_SECRET = os.environ.get("SHEETS_WEBHOOK_SECRET", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_REPORT_PRICE_PENCE = int(os.environ.get("STRIPE_REPORT_PRICE_PENCE", "2900"))
-# The "£29 Offer Report" product in the Stripe dashboard. Checkout references
-# it via price_data[product] so all sales roll up under one product; if it's
-# ever empty, checkout falls back to creating ad-hoc product_data per session.
+# The "£29 Offer Report" product in the Stripe dashboard. Checkout bills
+# against the product's reusable default Price (resolved once, created at
+# STRIPE_REPORT_PRICE_PENCE if the product has none, then persisted under
+# DATA_DIR). STRIPE_REPORT_PRICE_ID pins an explicit price and skips the
+# lookup. If neither resolves, checkout falls back to inline price_data so
+# a buyer is never blocked by a pricing hiccup.
 STRIPE_REPORT_PRODUCT_ID = os.environ.get("STRIPE_REPORT_PRODUCT_ID", "prod_UrNYSfZHnc85pz")
+STRIPE_REPORT_PRICE_ID = os.environ.get("STRIPE_REPORT_PRICE_ID", "")
+STRIPE_PRICE_CACHE_PATH = os.path.join(DATA_DIR, "houseoffer_stripe", "report_price.json")
+_stripe_price_lock = threading.Lock()
 MIN_COMPARABLES = 10
 # Sector (e.g. "LS17 9") queries cover a smaller area than the district but
 # can still be thin for less-traded property types. Require more records than
@@ -3853,6 +3859,77 @@ def _fulfil_stripe_payment(report_id, session, source):
     return result
 
 
+def _stripe_key_mode():
+    """'test' or 'live' — cached price ids are mode-specific, so a key swap
+    (test dry-run -> live) must invalidate the cache rather than send a
+    test-mode price to the live API."""
+    return "test" if STRIPE_SECRET_KEY.startswith("sk_test") else "live"
+
+
+def _resolve_report_price():
+    """Stripe Price id for the £29 report checkout. Resolution order: the
+    STRIPE_REPORT_PRICE_ID pin, the persisted cache, the product's
+    default_price in Stripe (dashboard-managed, so a price change there flows
+    through), else create a £STRIPE_REPORT_PRICE_PENCE price on the product
+    once and set it as the default. Returns "" when nothing resolves — the
+    caller falls back to inline price_data."""
+    if STRIPE_REPORT_PRICE_ID:
+        return STRIPE_REPORT_PRICE_ID
+    if not (STRIPE_SECRET_KEY and STRIPE_REPORT_PRODUCT_ID):
+        return ""
+    with _stripe_price_lock:
+        try:
+            if os.path.exists(STRIPE_PRICE_CACHE_PATH):
+                with open(STRIPE_PRICE_CACHE_PATH) as f:
+                    cached = json.load(f) or {}
+                if (cached.get("product") == STRIPE_REPORT_PRODUCT_ID
+                        and cached.get("mode") == _stripe_key_mode()
+                        and cached.get("price")):
+                    return cached["price"]
+        except Exception as e:
+            print(f"Stripe price cache read error: {e}")
+
+        price_id = ""
+        try:
+            r = requests.get(
+                f"https://api.stripe.com/v1/products/{STRIPE_REPORT_PRODUCT_ID}",
+                auth=(STRIPE_SECRET_KEY, ""), timeout=15)
+            if r.status_code == 200:
+                default_price = r.json().get("default_price")
+                if isinstance(default_price, str):
+                    price_id = default_price
+                else:
+                    r2 = requests.post(
+                        "https://api.stripe.com/v1/prices",
+                        data={"currency": "gbp",
+                              "unit_amount": str(STRIPE_REPORT_PRICE_PENCE),
+                              "product": STRIPE_REPORT_PRODUCT_ID},
+                        auth=(STRIPE_SECRET_KEY, ""), timeout=15)
+                    if r2.status_code == 200:
+                        price_id = r2.json().get("id", "")
+                        requests.post(
+                            f"https://api.stripe.com/v1/products/{STRIPE_REPORT_PRODUCT_ID}",
+                            data={"default_price": price_id},
+                            auth=(STRIPE_SECRET_KEY, ""), timeout=15)
+                    else:
+                        print(f"Stripe price create error: {r2.status_code} — {r2.text[:200]}")
+            else:
+                print(f"Stripe product lookup error: {r.status_code} — {r.text[:200]}")
+        except Exception as e:
+            print(f"Stripe price resolve error: {e}")
+
+        if price_id:
+            try:
+                os.makedirs(os.path.dirname(STRIPE_PRICE_CACHE_PATH), exist_ok=True)
+                with open(STRIPE_PRICE_CACHE_PATH, "w") as f:
+                    json.dump({"product": STRIPE_REPORT_PRODUCT_ID,
+                               "price": price_id,
+                               "mode": _stripe_key_mode()}, f)
+            except Exception as e:
+                print(f"Stripe price cache write error: {e}")
+        return price_id
+
+
 @app.route("/r/<report_id>/checkout")
 def start_checkout(report_id):
     """Create a Stripe Checkout session for the £29 report unlock and send the
@@ -3882,18 +3959,23 @@ def start_checkout(report_id):
         "metadata[report_id]": report_id,
         "payment_intent_data[metadata][report_id]": report_id,
         "line_items[0][quantity]": "1",
-        "line_items[0][price_data][currency]": "gbp",
-        "line_items[0][price_data][unit_amount]": str(STRIPE_REPORT_PRICE_PENCE),
         "success_url": f"{BASE_URL.rstrip('/')}/r/{report_id}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{BASE_URL.rstrip('/')}/r/{report_id}",
     }
-    if STRIPE_REPORT_PRODUCT_ID:
-        params["line_items[0][price_data][product]"] = STRIPE_REPORT_PRODUCT_ID
+    price_id = _resolve_report_price()
+    if price_id:
+        params["line_items[0][price]"] = price_id
     else:
-        params["line_items[0][price_data][product_data][name]"] = "HouseOffer Offer Report"
-        if address:
-            params["line_items[0][price_data][product_data][description]"] = \
-                f"Full negotiation report for {address}"[:250]
+        # Inline pricing fallback — a pricing hiccup must never block a buyer.
+        params["line_items[0][price_data][currency]"] = "gbp"
+        params["line_items[0][price_data][unit_amount]"] = str(STRIPE_REPORT_PRICE_PENCE)
+        if STRIPE_REPORT_PRODUCT_ID:
+            params["line_items[0][price_data][product]"] = STRIPE_REPORT_PRODUCT_ID
+        else:
+            params["line_items[0][price_data][product_data][name]"] = "HouseOffer Offer Report"
+            if address:
+                params["line_items[0][price_data][product_data][description]"] = \
+                    f"Full negotiation report for {address}"[:250]
     if stored.get("email"):
         params["customer_email"] = stored["email"]
     try:
