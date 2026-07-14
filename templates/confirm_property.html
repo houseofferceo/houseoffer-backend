@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confirm your property — HouseOffer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sand: #f7f3ed; --sand-border: #e0d9ce; --white: #ffffff;
+  --ink: #1e1c18; --ink-mid: #5c5849; --ink-light: #9b9488;
+  --teal: #1a6b5a; --teal-light: #e3f4ef; --teal-border: #b8dfd5;
+  --amber: #c06a1a; --amber-light: #fdf0e3;
+  --radius: 14px;
+  --shadow: 0 1px 4px rgba(30,28,24,0.06), 0 2px 12px rgba(30,28,24,0.04);
+}
+* { box-sizing: border-box; margin: 0; }
+body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--sand); color: var(--ink); line-height: 1.6; min-height: 100vh; }
+.wrap { max-width: 480px; margin: 0 auto; padding: 28px 18px 48px; }
+.logo { font-family: 'Lora', serif; font-size: 20px; font-weight: 700; text-align: center; margin-bottom: 26px; }
+.logo em { color: var(--teal); font-style: normal; }
+.card { background: var(--white); border: 1px solid var(--sand-border); border-radius: var(--radius); padding: 26px 22px; box-shadow: var(--shadow); }
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); text-align: center; margin-bottom: 8px; }
+h1 { font-family: 'Lora', serif; font-size: 24px; line-height: 1.25; text-align: center; margin-bottom: 18px; text-wrap: balance; }
+.addr-box { background: var(--teal-light); border: 1px solid var(--teal-border); border-radius: 12px; padding: 16px 18px; text-align: center; margin-bottom: 14px; }
+.addr { font-family: 'Lora', serif; font-size: 19px; font-weight: 700; line-height: 1.3; }
+.pc { font-size: 14px; color: var(--ink-mid); margin-top: 2px; }
+.chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 18px; }
+.chip { font-size: 12px; font-weight: 600; background: var(--sand); border: 1px solid var(--sand-border); border-radius: 999px; padding: 5px 12px; color: var(--ink-mid); }
+.why { font-size: 13px; color: var(--ink-mid); background: var(--amber-light); border-radius: 10px; padding: 11px 14px; margin-bottom: 18px; }
+.why b { color: var(--amber); }
+button.confirm { width: 100%; min-height: 52px; background: var(--teal); color: white; border: 0; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+button.confirm:hover { background: #14574a; }
+button.confirm:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+details { margin-top: 14px; }
+summary { list-style: none; cursor: pointer; text-align: center; font-size: 14px; font-weight: 600; color: var(--teal); padding: 10px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+summary::-webkit-details-marker { display: none; }
+.fix { border-top: 1px solid var(--sand-border); padding-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.fix label { font-size: 12px; font-weight: 600; color: var(--ink-mid); display: block; margin-bottom: 3px; }
+.fix input, .fix select { width: 100%; padding: 11px 12px; border: 1px solid var(--sand-border); border-radius: 10px; font-family: inherit; font-size: 15px; background: var(--white); color: var(--ink); }
+.fix input:focus, .fix select:focus { outline: 2px solid var(--teal); border-color: var(--teal); }
+.fix-note { font-size: 12px; color: var(--ink-light); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">House<em>Offer</em></div>
+  <div class="card">
+    <div class="eyebrow">One quick check</div>
+    <h1>Is this the property?</h1>
+
+    <div class="addr-box">
+      <div class="addr">{{ address or "Address not fully resolved" }}</div>
+      <div class="pc">{{ postcode }}</div>
+    </div>
+
+    <div class="chips">
+      {% if property_type %}<span class="chip">{{ property_type | capitalize }}</span>{% endif %}
+      {% if bedrooms %}<span class="chip">{{ bedrooms }} bed</span>{% endif %}
+      {% if floor_area_sqm %}<span class="chip">{{ floor_area_sqm }} m²</span>{% endif %}
+      {% if asking_price %}<span class="chip">Asking £{{ "{:,}".format(asking_price) }}</span>{% endif %}
+    </div>
+
+    <div class="why"><b>Why we ask:</b> every number in your report — sold comparables, this property's own sale history, the offer range — hangs off this address. Thirty seconds here keeps them all pointed at the right home. We only run the full valuation once you confirm.</div>
+
+    <form method="post" action="/r/{{ report_id }}/confirm-build">
+      <button type="submit" class="confirm">Yes — that's the property, run my valuation →</button>
+
+      <details>
+        <summary>Not quite right? Correct it here</summary>
+        <div class="fix">
+          <div>
+            <label for="cf-address">Address</label>
+            <input id="cf-address" name="address" placeholder="e.g. 9 Fenton Street, Burley In Wharfedale" value="{{ raw_address or '' }}">
+          </div>
+          <div>
+            <label for="cf-postcode">Postcode</label>
+            <input id="cf-postcode" name="postcode" placeholder="e.g. LS29 7EX" value="{{ postcode or '' }}">
+          </div>
+          <div>
+            <label for="cf-beds">Bedrooms</label>
+            <input id="cf-beds" name="bedrooms" inputmode="numeric" placeholder="e.g. 2" value="{{ bedrooms or '' }}">
+          </div>
+          <div>
+            <label for="cf-type">Property type</label>
+            <select id="cf-type" name="property_type">
+              <option value="">Keep as detected{% if property_type %} ({{ property_type }}){% endif %}</option>
+              <option value="terraced">Terraced</option>
+              <option value="semi-detached">Semi-detached</option>
+              <option value="detached">Detached</option>
+              <option value="flat">Flat / apartment</option>
+            </select>
+          </div>
+          <div class="fix-note">Corrections apply to this report only. Then hit the green button above.</div>
+        </div>
+      </details>
+    </form>
+  </div>
+</div>
+</body>
+</html>

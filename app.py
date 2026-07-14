@@ -3674,6 +3674,22 @@ def view_report(report_id):
     # than 5 minutes are presumed dead (worker restart) - fall back to the previous
     # report data if there is any, otherwise mark failed.
     status = stored.get("status", "ready")
+    # G1: pre-build confirmation state — no PropertyData credit has been spent
+    # yet; the page asks "is this the property?" and offers a correction path.
+    # This state can sit indefinitely (abandoning it costs nothing).
+    if status == "awaiting_confirmation":
+        ci = stored.get("confirm_inputs") or {}
+        extra = ci.get("extra") or {}
+        return render_template(
+            "confirm_property.html", report_id=report_id,
+            address=extra.get("resolved_address") or ci.get("address"),
+            raw_address=ci.get("address"),
+            postcode=ci.get("postcode"),
+            property_type=ci.get("property_type"),
+            bedrooms=ci.get("bedrooms"),
+            floor_area_sqm=ci.get("floor_area_sqm") or (extra.get("scraper_floor_area_sqm")),
+            asking_price=ci.get("asking_price"),
+            resolution=extra.get("address_resolution"))
     if status == "building":
         started = stored.get("build_started_at") or stored.get("created_at") or ""
         stale = False
@@ -5447,6 +5463,153 @@ def normalise_buyer_estimate(raw):
     return f"{int(round(value)):,}"
 
 
+def _run_free_build(report_id, inputs):
+    """Build the free report AFTER the user confirmed the property (G1). Every
+    PropertyData credit is spent inside this function — nothing upstream of the
+    confirmation costs anything. `inputs` is the confirm_inputs dict stored on
+    the report at resolution time (possibly amended by user corrections)."""
+    _rid, _url = report_id, inputs.get("property_url")
+    _em, _be = inputs.get("email"), inputs.get("buyer_estimate")
+    _ru = inputs.get("report_url")
+    try:
+        report = build_report_data(
+            property_url=_url,
+            asking_price=inputs["asking_price"],
+            bedrooms=inputs.get("bedrooms"),
+            property_type=inputs.get("property_type"),
+            postcode=inputs["postcode"],
+            floor_area_sqm=inputs.get("floor_area_sqm"),
+            address=inputs.get("address"),
+            tier="free",
+            **(inputs.get("extra") or {}),
+        )
+
+        anchor_bias = None
+        if _be and report.get("local_avg_sold"):
+            try:
+                est   = int(str(_be).replace(",", "").replace("£", "").replace(" ", ""))
+                local = report["local_avg_sold"]
+                anchor_bias = round(((est - local) / local) * 100, 1)
+            except Exception:
+                pass
+
+        stored = load_report(_rid) or {}
+        stored.update({"status": "ready", "report": report,
+                       "buyer_estimate": _be, "anchor_bias": anchor_bias})
+        save_report(_rid, stored)
+
+        # Seed the buyer's own estimate (given on the request form, before
+        # they saw any data) as the first crowd vote, so friends arriving
+        # via the share link always see the number that started it.
+        try:
+            seed_est = int(str(_be or "").replace(",", "").replace("£", "").replace(" ", ""))
+            if 1_000 <= seed_est <= 100_000_000:
+                with _votes_lock:
+                    votes = _load_votes(_rid)
+                    if not any(v.get("token") == f"owner-{_rid}" for v in votes):
+                        votes.append({"token": f"owner-{_rid}", "name": "The buyer",
+                                      "estimate": seed_est, "source": "owner_seed",
+                                      "created_at": _now_iso()})
+                        _save_votes(_rid, votes)
+                        post_to_sheets({
+                            "type": "vote", "timestamp": _now_iso(),
+                            "uuid": _rid, "slug": "", "source": "owner_seed",
+                            "voter_name": "The buyer", "estimate": seed_est,
+                            "updated": False,
+                            "asking_price": report.get("asking_price"),
+                            "our_valuation": report.get("weighted_midpoint"),
+                            "verdict": report.get("verdict"),
+                            "postcode": report.get("postcode"),
+                            "property_url": _url, "report_url": _ru,
+                        })
+        except (ValueError, TypeError):
+            pass
+
+        post_to_sheets({
+            "type": "submission",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "uuid": _rid, "email": _em,
+            "postcode": report["postcode"],
+            "property_type": report["property_type"],
+            "asking_price": inputs["asking_price"], "verdict": report["verdict"],
+            "buyer_estimate": _be or "", "anchor_bias": anchor_bias,
+            "property_url": _url, "report_url": _ru,
+        })
+        log_event(_rid, "submission_created", {
+            "email": _em, "postcode": report["postcode"],
+            "verdict": report["verdict"], "asking_price": inputs["asking_price"],
+            "anchor_bias": anchor_bias,
+        })
+        try:
+            # render_template in a daemon thread needs an explicit app context —
+            # without it the report email silently fails (latent in the old
+            # in-route closure too, surfaced by the G1 flow test).
+            with app.app_context():
+                email_html = render_template("report_email.html", report_url=_ru, **report)
+            send_report_email(_em, email_html, report["postcode"], report["verdict"], report_url=_ru)
+            notify_owner(_em, _url, report["postcode"], report["verdict"], _be, anchor_bias)
+        except Exception as e:
+            print(f"Email error in background build ({_rid}): {e}")
+    except Exception as exc:
+        print(f"Background build error ({_rid}): {exc}")
+        stored = load_report(_rid) or {}
+        stored["status"] = "failed"
+        stored["error"] = str(exc)
+        save_report(_rid, stored)
+
+
+@app.route("/r/<report_id>/confirm-build", methods=["POST"])
+def confirm_build(report_id):
+    """G1: the explicit 'Yes, that's the property' gate. Applies any manual
+    corrections, then spawns the credit-spending build. Idempotent — a report
+    already past confirmation just redirects to itself."""
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return "Report not found", 404
+    stored = load_report(report_id)
+    if not stored:
+        return "Report not found", 404
+    if stored.get("status") != "awaiting_confirmation":
+        return redirect(f"/r/{report_id}")
+
+    ci = stored.get("confirm_inputs") or {}
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    corrected = []
+    extra = ci.get("extra") or {}
+    new_addr = (data.get("address") or "").strip()
+    new_pc = (data.get("postcode") or "").strip().upper()
+    new_beds = _coerce_bedrooms(data.get("bedrooms"))
+    new_type = normalise_property_type(data.get("property_type") or "")
+    if new_addr and new_addr != (ci.get("address") or ""):
+        ci["address"] = new_addr
+        extra["resolved_address"] = None
+        extra["address_resolution"] = "user"
+        corrected.append("address")
+    if new_pc and re.fullmatch(r"[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}", new_pc):
+        if new_pc != (ci.get("postcode") or "").upper():
+            ci["postcode"] = new_pc
+            extra["resolved_address"] = None
+            extra["address_resolution"] = "user"
+            corrected.append("postcode")
+    if new_beds and new_beds != ci.get("bedrooms"):
+        ci["bedrooms"] = new_beds
+        extra["bedrooms_source"] = "user"
+        corrected.append("bedrooms")
+    if new_type and new_type != ci.get("property_type"):
+        ci["property_type"] = new_type
+        extra["property_type_source"] = "user"
+        corrected.append("property_type")
+    ci["extra"] = extra
+
+    stored["confirm_inputs"] = ci
+    stored["status"] = "building"
+    stored["build_started_at"] = _now_iso()
+    save_report(report_id, stored)
+    log_event(report_id, "address_confirmed",
+              {"corrected_fields": corrected, "postcode": ci.get("postcode")})
+    threading.Thread(target=_run_free_build, args=(report_id, ci), daemon=True).start()
+    return redirect(f"/r/{report_id}")
+
+
 @app.route("/submit", methods=["POST"])
 def submit():
     data = request.get_json(silent=True) or request.form
@@ -5502,7 +5665,12 @@ def submit():
     _ru  = report_url
     _em  = to_email
 
-    def _build():
+    def _resolve():
+        # G1 (2026-07-14): this thread does the FREE work only — scrape + address
+        # resolution (Rightmove page + EPC, zero PropertyData credits). The paid
+        # valuation build runs ONLY after the user explicitly confirms the
+        # property on /r/<id>; a wrong silent match would make every downstream
+        # number confidently wrong, and an abandoned confirmation costs nothing.
         try:
             pc, ap, br, pt, ad, extra = merge_scraped_listing(
                 _url, _pc, _ap, _br, _pt, _ad
@@ -5515,81 +5683,27 @@ def submit():
                 "confidence": extra.get("address_resolution") or "none",
                 "resolved_address": extra.get("resolved_address"),
             })
-
-            report = build_report_data(
-                property_url=_url,
-                asking_price=ap,
-                bedrooms=br,
-                property_type=pt,
-                postcode=pc,
-                floor_area_sqm=_fa,
-                address=ad,
-                tier="free",
-                **extra,
-            )
-
-            anchor_bias = None
-            if _be and report.get("local_avg_sold"):
-                try:
-                    est   = int(str(_be).replace(",", "").replace("£", "").replace(" ", ""))
-                    local = report["local_avg_sold"]
-                    anchor_bias = round(((est - local) / local) * 100, 1)
-                except Exception:
-                    pass
-
             stored = load_report(_rid) or {}
-            stored.update({"status": "ready", "report": report,
-                           "buyer_estimate": _be, "anchor_bias": anchor_bias})
+            stored.update({
+                "status": "awaiting_confirmation",
+                "confirm_inputs": {
+                    "property_url": _url, "email": _em, "buyer_estimate": _be,
+                    "report_url": _ru, "asking_price": ap, "bedrooms": br,
+                    "property_type": pt, "postcode": pc, "address": ad,
+                    "floor_area_sqm": _fa, "extra": extra,
+                },
+            })
             save_report(_rid, stored)
-
-            # Seed the buyer's own estimate (given on the request form, before
-            # they saw any data) as the first crowd vote, so friends arriving
-            # via the share link always see the number that started it.
+            # Light email so the confirmation link isn't lost if the tab closes.
+            # The full report email is sent after the confirmed build completes.
             try:
-                seed_est = int(str(_be or "").replace(",", "").replace("£", "").replace(" ", ""))
-                if 1_000 <= seed_est <= 100_000_000:
-                    with _votes_lock:
-                        votes = _load_votes(_rid)
-                        if not any(v.get("token") == f"owner-{_rid}" for v in votes):
-                            votes.append({"token": f"owner-{_rid}", "name": "The buyer",
-                                          "estimate": seed_est, "source": "owner_seed",
-                                          "created_at": _now_iso()})
-                            _save_votes(_rid, votes)
-                            post_to_sheets({
-                                "type": "vote", "timestamp": _now_iso(),
-                                "uuid": _rid, "slug": "", "source": "owner_seed",
-                                "voter_name": "The buyer", "estimate": seed_est,
-                                "updated": False,
-                                "asking_price": report.get("asking_price"),
-                                "our_valuation": report.get("weighted_midpoint"),
-                                "verdict": report.get("verdict"),
-                                "postcode": report.get("postcode"),
-                                "property_url": _url, "report_url": _ru,
-                            })
-            except (ValueError, TypeError):
-                pass
-
-            post_to_sheets({
-                "type": "submission",
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "uuid": _rid, "email": _em,
-                "postcode": report["postcode"],
-                "property_type": report["property_type"],
-                "asking_price": ap, "verdict": report["verdict"],
-                "buyer_estimate": _be or "", "anchor_bias": anchor_bias,
-                "property_url": _url, "report_url": _ru,
-            })
-            log_event(_rid, "submission_created", {
-                "email": _em, "postcode": report["postcode"],
-                "verdict": report["verdict"], "asking_price": ap,
-                "anchor_bias": anchor_bias,
-            })
-            try:
-                email_html = render_template("report_email.html", report_url=_ru, **report)
-                send_report_email(_em, email_html, report["postcode"], report["verdict"], report_url=_ru)
-                notify_owner(_em, _url, report["postcode"], report["verdict"], _be, anchor_bias)
+                confirm_html = (
+                    "<p>Nearly there — one click to check we've matched the right "
+                    "property, then we'll run your full valuation.</p>"
+                    f"<p><a href='{_ru}'>Confirm your property &rarr;</a></p>")
+                send_report_email(_em, confirm_html, pc, "unknown", report_url=_ru)
             except Exception as e:
-                print(f"Email error in background build ({_rid}): {e}")
+                print(f"Confirm email error ({_rid}): {e}")
         except Exception as exc:
             print(f"Background submit error ({_rid}): {exc}")
             stored = load_report(_rid) or {}
@@ -5597,7 +5711,7 @@ def submit():
             stored["error"] = str(exc)
             save_report(_rid, stored)
 
-    threading.Thread(target=_build, daemon=True).start()
+    threading.Thread(target=_resolve, daemon=True).start()
 
     # Return "sent" so existing frontend code that checks status === "sent" keeps working.
     # The report is still building; the user is redirected to report_url which shows
