@@ -43,6 +43,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 /* OFFER HEADLINE */
 .offer-headline { background: var(--teal); border-radius: var(--radius); padding: 28px 32px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(26,107,90,0.25); }
 .offer-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.7); margin-bottom: 8px; }
+.trio-anchor-note { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.95); margin-bottom: 14px; text-align: left; }
 .offer-amount { font-family: 'Lora', serif; font-size: 42px; font-weight: 700; color: white; line-height: 1.1; margin-bottom: 6px; }
 .offer-sub { font-size: 14px; color: rgba(255,255,255,0.8); margin-bottom: 20px; }
 .offer-trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
@@ -368,6 +369,10 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   <!-- OFFER HEADLINE -->
   {% if recommended_offer %}
   <div class="offer-headline">
+    {% if trio_anchor_note %}
+    <!-- B2: LOW-confidence trio is asking-anchored — the basis must be transparent -->
+    <div class="trio-anchor-note">⚠️ {{ trio_anchor_note }}</div>
+    {% endif %}
     <div class="offer-eyebrow">Recommended opening offer</div>
     <div class="offer-amount">{{ recommended_offer_formatted }}</div>
     <div class="offer-sub">
@@ -401,53 +406,6 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       — use the comparable evidence below to justify this position in the room.
       {% endif %}
     </div>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  <!-- YOUR NEGOTIATION APPROACH (buyer profile personalisation) -->
-  {% if buyer_profile and (buyer_profile.position or buyer_profile.attachment or buyer_profile.timeline) %}
-  <div class="approach-card">
-    <div class="approach-eyebrow">🎯 Your negotiation approach</div>
-    <ul class="approach-list">
-      {% if buyer_profile.position == 'cash' %}
-      <li><strong>Say you're a cash buyer — explicitly.</strong> No chain, no mortgage risk: your offer is worth more than a higher offer from a buyer in a chain. Make the agent write "cash buyer" next to your number.</li>
-      {% elif buyer_profile.position == 'investor' %}
-      <li><strong>Negotiate like the investor you are.</strong> You're chain-free and unemotional — the two things sellers pay for in a buyer. Anchor on the data and be visibly ready to walk.</li>
-      {% elif buyer_profile.position == 'sold_stc' %}
-      <li><strong>You're proceedable — lead with it.</strong> Sold subject to contract is the strongest position after cash. A proceedable buyer's offer is worth more than a higher offer from someone still stuck in a chain, so say so when you offer.</li>
-      {% elif buyer_profile.position == 'first_time' %}
-      <li><strong>You're chain-free.</strong> First-time buyers carry no chain risk, and sellers value that certainty. Make sure the agent records you as chain-free the moment you offer — it strengthens a below-asking number.</li>
-      {% elif buyer_profile.position == 'need_to_sell' %}
-      <li><strong>Be straight about your chain.</strong> Until your own sale is agreed, agents will treat your offer as not fully proceedable — expect that to count against you. Price competitiveness matters more in your position, and getting your own home under offer will do more for your negotiating power than anything else on this page.</li>
-      {% endif %}
-
-      {% if buyer_profile.attachment == 'several' %}
-      <li><strong>Comparing several properties is leverage.</strong> Sellers and agents can tell when a buyer has options. Stay visibly willing to walk away — it makes every number on this page more credible.</li>
-      {% elif buyer_profile.attachment == 'this_one' %}
-      <li><strong>You want this one at the right price — so hold the line.</strong> The walk-away figure above is where "the right price" ends. Decide now that you'll honour it.</li>
-      {% elif buyer_profile.attachment == 'the_one' %}
-      <li><strong>Careful: "THE one" is how buyers overpay.</strong> Emotional attachment is the most expensive thing in property. For you the walk-away number matters more, not less — write it down before you offer, tell someone you trust, and don't cross it in the heat of the moment.</li>
-      {% endif %}
-
-      {% if buyer_profile.timeline == 'fast' and seller_signal_score == 'strong' %}
-      <li><strong>Your speed is a bargaining chip — and this seller looks under pressure.</strong> Offer a fast exchange explicitly in return for price. Speed traded for money is the cleanest deal in negotiation; don't give it away for free.</li>
-      {% elif buyer_profile.timeline == 'fast' %}
-      <li><strong>Your speed is worth money — trade it, don't gift it.</strong> Tell the agent you can move quickly, but only alongside your number: fast completion in exchange for the price you want.</li>
-      {% elif buyer_profile.timeline == 'one_three' %}
-      <li><strong>A 1–3 month timeline is standard</strong> — it neither strengthens nor weakens your hand. Let the evidence on this page do the negotiating.</li>
-      {% elif buyer_profile.timeline == 'flexible' %}
-      <li><strong>Flexibility is an underrated card.</strong> Ask the agent what completion timing suits the seller, then offer it — matched timing can be worth as much as a small price concession.</li>
-      {% endif %}
-    </ul>
-    {% if offer_frontier is defined and offer_frontier and buyer_profile.attachment %}
-    {% if offer_frontier.emphasis == 'aggressive' %}
-    <div class="approach-stance">Because you're comparing several options, we've highlighted the <strong>Aggressive</strong> position on your offer frontier below — you can afford to test this seller. Your walk-away never rises, whatever position you play.</div>
-    {% elif offer_frontier.emphasis == 'secure' %}
-    <div class="approach-stance">Because this is the one you don't want to lose, we've highlighted the <strong>Secure</strong> position on your offer frontier below — protect the purchase, but never above your walk-away.</div>
-    {% else %}
-    <div class="approach-stance">We've highlighted the <strong>Balanced</strong> position on your offer frontier below — in line with what actually clears in this market.</div>
-    {% endif %}
     {% endif %}
   </div>
   {% endif %}
@@ -492,58 +450,6 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     {% if report_id is defined and report_id %}
     <button class="conf-addr-btn" onclick="HO.openModal()">📍 Confirm address</button>
     {% endif %}
-  </div>
-  {% endif %}
-
-  <!-- CROWD VOTING -->
-  {% if report_id is defined and report_id %}
-  <div class="crowd-card">
-    <div class="crowd-eyebrow">🎯 The crowd vs the data</div>
-    <div class="crowd-title">What do the people around you think it's worth?</div>
-    <div class="crowd-sub">Your report has the data verdict. Now bring in your partner, parents or friends — their honest numbers appear here live, next to the asking price and the data valuation.</div>
-
-    <div class="crowd-input-row" id="crowd-input-row">
-      <input class="crowd-input" type="text" id="crowd-input" inputmode="numeric" placeholder="e.g. £340,000" aria-label="Your estimate in pounds">
-      <button class="crowd-submit" onclick="HO.submitVote()">Lock in my number</button>
-    </div>
-
-    <div class="crowd-results" id="crowd-results">
-      <div class="crowd-chart" id="crowd-chart">
-        <div class="crowd-track"></div>
-        {% if weighted_midpoint %}
-        <div class="crowd-mkr" data-marker="data">
-          <div class="crowd-mkr-label" style="background:var(--teal)">Data</div>
-          <div class="crowd-mkr-dot" style="left:-6px;background:var(--teal)"></div>
-        </div>
-        {% endif %}
-        <div class="crowd-mkr" data-marker="asking">
-          <div class="crowd-mkr-label" style="background:var(--red)">Asking</div>
-          <div class="crowd-mkr-dot" style="left:-6px;background:var(--red)"></div>
-        </div>
-        <div class="crowd-mkr" data-marker="you">
-          <div class="crowd-mkr-label" style="background:var(--purple)">You</div>
-          <div class="crowd-mkr-dot" style="left:-6px;background:var(--purple)"></div>
-        </div>
-      </div>
-
-      <div class="crowd-feed" id="crowd-feed">
-        <div class="feed-row"><div class="feed-avatar" style="background:#7a8fd0;">Y</div><div class="feed-name">You</div><div class="feed-val" id="feed-you-val"></div></div>
-      </div>
-
-      <div class="crowd-avg-strip">
-        <div class="crowd-avg-label">Everyone's average so far (<span id="voter-count">1</span> vote<span id="voter-plural"></span>)</div>
-        <div class="crowd-avg-val" id="crowd-avg"></div>
-      </div>
-
-      {% if weighted_midpoint %}
-      <div class="crowd-paid-hook">
-        <div class="crowd-paid-icon">📊</div>
-        <div class="crowd-paid-text" id="crowd-vs-data">As votes come in, watch how everyone's number compares with the data valuation of <strong>{{ weighted_midpoint_formatted }}</strong>.</div>
-      </div>
-      {% endif %}
-    </div>
-
-    <button class="share-btn" onclick="HO.shareForVotes(this)">📲 Share with friends &amp; family to get their estimate</button>
   </div>
   {% endif %}
 
@@ -1030,6 +936,105 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         {% endfor %}
       </tbody>
     </table>
+  </div>
+  {% endif %}
+
+  <!-- CROWD VOTING -->
+  {% if report_id is defined and report_id %}
+  <div class="crowd-card">
+    <div class="crowd-eyebrow">🎯 The crowd vs the data</div>
+    <div class="crowd-title">What do the people around you think it's worth?</div>
+    <div class="crowd-sub">Your report has the data verdict. Now bring in your partner, parents or friends — their honest numbers appear here live, next to the asking price and the data valuation.</div>
+
+    <div class="crowd-input-row" id="crowd-input-row">
+      <input class="crowd-input" type="text" id="crowd-input" inputmode="numeric" placeholder="e.g. £340,000" aria-label="Your estimate in pounds">
+      <button class="crowd-submit" onclick="HO.submitVote()">Lock in my number</button>
+    </div>
+
+    <div class="crowd-results" id="crowd-results">
+      <div class="crowd-chart" id="crowd-chart">
+        <div class="crowd-track"></div>
+        {% if weighted_midpoint %}
+        <div class="crowd-mkr" data-marker="data">
+          <div class="crowd-mkr-label" style="background:var(--teal)">Data</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--teal)"></div>
+        </div>
+        {% endif %}
+        <div class="crowd-mkr" data-marker="asking">
+          <div class="crowd-mkr-label" style="background:var(--red)">Asking</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--red)"></div>
+        </div>
+        <div class="crowd-mkr" data-marker="you">
+          <div class="crowd-mkr-label" style="background:var(--purple)">You</div>
+          <div class="crowd-mkr-dot" style="left:-6px;background:var(--purple)"></div>
+        </div>
+      </div>
+
+      <div class="crowd-feed" id="crowd-feed">
+        <div class="feed-row"><div class="feed-avatar" style="background:#7a8fd0;">Y</div><div class="feed-name">You</div><div class="feed-val" id="feed-you-val"></div></div>
+      </div>
+
+      <div class="crowd-avg-strip">
+        <div class="crowd-avg-label">Everyone's average so far (<span id="voter-count">1</span> vote<span id="voter-plural"></span>)</div>
+        <div class="crowd-avg-val" id="crowd-avg"></div>
+      </div>
+
+      {% if weighted_midpoint %}
+      <div class="crowd-paid-hook">
+        <div class="crowd-paid-icon">📊</div>
+        <div class="crowd-paid-text" id="crowd-vs-data">As votes come in, watch how everyone's number compares with the data valuation of <strong>{{ weighted_midpoint_formatted }}</strong>.</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <button class="share-btn" onclick="HO.shareForVotes(this)">📲 Share with friends &amp; family to get their estimate</button>
+  </div>
+  {% endif %}
+
+  <!-- YOUR NEGOTIATION APPROACH (buyer profile personalisation) -->
+  {% if buyer_profile and (buyer_profile.position or buyer_profile.attachment or buyer_profile.timeline) %}
+  <div class="approach-card">
+    <div class="approach-eyebrow">🎯 Your negotiation approach</div>
+    <ul class="approach-list">
+      {% if buyer_profile.position == 'cash' %}
+      <li><strong>Say you're a cash buyer — explicitly.</strong> No chain, no mortgage risk: your offer is worth more than a higher offer from a buyer in a chain. Make the agent write "cash buyer" next to your number.</li>
+      {% elif buyer_profile.position == 'investor' %}
+      <li><strong>Negotiate like the investor you are.</strong> You're chain-free and unemotional — the two things sellers pay for in a buyer. Anchor on the data and be visibly ready to walk.</li>
+      {% elif buyer_profile.position == 'sold_stc' %}
+      <li><strong>You're proceedable — lead with it.</strong> Sold subject to contract is the strongest position after cash. A proceedable buyer's offer is worth more than a higher offer from someone still stuck in a chain, so say so when you offer.</li>
+      {% elif buyer_profile.position == 'first_time' %}
+      <li><strong>You're chain-free.</strong> First-time buyers carry no chain risk, and sellers value that certainty. Make sure the agent records you as chain-free the moment you offer — it strengthens a below-asking number.</li>
+      {% elif buyer_profile.position == 'need_to_sell' %}
+      <li><strong>Be straight about your chain.</strong> Until your own sale is agreed, agents will treat your offer as not fully proceedable — expect that to count against you. Price competitiveness matters more in your position, and getting your own home under offer will do more for your negotiating power than anything else on this page.</li>
+      {% endif %}
+
+      {% if buyer_profile.attachment == 'several' %}
+      <li><strong>Comparing several properties is leverage.</strong> Sellers and agents can tell when a buyer has options. Stay visibly willing to walk away — it makes every number on this page more credible.</li>
+      {% elif buyer_profile.attachment == 'this_one' %}
+      <li><strong>You want this one at the right price — so hold the line.</strong> The walk-away figure above is where "the right price" ends. Decide now that you'll honour it.</li>
+      {% elif buyer_profile.attachment == 'the_one' %}
+      <li><strong>Careful: "THE one" is how buyers overpay.</strong> Emotional attachment is the most expensive thing in property. For you the walk-away number matters more, not less — write it down before you offer, tell someone you trust, and don't cross it in the heat of the moment.</li>
+      {% endif %}
+
+      {% if buyer_profile.timeline == 'fast' and seller_signal_score == 'strong' %}
+      <li><strong>Your speed is a bargaining chip — and this seller looks under pressure.</strong> Offer a fast exchange explicitly in return for price. Speed traded for money is the cleanest deal in negotiation; don't give it away for free.</li>
+      {% elif buyer_profile.timeline == 'fast' %}
+      <li><strong>Your speed is worth money — trade it, don't gift it.</strong> Tell the agent you can move quickly, but only alongside your number: fast completion in exchange for the price you want.</li>
+      {% elif buyer_profile.timeline == 'one_three' %}
+      <li><strong>A 1–3 month timeline is standard</strong> — it neither strengthens nor weakens your hand. Let the evidence on this page do the negotiating.</li>
+      {% elif buyer_profile.timeline == 'flexible' %}
+      <li><strong>Flexibility is an underrated card.</strong> Ask the agent what completion timing suits the seller, then offer it — matched timing can be worth as much as a small price concession.</li>
+      {% endif %}
+    </ul>
+    {% if offer_frontier is defined and offer_frontier and buyer_profile.attachment %}
+    {% if offer_frontier.emphasis == 'aggressive' %}
+    <div class="approach-stance">Because you're comparing several options, we've highlighted the <strong>Aggressive</strong> position on your offer frontier below — you can afford to test this seller. Your walk-away never rises, whatever position you play.</div>
+    {% elif offer_frontier.emphasis == 'secure' %}
+    <div class="approach-stance">Because this is the one you don't want to lose, we've highlighted the <strong>Secure</strong> position on your offer frontier below — protect the purchase, but never above your walk-away.</div>
+    {% else %}
+    <div class="approach-stance">We've highlighted the <strong>Balanced</strong> position on your offer frontier below — in line with what actually clears in this market.</div>
+    {% endif %}
+    {% endif %}
   </div>
   {% endif %}
 

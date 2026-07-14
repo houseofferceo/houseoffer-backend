@@ -1077,6 +1077,28 @@ def _sale_matches_address(sale, address):
     addr_tokens = set(_normalise_text(sale.get("address")))
     return any(t in addr_tokens for t in street_tokens)
 
+def _weighted_median(pairs):
+    """Weighted median of (value, weight) pairs — the robust combiner for the
+    football-field range (A4). Each method casts `weight` votes for its value;
+    the median vote wins, so a single wild method cannot drag the headline the
+    way it could under a weighted mean. Midpoint interpolation when the median
+    falls exactly between two values keeps the result stable for even splits."""
+    pts = sorted((v, w) for v, w in pairs if v is not None and w > 0)
+    if not pts:
+        return None
+    total = sum(w for _, w in pts)
+    half = total / 2.0
+    cum = 0
+    for i, (v, w) in enumerate(pts):
+        cum += w
+        if cum > half:
+            return round(v)
+        if cum == half:  # exact split: average this value with the next
+            nxt = pts[i + 1][0] if i + 1 < len(pts) else v
+            return round((v + nxt) / 2)
+    return round(pts[-1][0])
+
+
 def avg_sold_price(comparables):
     if not comparables:
         return None
@@ -1974,7 +1996,11 @@ def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
     elif comparable_tier in ("postcode", "sector", "district"):
         score = "medium"
         if comparable_tier == "postcode" and comp_count >= MIN_COMPARABLES:
-            reasons.append("based on local sold prices, but not bedroom- or size-matched")
+            # B4 (2026-07-14): name the SUBJECT of this caveat — it describes the
+            # core comparable set, not the report's other signals (a separate
+            # bedroom-matched context row otherwise reads as a contradiction).
+            reasons.append("our core comparable set is matched on property type and "
+                           "area; a size-matched set wasn't available at this address")
         elif comparable_tier == "postcode":
             reasons.append("based on a small number of sales in this exact postcode")
         else:
@@ -2044,7 +2070,8 @@ def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
 
 def _resolve_seller_signal(days_on_market, local_avg_dom, dom_signal,
                            price_reduced, reduction_pct, reduction_date,
-                           discount_pct):
+                           discount_pct, last_sale_price=None,
+                           last_sale_date=None, asking_price=None):
     """Single source of truth for the published seller-motivation signal on the
     paid report. Mirrors _resolve_confidence: combines the public pressure
     signals (time on market vs local average, recorded price reductions, the
@@ -2059,10 +2086,45 @@ def _resolve_seller_signal(days_on_market, local_avg_dom, dom_signal,
     (0-2 pts by size); the area asking-vs-sold discount is area-level context,
     not property-specific, so it only nudges (±1 pt).
 
+    F1/F2 (2026-07-14, CEO-approved tiering): the property's OWN sale history is
+    the strongest motivation evidence we hold and was previously ignored.
+    Bought <12 months ago → strong signal (+2); 12-24 months → moderate (+1);
+    >24 months → no signal. Additionally, re-listing at or roughly at the
+    previous purchase price (≤3% above — flat-to-loss once buying costs are
+    counted) adds +1 and its own prominent line: a seller exiting, not profiting.
+
     Returns (score, reasons, summary)."""
     reasons = []
     points = 0
     dom_comparable = bool(days_on_market and local_avg_dom)
+
+    # F1/F2: recent-resale signal, stated FIRST when present — it is the most
+    # property-specific evidence in the score.
+    resale_months = None
+    try:
+        y, mo = int(str(last_sale_date)[:4]), int(str(last_sale_date)[5:7])
+        now = datetime.utcnow()
+        resale_months = (now.year - y) * 12 + (now.month - mo)
+    except (ValueError, TypeError):
+        pass
+    if resale_months is not None and 0 <= resale_months < 24 and last_sale_price:
+        if resale_months < 12:
+            points += 2
+            reasons.insert(0, f"the seller bought this property only {resale_months} "
+                              f"months ago for {_fmt(last_sale_price)} — re-listing this "
+                              "quickly is a strong motivation signal")
+        else:
+            points += 1
+            reasons.insert(0, f"the seller bought this property {resale_months} months "
+                              f"ago for {_fmt(last_sale_price)} — a fairly quick return "
+                              "to market")
+        if asking_price and asking_price <= last_sale_price * 1.03:
+            # The combo (<12mo AND at/below purchase price) is the strongest
+            # leverage evidence we can give a buyer — it alone justifies STRONG.
+            points += 2 if resale_months < 12 else 1
+            reasons.insert(1, f"and they're asking {_fmt(asking_price)} — at or barely above "
+                              "what they paid, a loss once buying costs are counted. "
+                              "This looks like a seller who needs out, not one chasing profit")
 
     if dom_comparable:
         if dom_signal == "high":
@@ -2112,8 +2174,13 @@ def _resolve_seller_signal(days_on_market, local_avg_dom, dom_signal,
 
     score = "strong" if points >= 3 else ("moderate" if points >= 1 else "weak")
     # Honesty cap: without the time-on-market comparison (the primary signal)
-    # we never claim STRONG on secondary evidence alone.
-    if score == "strong" and not dom_comparable:
+    # we never claim STRONG on secondary evidence alone. Exception (F2): the
+    # <12-month resale at/below the purchase price is property-specific primary
+    # evidence in its own right, so it is never capped.
+    recent_flat_resale = (resale_months is not None and resale_months < 12
+                          and last_sale_price and asking_price
+                          and asking_price <= last_sale_price * 1.03)
+    if score == "strong" and not dom_comparable and not recent_flat_resale:
         score = "moderate"
         reasons.append("score capped: without the time-on-market comparison we "
                        "won't claim strong motivation on secondary signals alone")
@@ -2495,7 +2562,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     seller_signal_score, seller_signal_reasons, seller_signal_summary = (
         _resolve_seller_signal(days_on_market, local_avg_dom, dom_signal,
                                price_reduced, reduction_pct, reduction_date,
-                               discount_pct))
+                               discount_pct,
+                               # F1/F2: the property's own sale history — the
+                               # signal the fixture showed we were ignoring.
+                               last_sale_price=(last_sale or {}).get("price"),
+                               last_sale_date=(last_sale or {}).get("date"),
+                               asking_price=asking_price))
     local_sold_discount_pct = discount_pct
 
     verdict = sold_verdict or psqm_verdict or "unknown"
@@ -2583,13 +2655,25 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     else:
         methods.append(_method_dict("Comparable sales (HPI-adjusted)", 0, 0, 0, "HM Land Registry", False, weight=2))
 
-    # Method 2: HPI-adjusted last sale (weight 2)
+    # Method 2: HPI-adjusted last sale. A5 (2026-07-14): the property's OWN sale
+    # is the strongest evidence we hold, so its weight scales with recency —
+    # a recent sale (<5y) outweighs any comparable at 3; 5-10y counts 2; older
+    # sales (pre-renovation risk) count 1. Safe to weight highly because
+    # find_last_sale only returns confident address matches (returns None and
+    # populates the candidates picker rather than guessing a neighbour's sale).
     if hpi_adjusted_value:
+        m2_weight = 2
+        try:
+            sale_year = int(str((last_sale or {}).get("date", ""))[:4])
+            age_years = datetime.utcnow().year - sale_year
+            m2_weight = 3 if age_years < 5 else (2 if age_years < 10 else 1)
+        except (ValueError, TypeError):
+            pass
         m2_low = round(hpi_adjusted_value * 0.95)
         m2_high = round(hpi_adjusted_value * 1.05)
         methods.append(_method_dict(
             "HPI-adjusted last sale", m2_low, m2_high, round((m2_low + m2_high) / 2),
-            "ONS House Price Index", True, weight=2
+            "ONS House Price Index", True, weight=m2_weight
         ))
     else:
         methods.append(_method_dict("HPI-adjusted last sale", 0, 0, 0, "ONS House Price Index", False, weight=2))
@@ -2646,13 +2730,16 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         m6_low = round(lender_base * 0.90)
         m6_high = round(lender_base * 0.97)
         m6_mid = round((m6_low + m6_high) / 2)
+        # A2 (2026-07-14): weight 0 — context-only. Circular by construction
+        # (90-97% of our own lowest estimate): it can only ever drag the range
+        # down and contains no independent information.
         methods.append(_method_dict(
             "Estimated lender range (modelled)", m6_low, m6_high, m6_mid,
-            "Modelled — not sourced from lender data", True
+            "Modelled — not sourced from lender data (context only)", True, weight=0
         ))
     else:
         methods.append(_method_dict("Estimated lender range (modelled)", 0, 0, 0,
-                                    "Modelled — not sourced from lender data", False))
+                                    "Modelled — not sourced from lender data (context only)", False, weight=0))
 
     # Method 6b: Rental yield implied value (rent fetched in the parallel phase
     # using the FULL postcode - the broadened district postcode breaks /rents).
@@ -2666,15 +2753,18 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             m_rent_high = round(annual_rent / 0.04)
             m_rent_low = round(annual_rent / 0.06)
             m_rent_mid = round(annual_rent / TARGET_GROSS_YIELD)
+            # A3 (2026-07-14): weight 0 — context-only. The 4-6% yield assumption
+            # spans ±33% by construction (LS29 fixture: a £127k-wide band), far
+            # too noisy to vote on the headline number.
             methods.append(_method_dict(
                 "Rental yield implied value", m_rent_low, m_rent_high, m_rent_mid,
-                f"PropertyData avg rents ({_fmt(round(monthly_rent))}/mo)", True, weight=1
+                f"PropertyData avg rents ({_fmt(round(monthly_rent))}/mo) (context only)", True, weight=0
             ))
         else:
-            methods.append(_method_dict("Rental yield implied value", 0, 0, 0, "PropertyData avg rents", False, weight=1))
+            methods.append(_method_dict("Rental yield implied value", 0, 0, 0, "PropertyData avg rents (context only)", False, weight=0))
     except Exception as e:
         print(f"Method 6b error: {e}")
-        methods.append(_method_dict("Rental yield implied value", 0, 0, 0, "PropertyData avg rents", False, weight=1))
+        methods.append(_method_dict("Rental yield implied value", 0, 0, 0, "PropertyData avg rents (context only)", False, weight=0))
 
     # Method 7: Asking-to-sold discount (ratio fetched in the parallel phase)
     try:
@@ -2712,18 +2802,24 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             bedroom_implied_value = round(bedroom_price["average"] * (1 - disc))
             m8_low = round(bedroom_price["low"] * (1 - disc))
             m8_high = round(bedroom_price["high"] * (1 - disc))
+            # A1 (2026-07-14): weight 0 — context-only. Bedroom-matched asking has
+            # no SIZE dimension: on the LS29 fixture it averaged 2-bed flats into
+            # an 83m² stone terrace and read £100k below every sourced method
+            # while double-weighted — the primary cause of the mispriced trio.
+            # The size-aware successor is Method 9 (matched sold comparables),
+            # which earns weight only once hard ±20% size-matching lands (B.1).
             methods.append(_method_dict(
                 f"Bedroom-matched local price ({bedrooms}-bed)",
                 m8_low, m8_high, bedroom_implied_value,
-                "PropertyData local asking by bedroom, less sold discount", True, weight=2
+                "PropertyData local asking by bedroom, less sold discount (context only)", True, weight=0
             ))
         else:
             methods.append(_method_dict("Bedroom-matched local price", 0, 0, 0,
-                                        "PropertyData local asking by bedroom", False, weight=2))
+                                        "PropertyData local asking by bedroom (context only)", False, weight=0))
     except Exception as e:
         print(f"Method 8 error: {e}")
         methods.append(_method_dict("Bedroom-matched local price", 0, 0, 0,
-                                    "PropertyData local asking by bedroom", False, weight=2))
+                                    "PropertyData local asking by bedroom (context only)", False, weight=0))
 
     # Method 9 (Phase B): bedroom/size/distance-matched SOLD comparables, from the
     # £/sqf feed's per-property bedrooms+coordinates+floor area. Added at weight 1
@@ -2746,18 +2842,12 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                                     "PropertyData sold £/sqf feed — bedroom/size/distance matched (scoring only)",
                                     False, weight=0))
 
-    # ── Bedroom-specific signal leads ──────────────────────────────────────────
-    # When Option D (bedroom-matched local price) is available, let it lead: the
-    # bedroom-BLIND comparable average drops to a secondary single vote so a 2-bed's
-    # matched price isn't outweighed by an average that mixes in larger homes.
+    # A1 (2026-07-14): the "bedroom signal leads" down-weight is REMOVED along
+    # with Option D's vote — with the bedroom-matched method context-only, the
+    # comparable average keeps its full weight. The bedroom-blindness that this
+    # down-weight compensated for is now handled by the robust (median) combiner
+    # below plus the thin-set guardrail. Field kept False for payload compatibility.
     comparable_downweighted_for_bedroom = False
-    if bedroom_implied_value:
-        for m in methods:
-            if m["available"] and m["name"] == "Comparable sales (HPI-adjusted)" and m["weight"] > 1:
-                m["weight"] = 1
-                comparable_downweighted_for_bedroom = True
-            if m["available"] and m["name"] == "Comparable sales (unadjusted)" and m["weight"] > 0:
-                m["weight"] = 0
 
     # ── GUARDRAIL: contain thin, bedroom-blind comparable averages ─────────────
     # A small Land Registry comparable set carries no bedroom/size info, so it can
@@ -2800,9 +2890,14 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     open_offer = target_price = walk_away = None
 
     if available_methods:
-        total_weight = sum(m["weight"] for m in available_methods)
-        weighted_low = round(sum(m["low"] * m["weight"] for m in available_methods) / total_weight)
-        weighted_high = round(sum(m["high"] * m["weight"] for m in available_methods) / total_weight)
+        # A4 (2026-07-14): WEIGHTED MEDIAN, not weighted mean. A mean is not
+        # robust to outliers — one bad method (LS29: bedroom-matched £100k low,
+        # double-weighted) hijacked the headline. With ~4 voting methods a
+        # trimmed mean IS essentially a median, so we use the honest version;
+        # consistent in spirit with the interquartile mean already applied
+        # inside avg_sold_price for the comparables themselves.
+        weighted_low = _weighted_median([(m["low"], m["weight"]) for m in available_methods])
+        weighted_high = _weighted_median([(m["high"], m["weight"]) for m in available_methods])
         weighted_midpoint = round((weighted_low + weighted_high) / 2)
         # Open with = lower third of range (always lowest of the three)
         # Target = midpoint
@@ -2842,9 +2937,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
 
     # Chart axis bounds: include all method ranges and asking price
     chart_price_min = chart_price_max = None
-    if available_methods:
-        all_lows = [m["low"] for m in available_methods]
-        all_highs = [m["high"] for m in available_methods]
+    rendered_methods = [m for m in methods if m["available"] and m.get("low")]
+    if rendered_methods:
+        all_lows = [m["low"] for m in rendered_methods]
+        all_highs = [m["high"] for m in rendered_methods]
         chart_price_min = int(min(all_lows + [asking_price]) * 0.96)
         chart_price_max = int(max(all_highs + [asking_price]) * 1.04)
 
@@ -2883,6 +2979,98 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         matched_sold_divergence_pct = round(
             (weighted_midpoint - matched_sold_value) / matched_sold_value * 100, 1)
 
+    # ── B3 (2026-07-14): asking-price guard rail at every confidence level ─────
+    # If the evidence-anchored midpoint deviates >15% from asking, don't ship it
+    # silently: downgrade confidence one tier and flag. 15% not 10% because the
+    # verdict logic calls a listing overpriced at >8%, so honest verdicts on
+    # overpriced stock legitimately produce 8-15% gaps; beyond 15% the more likely
+    # story is our data going wrong. (The ±40/50% anomaly gate remains the outer
+    # rail; the fixture's fair-verdict-with-13%-trio case is caught by C3 below.)
+    valuation_asking_divergence_pct = None
+    valuation_guard_triggered = False
+    if asking_price and weighted_midpoint:
+        valuation_asking_divergence_pct = round(
+            (weighted_midpoint - asking_price) / asking_price * 100, 1)
+        if abs(valuation_asking_divergence_pct) > 15 and not asking_anomaly:
+            valuation_guard_triggered = True
+            confidence_score = {"high": "medium", "medium": "low"}.get(
+                confidence_score, "low")
+            note = ("our estimate sits well away from the asking price — "
+                    "confidence reduced pending stronger local evidence")
+            confidence_reasons.append(note)
+            confidence_caveat = f"{confidence_caveat} {note.capitalize()}." if confidence_caveat else f"{note.capitalize()}."
+
+    # ── B2 (approved 2026-07-14): LOW confidence → asking-anchored trio ────────
+    # When our own evidence is thin, anchoring the offer trio to our valuation
+    # multiplies the error. Instead derive it from the asking price and the local
+    # asking-to-sold discount (the Frontier's own anchor), and say so plainly.
+    trio_anchor = "evidence"
+    trio_anchor_note = None
+    if (confidence_score == "low" and asking_price and available_methods):
+        anchor_pct, _fb = _frontier_anchor(
+            local_sold_discount_pct, days_on_market, local_avg_dom,
+            reduction_pct, price_reduced)
+        open_offer = round(asking_price * (1 - 1.5 * anchor_pct / 100) / 1000) * 1000
+        target_price = round(asking_price * (1 - anchor_pct / 100) / 1000) * 1000
+        walk_away = round(asking_price * (1 - 0.5 * anchor_pct / 100) / 1000) * 1000
+        open_offer = min(open_offer, target_price - 1000)
+        walk_away = max(walk_away, target_price + 1000)
+        if verdict == "overpriced":
+            walk_away = min(walk_away, asking_price - 1000)
+        recommended_offer = open_offer
+        trio_anchor = "asking"
+        trio_anchor_note = (
+            "Because the local data is thin, these numbers are anchored to the "
+            "asking price and typical local discounts — not to our valuation. "
+            "Treat them as a negotiating frame, not a value estimate.")
+
+    # ── C1 (2026-07-14): the trio must sit inside the Offer Frontier ───────────
+    # The report promises the Frontier never goes below the valuation floor or
+    # above walk-away; the reverse must also hold — the opening offer can never
+    # sit BELOW the Frontier's own deepest (Aggressive) position, which the
+    # Frontier itself describes as "beyond what typically clears here".
+    open_offer_frontier_clamped = False
+    if open_offer and asking_price and trio_anchor == "evidence":
+        anchor_pct, _fb = _frontier_anchor(
+            local_sold_discount_pct, days_on_market, local_avg_dom,
+            reduction_pct, price_reduced)
+        deep_pct = min(2.0 * anchor_pct * (1.0625 if _fb else 1.0), _FRONTIER_DEEP_CAP_PCT)
+        frontier_deep_price = asking_price - round(asking_price * deep_pct / 100 / 500) * 500
+        if weighted_low:
+            frontier_deep_price = max(min(frontier_deep_price, walk_away or frontier_deep_price),
+                                      min(weighted_low, walk_away or weighted_low))
+        if open_offer < frontier_deep_price:
+            moved_pct = (frontier_deep_price - open_offer) / open_offer * 100
+            open_offer = round(frontier_deep_price / 1000) * 1000
+            open_offer = min(open_offer, (target_price or open_offer + 1000) - 1000)
+            recommended_offer = open_offer
+            if moved_pct > 2:
+                open_offer_frontier_clamped = True
+                confidence_reasons.append(
+                    "our evidence-based opening position sat below what typically "
+                    "clears in this market — it was raised to the frontier floor")
+
+    # ── C3 (2026-07-14): verdict and recommendation must agree ─────────────────
+    # The verdict derives from asking-vs-comparable-average; the trio from the
+    # weighted range. When the verdict says "fair" but the target implies a
+    # >10% discount (the LS29 case: "fairly priced" + a 13%-below trio), recompute
+    # the verdict from the final midpoint so one story ships, and flag it.
+    verdict_reconciled = False
+    if (verdict == "fair" and asking_price and target_price
+            and abs(asking_price - target_price) / asking_price > 0.10
+            and weighted_midpoint):
+        mid_diff_pct = round(((asking_price - weighted_midpoint) / weighted_midpoint) * 100, 1)
+        verdict = "overpriced" if mid_diff_pct > 8 else ("value" if mid_diff_pct < -5 else "fair")
+        sold_diff_pct = mid_diff_pct
+        verdict_reconciled = True
+
+    # Recompute the open-offer context percentages: the guards above (B2 anchor,
+    # C1 clamp) may have moved the trio after the first computation.
+    if open_offer and asking_price:
+        open_offer_vs_asking_pct = round(((asking_price - open_offer) / asking_price) * 100, 1)
+    if open_offer and local_avg_sold:
+        open_offer_vs_comps_pct = round(((local_avg_sold - open_offer) / local_avg_sold) * 100, 1)
+
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
@@ -2909,6 +3097,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # kept for the QC layer; never fed into the valuation maths.
         "floor_area_sqm_raw": floor_area_sqm_raw,
         "comparable_confidence": comparable_confidence,
+        # 2026-07-14 guards: B2 trio anchor basis (+ buyer-facing note when
+        # asking-anchored), B3 divergence guard, C1 frontier clamp, C3 verdict
+        # reconciliation — all surfaced for the report UI and QC layer.
+        "trio_anchor": trio_anchor,
+        "trio_anchor_note": trio_anchor_note,
+        "valuation_asking_divergence_pct": valuation_asking_divergence_pct,
+        "valuation_guard_triggered": valuation_guard_triggered,
+        "open_offer_frontier_clamped": open_offer_frontier_clamped,
+        "verdict_reconciled": verdict_reconciled,
         # Cycle 1: published confidence model — high/medium/low + plain-English
         # caveat, plus the comparable tier and any detected special sale type.
         "confidence_score": confidence_score,
@@ -3314,6 +3511,19 @@ _FRONTIER_DEEP_CAP_PCT = 13.0
 _FRONTIER_NATIONAL_DISCOUNT = 4.5  # same national fallback as method 7
 
 
+def _frontier_anchor(local_discount_pct, days, avg_dom, reduction_pct, price_reduced):
+    """The Frontier's anchor discount A (in %), shared by the render-time
+    _offer_frontier and the build-time guards (B2 asking-anchored trio, C1
+    trio-inside-frontier clamp) so the two can never drift apart.
+    Returns (anchor_pct, is_fallback)."""
+    is_fallback = local_discount_pct is None
+    d_bar = _FRONTIER_NATIONAL_DISCOUNT if is_fallback else local_discount_pct
+    m = (min(max(0.5 + 0.5 * (days / avg_dom), 0.75), 1.75)
+         if (days and avg_dom) else 1.0)
+    b = (1.0 if (reduction_pct or 0) >= 5 else (0.5 if price_reduced else 0.0))
+    return min(max(d_bar * m + b, 1.0), 12.0), is_fallback
+
+
 def _offer_frontier(report, profile=None):
     """Build the offer-positioning frontier from values already on the stored
     report. Returns None when the report lacks the essentials (asking price /
@@ -3337,15 +3547,11 @@ def _offer_frontier(report, profile=None):
     floor = report.get("weighted_low")
 
     d_local = report.get("local_sold_discount_pct")
-    is_fallback = d_local is None
-    d_bar = _FRONTIER_NATIONAL_DISCOUNT if is_fallback else d_local
-
     days, avg_dom = report.get("days_on_market"), report.get("local_avg_dom")
     dom_shifted = bool(days and avg_dom)
-    m = min(max(0.5 + 0.5 * (days / avg_dom), 0.75), 1.75) if dom_shifted else 1.0
-    b = (1.0 if (report.get("reduction_pct") or 0) >= 5
-         else (0.5 if report.get("price_reduced") else 0.0))
-    anchor = min(max(d_bar * m + b, 1.0), 12.0)
+    anchor, is_fallback = _frontier_anchor(
+        d_local, days, avg_dom,
+        report.get("reduction_pct"), report.get("price_reduced"))
 
     bands = {
         "secure": (0.5 * anchor, anchor),
