@@ -3596,8 +3596,7 @@ def _offer_frontier(report, profile=None):
             "collapsed": collapsed, "risk": _FRONTIER_RISK[key],
         })
 
-    emphasis = {"several": "aggressive", "this_one": "balanced",
-                "the_one": "secure"}.get((profile or {}).get("attachment"), "balanced")
+    emphasis, _ = _profile_emphasis(profile)
     return {
         "anchor_pct": round(anchor, 1),
         "is_fallback": is_fallback,
@@ -3606,6 +3605,139 @@ def _offer_frontier(report, profile=None):
         "positions": positions,
         "emphasis": emphasis,
         "walk_away_formatted": _fmt(walk),
+    }
+
+
+# ── C2a (2026-07-14): buyer answers drive the report ─────────────────────────
+# The three post-unlock answers stop being cosmetic copy and set the buyer's
+# recommended Frontier position, position the DISPLAYED opening offer inside
+# that band, and call out explicitly where the answers fight the evidence.
+# Render-time only: the stored trio is never modified, so every personalised
+# report is auditable against its data-only numbers and reversible per report.
+# Hard guardrails retained: the Frontier bands are already floored at
+# weighted_low and capped at walk_away, so the personalised open inherits both.
+
+# Each answer pushes the recommended stance: +1 toward Aggressive (buyer can
+# afford rejection), -1 toward Secure (buyer can't), 0 neutral. The rationale
+# strings are shown to the buyer verbatim as "because you said…" drivers.
+_PROFILE_STANCE = {
+    "attachment": {
+        "several": (1, "you're comparing several properties"),
+        "this_one": (0, "you want this one at the right price"),
+        "the_one": (-1, "you don't want to lose this one"),
+    },
+    "timeline": {
+        "flexible": (1, "your timeline is flexible"),
+        "one_three": (0, "your timeline is standard"),
+        "fast": (-1, "you want to complete fast (repeated rejections cost you time)"),
+    },
+    "position": {
+        "cash": (1, "you're a cash buyer"),
+        "investor": (1, "you're buying as an investor"),
+        "first_time": (0, "you're chain-free"),
+        "sold_stc": (0, "you're proceedable"),
+        "need_to_sell": (-1, "your offer isn't fully proceedable yet (it needs to be more attractive to compete)"),
+    },
+}
+
+
+def _profile_emphasis(profile):
+    """Combine all three buyer answers into the recommended Frontier position.
+    Returns (emphasis, drivers): net push >= +1 -> aggressive, <= -1 -> secure,
+    else balanced. Drivers lists only the answers that pushed, each with its
+    direction, so the report can show the buyer exactly which answer moved
+    which recommendation. No profile -> balanced with no drivers (the
+    pre-questionnaire default)."""
+    drivers = []
+    score = 0
+    for field in ("attachment", "position", "timeline"):
+        push, said = _PROFILE_STANCE[field].get((profile or {}).get(field) or "", (None, None))
+        if push is None:
+            continue
+        score += push
+        if push:
+            drivers.append({"field": field, "push": push, "said": said})
+    emphasis = "aggressive" if score >= 1 else ("secure" if score <= -1 else "balanced")
+    return emphasis, drivers
+
+
+def _personalise_offer(report, profile, frontier):
+    """Render-time personalisation payload (C2a). Places the displayed opening
+    offer inside the buyer's recommended Frontier band (clamped, so it only
+    moves when the answers call for a different depth than the data-only open),
+    and lists the conflicts between what the buyer said and what the evidence
+    shows. Target and walk-away are NEVER touched — the walk-away is the line
+    the data can defend, whoever the buyer is."""
+    if not profile or not frontier:
+        return None
+    emphasis, drivers = _profile_emphasis(profile)
+    pos = next((p for p in frontier["positions"] if p["key"] == emphasis), None)
+    base_open = report.get("open_offer") or report.get("recommended_offer")
+    if not pos or not base_open:
+        return None
+
+    personal_open = int(min(max(base_open, pos["price_lo"]), pos["price_hi"]))
+    moved = personal_open != base_open
+    asking = report.get("asking_price")
+    local_avg_sold = report.get("local_avg_sold")
+    vs_asking_pct = (round((asking - personal_open) / asking * 100, 1)
+                     if asking else None)
+    vs_comps_pct = (round((local_avg_sold - personal_open) / local_avg_sold * 100, 1)
+                    if local_avg_sold else None)
+
+    # Where the answers and the evidence disagree, say so explicitly — the
+    # recommendation still follows the buyer's answers, but never silently.
+    signal = report.get("seller_signal_score")
+    walk_fmt = frontier.get("walk_away_formatted")
+    conflicts = []
+    if emphasis == "aggressive" and signal == "weak":
+        conflicts.append(
+            "Your answers point to the Aggressive position, but the seller-motivation "
+            "evidence shows little pressure on this seller. An aggressive opening here "
+            "carries a real chance of flat rejection — play it only if you can "
+            "genuinely walk away.")
+    if emphasis == "secure" and signal == "strong":
+        conflicts.append(
+            "Your answers point to the Secure position, but the evidence shows a "
+            "seller under real pressure. Protecting the purchase here likely means "
+            "leaving money on the table — consider opening one position deeper than "
+            "your instinct says.")
+    if profile.get("timeline") == "fast" and signal == "weak":
+        conflicts.append(
+            "You want to move fast, but nothing suggests this seller does. Your speed "
+            "is worth less to an unpressured seller — don't expect it to buy much off "
+            "the price here.")
+    if profile.get("attachment") == "the_one" and report.get("verdict") == "overpriced":
+        conflicts.append(
+            "You've told us this is THE one — and the evidence says it's asking above "
+            "what the market supports. That combination is exactly how buyers overpay. "
+            f"Your walk-away of {walk_fmt} does not move, however much you want it.")
+
+    if drivers:
+        saids = [d["said"] for d in drivers]
+        joined = saids[0] if len(saids) == 1 else ", ".join(saids[:-1]) + " and " + saids[-1]
+        stance_reason = (f"Because {joined}, your answers point to the "
+                         f"{pos['name']} position on the Offer Frontier below.")
+    else:
+        stance_reason = ("Your answers balance out between leverage and urgency, so we've "
+                         "kept you on the Balanced position — in line with what actually "
+                         "clears in this market.")
+
+    return {
+        "emphasis": emphasis,
+        "band_name": pos["name"],
+        "band_price_label": pos["price_label"],
+        "personal_open": personal_open,
+        "personal_open_formatted": _fmt(personal_open),
+        "base_open": base_open,
+        "base_open_formatted": _fmt(base_open),
+        "moved": moved,
+        "direction": ("deeper" if personal_open < base_open else "higher") if moved else None,
+        "vs_asking_pct": vs_asking_pct,
+        "vs_comps_pct": vs_comps_pct,
+        "drivers": drivers,
+        "stance_reason": stance_reason,
+        "conflicts": conflicts,
     }
 
 
@@ -3739,8 +3871,12 @@ def view_report(report_id):
     # render time (works for previously stored paid reports too). The stored
     # numbers themselves are passed through untouched.
     frontier = _offer_frontier(report, profile) if paid else None
+    # C2a: buyer answers drive the displayed numbers/copy — render-time only,
+    # stored trio untouched (auditable and reversible per report).
+    personalisation = _personalise_offer(report, profile, frontier) if paid else None
     return render_template(template, report_url=report_url, report_id=report_id,
                            buyer_profile=profile, offer_frontier=frontier,
+                           personalisation=personalisation,
                            **report)
 
 
