@@ -216,6 +216,14 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .signal-summary { font-size: 14px; color: var(--ink-mid); line-height: 1.6; }
 .signal-note { font-size: 12.5px; color: var(--ink-light); background: var(--sand); border: 1px dashed var(--sand-border); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; line-height: 1.5; }
 
+/* PERSONALISATION (C2a: buyer answers drive the numbers) */
+.personal-line { margin-top: 12px; padding: 10px 14px; background: rgba(255,255,255,0.14); border: 1px dashed rgba(255,255,255,0.35); border-radius: 8px; font-size: 12.5px; color: rgba(255,255,255,0.92); line-height: 1.55; text-align: left; }
+.personal-line strong { color: white; }
+.approach-conflicts { margin-top: 14px; background: var(--amber-light); border: 1.5px solid var(--amber-border); border-radius: 10px; padding: 12px 16px; }
+.approach-conflict-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); margin-bottom: 8px; }
+.approach-conflict { font-size: 13px; color: var(--ink-mid); line-height: 1.6; }
+.approach-conflict + .approach-conflict { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--amber-border); }
+
 /* NEGOTIATION APPROACH (buyer profile) */
 .approach-card { background: var(--white); border: 1.5px solid var(--teal-border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
 .approach-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin-bottom: 10px; }
@@ -373,17 +381,22 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     <!-- B2: LOW-confidence trio is asking-anchored — the basis must be transparent -->
     <div class="trio-anchor-note">⚠️ {{ trio_anchor_note }}</div>
     {% endif %}
-    <div class="offer-eyebrow">Recommended opening offer</div>
-    <div class="offer-amount">{{ recommended_offer_formatted }}</div>
+    {# C2a: when the buyer's answers move the opening depth, the headline and
+       trio show the personalised figure; the data-only figure stays visible
+       below the trio so the adjustment is always auditable. #}
+    {% set p13n_moved = personalisation is defined and personalisation and personalisation.moved %}
+    {% set shown_open = personalisation.personal_open if p13n_moved else recommended_offer %}
+    <div class="offer-eyebrow">Recommended opening offer{% if p13n_moved %} — tuned to your answers{% endif %}</div>
+    <div class="offer-amount">{{ personalisation.personal_open_formatted if p13n_moved else recommended_offer_formatted }}</div>
     <div class="offer-sub">
       Asking price is {{ asking_price_formatted }} —
-      {% set gap_pct = ((asking_price - recommended_offer) / asking_price * 100) | round(1) %}
+      {% set gap_pct = ((asking_price - shown_open) / asking_price * 100) | round(1) %}
       your opening offer is {{ gap_pct }}% below asking
     </div>
     <div class="offer-trio">
       <div class="offer-trio-item">
         <div class="offer-trio-label">Open with</div>
-        <div class="offer-trio-value">{{ open_offer_formatted or recommended_offer_formatted }}</div>
+        <div class="offer-trio-value">{{ personalisation.personal_open_formatted if p13n_moved else (open_offer_formatted or recommended_offer_formatted) }}</div>
       </div>
       <div class="offer-trio-item">
         <div class="offer-trio-label">Target price</div>
@@ -394,13 +407,24 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         <div class="offer-trio-value">{{ walk_away_formatted or weighted_high_formatted }}</div>
       </div>
     </div>
+    {% if personalisation is defined and personalisation %}
+    <div class="personal-line">
+      {% if personalisation.moved %}
+      ✎ Your answers moved this: the data-only opening is <strong>{{ personalisation.base_open_formatted }}</strong>; because your answers point to the <strong>{{ personalisation.band_name }}</strong> position ({{ personalisation.band_price_label }}), we've set your opening {{ personalisation.direction }} at <strong>{{ personalisation.personal_open_formatted }}</strong>. Target and walk-away never move.
+      {% else %}
+      ✓ Your answers point to the <strong>{{ personalisation.band_name }}</strong> position — the data-derived opening already sits inside it, so nothing moved.
+      {% endif %}
+    </div>
+    {% endif %}
     <div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.75);">These three numbers are the value lens — where to land inside what the home is worth. How hard this seller's position lets you push is the pressure lens: see "One offer, two lenses" below.</div>
-    {% if open_offer_vs_asking_pct is not none %}
+    {% set shown_vs_asking = personalisation.vs_asking_pct if p13n_moved else open_offer_vs_asking_pct %}
+    {% set shown_vs_comps = personalisation.vs_comps_pct if p13n_moved else open_offer_vs_comps_pct %}
+    {% if shown_vs_asking is not none %}
     <div style="margin-top:14px;padding:12px 16px;background:rgba(255,255,255,0.1);border-radius:8px;font-size:13px;color:rgba(255,255,255,0.9);line-height:1.6;">
-      Your opening offer is <strong style="color:white;">{{ open_offer_vs_asking_pct }}% below the asking price</strong>
-      {% if open_offer_vs_comps_pct is not none and open_offer_vs_comps_pct > 0 %}
-      — but only <strong style="color:white;">{{ open_offer_vs_comps_pct }}% below what comparable homes have actually sold for</strong>. That is a credible, evidence-backed position. Do not be put off by the agent's reaction.
-      {% elif open_offer_vs_comps_pct is not none and open_offer_vs_comps_pct <= 0 %}
+      Your opening offer is <strong style="color:white;">{{ shown_vs_asking }}% below the asking price</strong>
+      {% if shown_vs_comps is not none and shown_vs_comps > 0 %}
+      — but only <strong style="color:white;">{{ shown_vs_comps }}% below what comparable homes have actually sold for</strong>. That is a credible, evidence-backed position. Do not be put off by the agent's reaction.
+      {% elif shown_vs_comps is not none and shown_vs_comps <= 0 %}
       — and comparable sales support this number. You are opening at or above what similar homes have sold for, which is a strong position.
       {% else %}
       — use the comparable evidence below to justify this position in the room.
@@ -1026,14 +1050,19 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <li><strong>Flexibility is an underrated card.</strong> Ask the agent what completion timing suits the seller, then offer it — matched timing can be worth as much as a small price concession.</li>
       {% endif %}
     </ul>
-    {% if offer_frontier is defined and offer_frontier and buyer_profile.attachment %}
-    {% if offer_frontier.emphasis == 'aggressive' %}
-    <div class="approach-stance">Because you're comparing several options, we've highlighted the <strong>Aggressive</strong> position on your offer frontier below — you can afford to test this seller. Your walk-away never rises, whatever position you play.</div>
-    {% elif offer_frontier.emphasis == 'secure' %}
-    <div class="approach-stance">Because this is the one you don't want to lose, we've highlighted the <strong>Secure</strong> position on your offer frontier below — protect the purchase, but never above your walk-away.</div>
-    {% else %}
-    <div class="approach-stance">We've highlighted the <strong>Balanced</strong> position on your offer frontier below — in line with what actually clears in this market.</div>
+    {% if personalisation is defined and personalisation %}
+    {% if personalisation.conflicts %}
+    <!-- C2a: explicit callout where the buyer's answers fight the evidence -->
+    <div class="approach-conflicts">
+      <div class="approach-conflict-title">⚠️ Where your answers and the evidence disagree</div>
+      {% for c in personalisation.conflicts %}
+      <div class="approach-conflict">{{ c }}</div>
+      {% endfor %}
+    </div>
     {% endif %}
+    <div class="approach-stance">{{ personalisation.stance_reason }}
+      {% if personalisation.moved %}That's why your opening offer at the top reads <strong>{{ personalisation.personal_open_formatted }}</strong> rather than the data-only <strong>{{ personalisation.base_open_formatted }}</strong>.{% endif %}
+      Your walk-away never rises, whatever position you play.</div>
     {% endif %}
   </div>
   {% endif %}
