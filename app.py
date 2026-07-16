@@ -1557,13 +1557,20 @@ SELECT ?address ?amount ?date WHERE {{
 ORDER BY DESC(?date)
 LIMIT 50
 """
+        # FIX 2026-07-16 (Wemborough HA7 2ED): the SPARQL API lives at
+        # /landregistry/query — the old /sparql path serves an HTML error page,
+        # so this "primary" source silently returned [] on EVERY report ever
+        # built: last-sale history was stale (121 Wemborough's two 2025 sales
+        # missing) and the address picker was missing properties (no. 95).
         resp = requests.get(
-            "https://landregistry.data.gov.uk/sparql",
+            "https://landregistry.data.gov.uk/landregistry/query",
             params={"query": query, "output": "json"},
             timeout=10,
             headers={"Accept": "application/sparql-results+json"},
         )
         if resp.status_code != 200:
+            print(f"LAND REGISTRY DIRECT FAILED: HTTP {resp.status_code} for {pc} — "
+                  f"falling back to PropertyData radius data (incomplete history)")
             return []
         bindings = resp.json().get("results", {}).get("bindings", [])
         results = []
@@ -2700,17 +2707,23 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                 m4_low = round(min(local_avg_sold, price_12m_ago) * 0.98)
                 m4_high = round(max(local_avg_sold, price_12m_ago) * 1.02)
                 m4_mid = round((m4_low + m4_high) / 2)
+                # 2026-07-16 (Wemborough HA7 2ED): weight 0 — context-only. This
+                # method IS the comparable average, HPI-shifted 12 months: zero
+                # independent information. Letting it vote gave the size-blind
+                # comparable signal up to FOUR correlated votes (unadjusted x1,
+                # HPI-adjusted x2, trend x1), which outvoted the size-aware
+                # methods 2-2 on the 275m² Wemborough semi (£680k vs £1.25M ask).
                 methods.append(_method_dict(
                     "Area price trend", m4_low, m4_high, m4_mid,
-                    "ONS House Price Index", True
+                    "ONS House Price Index (context only)", True, weight=0
                 ))
             else:
-                methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index", False))
+                methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index (context only)", False, weight=0))
         except Exception as e:
             print(f"Method 4 error: {e}")
-            methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index", False))
+            methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index (context only)", False, weight=0))
     else:
-        methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index", False))
+        methods.append(_method_dict("Area price trend", 0, 0, 0, "ONS House Price Index (context only)", False, weight=0))
 
     # Method 5: Online estimate (AVM, fetched in the parallel phase, paid only)
     if avm:
@@ -2879,6 +2892,27 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                                          "Comparable sales (unadjusted)"):
                             m["weight"] = 0
 
+    # ── GUARDRAIL (2026-07-16, Wemborough HA7 2ED): size-blind comps on an ─────
+    # atypically-sized subject. When we KNOW the subject's floor area, the
+    # headline comparable set is NOT size/bedroom-matched, and the £/m² method
+    # (the only size-aware voter) disagrees with the comparable average by >25%,
+    # the comp set is not like-for-like for this house — typically a heavily
+    # extended home (275m² five-bed) valued against standard local stock. Drop
+    # the size-blind comparable methods from the vote (mirrors the thin-set
+    # guardrail above) and let the size-aware and asking-anchored methods lead.
+    size_mismatch_excluded = False
+    if (not comparable_outlier_excluded
+            and floor_area_sqm and psqm_implied_value and local_avg_sold
+            and comparable_confidence not in (
+                "size_matched", "bedroom_matched",
+                "bedroom_distance", "bedroom_distance_wide")
+            and abs(psqm_implied_value - local_avg_sold) / local_avg_sold > 0.25):
+        size_mismatch_excluded = True
+        for m in methods:
+            if m["name"] in ("Comparable sales (HPI-adjusted)",
+                             "Comparable sales (unadjusted)"):
+                m["weight"] = 0
+
     # ── FOOTBALL FIELD WEIGHTED RANGE ─────────────────────────────────────────
 
     available_methods = [m for m in methods if m["available"] and m["weight"] > 0]
@@ -2999,6 +3033,18 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                     "confidence reduced pending stronger local evidence")
             confidence_reasons.append(note)
             confidence_caveat = f"{confidence_caveat} {note.capitalize()}." if confidence_caveat else f"{note.capitalize()}."
+
+    # Size-mismatch guardrail fired: the published number leans on the £/m² and
+    # asking-anchored methods, not the local comparable average. Cap confidence
+    # at medium and tell the buyer why in plain language.
+    if size_mismatch_excluded:
+        if confidence_score == "high":
+            confidence_score = "medium"
+        note = ("this home's floor area is well outside the local norm, so the "
+                "usual comparable-sales average was set aside in favour of "
+                "size-based £/m² evidence")
+        confidence_reasons.append(note)
+        confidence_caveat = f"{confidence_caveat} {note.capitalize()}." if confidence_caveat else f"{note.capitalize()}."
 
     # ── B2 (approved 2026-07-14): LOW confidence → asking-anchored trio ────────
     # When our own evidence is thin, anchoring the offer trio to our valuation
@@ -3126,6 +3172,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # Guardrail: true when a thin, bedroom-blind comparable outlier was dropped
         # from the weighted range to avoid a misleading headline valuation.
         "comparable_outlier_excluded": comparable_outlier_excluded,
+        "size_mismatch_excluded": size_mismatch_excluded,
         # Option D: bedroom-specific local price signal.
         "bedroom_local_avg_asking": bedroom_local_avg_asking,
         "bedroom_implied_value": bedroom_implied_value,

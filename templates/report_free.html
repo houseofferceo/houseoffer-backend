@@ -391,7 +391,11 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
   <!-- A: VALUATION + HOOK -->
   <div class="valuation-card">
     <div class="val-eyebrow">Our valuation</div>
-    {% if weighted_midpoint %}
+    {# 2026-07-16 (Wemborough HA7 2ED): a LOW-confidence or anomaly-flagged
+       estimate must never lead with a precise headline figure or a "£X in your
+       pocket" claim — the engine itself has said the number may be wrong. #}
+    {% set uncertain = asking_anomaly or confidence_score == 'low' %}
+    {% if weighted_midpoint and not uncertain %}
     <div class="val-main">
       <div class="val-our">
         <div class="val-label">Estimated market value</div>
@@ -422,6 +426,18 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
         {% else %}
           Don't pay a <span class="num">penny more</span> than you need to. Know your exact ceiling →
         {% endif %}
+      </div>
+    </div>
+    {% elif weighted_midpoint and uncertain %}
+    <div class="val-main">
+      <div class="val-our">
+        <div class="val-label">Indicative range only</div>
+        <div class="val-range" style="font-size:22px; font-weight:700; color:var(--ink); margin-top:4px;">{{ weighted_low_formatted }} – {{ weighted_high_formatted }}</div>
+        <div style="font-size:13px; color:var(--ink-mid); line-height:1.6; margin-top:8px;">The sold-price evidence we found doesn't line up cleanly with this listing, so we're not giving you a single headline figure. Confirm the address below — a wrong address match is the most common cause — and treat this range as a starting point, not a verdict.</div>
+      </div>
+      <div class="val-asking">
+        <div class="val-label">Asking price</div>
+        <div class="val-asking-number">{{ asking_price_formatted }}</div>
       </div>
     </div>
     {% else %}
