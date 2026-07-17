@@ -3310,7 +3310,15 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
                 property_type=report.get("property_type"),
                 postcode=report.get("postcode", ""),
                 floor_area_sqm=report.get("floor_area_sqm"),
-                address=address or stored.get("selected_address"),
+                # 2026-07-17 (Wemborough validation): unlock rebuilds ran with
+                # address=None whenever the buyer hadn't used the picker, so the
+                # PAID rebuild silently dropped the last-sale anchor, the F1/F2
+                # seller-motivation signal and the EPC/£-per-sqf address matches
+                # the free build already had. Fall back to the address the
+                # original build resolved (buyer-confirmed on the G1 page).
+                # An explicit picker choice still wins.
+                address=(address or stored.get("selected_address")
+                         or report.get("resolved_address") or report.get("address")),
                 scraper_days_on_market=report.get("days_on_market"),
                 price_reduced=report.get("price_reduced", False),
                 original_asking_price=report.get("original_asking_price"),
