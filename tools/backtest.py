@@ -190,6 +190,38 @@ def floor_area_for(sale):
     return None
 
 
+def postcode_history(pc):
+    """Full sale history for one postcode (all years) — mirrors production
+    _fetch_land_registry_direct, which find_last_sale uses. Cached."""
+    q = f"""PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
+PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
+SELECT ?paon ?saon ?street ?amount ?date WHERE {{
+  ?addr lrcommon:postcode "{pc}" .
+  ?transx lrppi:propertyAddress ?addr ;
+          lrppi:pricePaid ?amount ;
+          lrppi:transactionDate ?date .
+  OPTIONAL {{ ?addr lrcommon:paon ?paon }}
+  OPTIONAL {{ ?addr lrcommon:saon ?saon }}
+  OPTIONAL {{ ?addr lrcommon:street ?street }}
+}} ORDER BY DESC(?date) LIMIT 50"""
+
+    def fetch():
+        url = SPARQL + "?" + urllib.parse.urlencode({"query": q})
+        return _http_json(url, {"Accept": "application/sparql-results+json"})
+
+    rows = _cached(f"pchist:{pc}", fetch)["results"]["bindings"]
+    out = []
+    for b in rows:
+        v = lambda k: b.get(k, {}).get("value")  # noqa: E731
+        if not v("amount"):
+            continue
+        out.append({"pc": pc, "paon": (v("paon") or "").upper(),
+                    "saon": (v("saon") or "").upper(),
+                    "street": (v("street") or "").upper(),
+                    "price": int(float(v("amount"))), "date": (v("date") or "")[:10]})
+    return out
+
+
 def hpi_ratio(region, from_month, to_month):
     a, b = get_hpi_index(region, from_month), get_hpi_index(region, to_month)
     return (b / a) if a and b else None
@@ -242,8 +274,11 @@ def value_target(target, sales, psqm_points):
         methods.append([lo, hi, 2, "comps_hpi"])
     comp_mid = iq_bounds_mean(adj)[2] if adj else None
 
-    # last sale: the property's own most recent prior transaction
-    prior = sorted((s for s in sales if addr_key(s) == t_key and s["date"] < target["date"]),
+    # last sale: the property's own most recent prior transaction, from the
+    # postcode's FULL history (production find_last_sale looks back decades,
+    # not just the harness's 2023+ comp window)
+    prior = sorted((s for s in postcode_history(target["pc"])
+                    if addr_key(s) == t_key and s["date"] < target["date"]),
                    key=lambda s: s["date"])
     last_sale = prior[-1] if prior else None
     if last_sale:
@@ -311,6 +346,10 @@ def value_target(target, sales, psqm_points):
             note = "thin data"
         elif "size_mismatch" in guards or (area is None and abs(err) > 20):
             note = "size-blind comps"
+        elif comp_mid and target["price"] < 0.45 * comp_mid and est > target["price"] * 2:
+            note = ("non-standard transaction? actual far below the local floor — "
+                    "check lease/tenure/share (production's asking-anomaly gate "
+                    "would flag this listing)")
         else:
             note = "genuine anomaly — review"
 
