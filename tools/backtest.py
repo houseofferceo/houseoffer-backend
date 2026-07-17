@@ -338,7 +338,11 @@ def value_target(target, sales, psqm_points):
     # worst-row auto-classification per the brief
     note = ""
     if abs(err) > 15:
-        if last_sale and (int(target["date"][:4]) * 12 + int(target["date"][5:7])) - \
+        if comp_mid and target["price"] < 0.45 * comp_mid and est > target["price"] * 2:
+            note = ("non-standard transaction? actual far below the local floor — "
+                    "check lease/tenure/share (production's asking-anomaly gate "
+                    "would flag this listing)")
+        elif last_sale and (int(target["date"][:4]) * 12 + int(target["date"][5:7])) - \
                 (int(last_sale["date"][:4]) * 12 + int(last_sale["date"][5:7])) <= 24 \
                 and target["price"] > last_sale["price"] * 1.25:
             note = "renovation flip (resold >25% up within 24mo)"
@@ -346,10 +350,6 @@ def value_target(target, sales, psqm_points):
             note = "thin data"
         elif "size_mismatch" in guards or (area is None and abs(err) > 20):
             note = "size-blind comps"
-        elif comp_mid and target["price"] < 0.45 * comp_mid and est > target["price"] * 2:
-            note = ("non-standard transaction? actual far below the local floor — "
-                    "check lease/tenure/share (production's asking-anomaly gate "
-                    "would flag this listing)")
         else:
             note = "genuine anomaly — review"
 
