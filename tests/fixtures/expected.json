@@ -1,0 +1,24 @@
+{
+  "ls29_7ex": {
+    "address": "9 Fenton Street, Burley In Wharfedale, LS29 7EX",
+    "type": "terraced", "bedrooms": 2, "asking_price": 335000,
+    "midpoint_band": [320000, 330000],
+    "notes": "Stored-payload maths band. On a LIVE rebuild the engine will now also see the property's own 15 Jan 2026 sale at 330,000 (the completion of this very listing) — the last-sale anchor and F1/F2 resale signal will read it as a <12-month resale, so live-rebuild expectations differ from the stored payload and need re-baselining after the LR endpoint fix.",
+    "ground_truth_sale": {"date": "2026-01-15", "price": 330000}
+  },
+  "ha7_2ed": {
+    "address": "121/95 Wemborough Road, Stanmore, HA7 2ED",
+    "type": "semi-detached", "bedrooms": 5, "floor_area_sqm": 275, "asking_price": 1250000,
+    "incident": {"published_midpoint": 680195, "published_range": [641520, 718870], "confidence": "low"},
+    "expected_after_fix": {
+      "last_sale": {"date": "2025-09-30", "price": 875000, "weight": 3},
+      "size_mismatch_excluded": true,
+      "midpoint_band": [900000, 1050000],
+      "b3_divergence_guard": "fires vs 1.25M asking",
+      "free_report": "indicative-range presentation, no pocket claim",
+      "picker_contains": ["89", "91", "93", "95", "99", "101", "121", "135"],
+      "seller_motivation": "bought 875k Sep-2025, re-listed +43% within 12 months -> F1 strong signal"
+    },
+    "notes": "Full-build expectations require a live build (PropertyData credits) and are validated deliberately, not in CI. The zero-credit wiring checks in test_fixtures.py cover the LR endpoint, last-sale selection and picker contents."
+  }
+}
