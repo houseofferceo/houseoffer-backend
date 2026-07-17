@@ -3046,29 +3046,82 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         confidence_reasons.append(note)
         confidence_caveat = f"{confidence_caveat} {note.capitalize()}." if confidence_caveat else f"{note.capitalize()}."
 
-    # ── B2 (approved 2026-07-14): LOW confidence → asking-anchored trio ────────
-    # When our own evidence is thin, anchoring the offer trio to our valuation
-    # multiplies the error. Instead derive it from the asking price and the local
-    # asking-to-sold discount (the Frontier's own anchor), and say so plainly.
+    # ── ASKING-ANCHOR v1 (CEO-approved 2026-07-17, supersedes B2) ──────────────
+    # The published trio is a NEGOTIATING POSITION anchored to the asking price
+    # via the market's negotiability signals (the Frontier anchor: local
+    # asking-to-sold discount, time on market, reduction history), with the
+    # evidence midpoint pulling the anchor in proportion to confidence.
+    # LOW confidence changes the composition (pure asking-anchor), not whether
+    # the buyer gets a trio. Two overrides keep us honest: the asking-anomaly
+    # gate, and the overpricing guardrail — when the evidence says the asking
+    # price itself is materially inflated, we do NOT silently anchor to it.
     trio_anchor = "evidence"
     trio_anchor_note = None
-    if (confidence_score == "low" and asking_price and available_methods):
-        anchor_pct, _fb = _frontier_anchor(
-            local_sold_discount_pct, days_on_market, local_avg_dom,
-            reduction_pct, price_reduced)
-        open_offer = round(asking_price * (1 - 1.5 * anchor_pct / 100) / 1000) * 1000
-        target_price = round(asking_price * (1 - anchor_pct / 100) / 1000) * 1000
-        walk_away = round(asking_price * (1 - 0.5 * anchor_pct / 100) / 1000) * 1000
-        open_offer = min(open_offer, target_price - 1000)
-        walk_away = max(walk_away, target_price + 1000)
-        if verdict == "overpriced":
-            walk_away = min(walk_away, asking_price - 1000)
-        recommended_offer = open_offer
-        trio_anchor = "asking"
-        trio_anchor_note = (
-            "Because the local data is thin, these numbers are anchored to the "
-            "asking price and typical local discounts — not to our valuation. "
-            "Treat them as a negotiating frame, not a value estimate.")
+    overpricing_flag = False
+    overpricing_flag_level = None
+    if asking_price and available_methods and open_offer:
+        _cfg = ASKING_ANCHOR_V1
+        _div_below_pct = ((asking_price - weighted_midpoint) / weighted_midpoint * 100
+                          if weighted_midpoint else 0.0)
+        _op_threshold = (_cfg["overpricing_flag_pct"]["low"] if confidence_score == "low"
+                         else _cfg["overpricing_flag_pct"]["medium_plus"])
+        if asking_anomaly:
+            # Anomaly override (retained in all cases): the asking price itself
+            # is suspect, so the evidence-led trio stands and the existing
+            # anomaly presentation gates apply.
+            trio_anchor = "evidence"
+            trio_anchor_note = (
+                "The asking price is far out of line with the sold evidence — "
+                "these numbers are anchored to the evidence, and the whole "
+                "estimate should be treated with caution.")
+        elif _div_below_pct > _op_threshold:
+            # Overpricing guardrail: evidence says the asking price is inflated.
+            # Keep the evidence-led trio and say so prominently.
+            overpricing_flag = True
+            overpricing_flag_level = confidence_score
+            trio_anchor = "evidence"
+            trio_anchor_note = (
+                "This listing looks materially overpriced against local sold "
+                "evidence, so these numbers are anchored to the evidence — not "
+                "the asking price. Consider whether to offer at all.")
+        else:
+            anchor_pct, _fb = _frontier_anchor(
+                local_sold_discount_pct, days_on_market, local_avg_dom,
+                reduction_pct, price_reduced)
+            open_disc = min(anchor_pct * _cfg["open_discount_factor"],
+                            _cfg["max_open_discount_pct"])
+            asking_open = asking_price * (1 - open_disc / 100)
+            _w = _cfg["avm_blend"].get(confidence_score, 0.0)
+            open_offer = round(((1 - _w) * asking_open + _w * open_offer) / 1000) * 1000
+            target_price = round((asking_price - (asking_price - open_offer)
+                                  * _cfg["target_discount_ratio"]) / 1000) * 1000
+            if confidence_score in ("high", "medium") and weighted_high:
+                _walk = weighted_high * (1 + _cfg["walk_headroom_pct"] / 100)
+            else:
+                _walk = asking_price * (1 - _cfg["walk_asking_discount_pct"] / 100)
+            # §6 hard rules: nothing exceeds asking; walk ≥ target ≥ open.
+            walk_away = round(min(_walk, asking_price) / 1000) * 1000
+            target_price = min(target_price, asking_price)
+            walk_away = max(walk_away, target_price)
+            open_offer = min(open_offer, target_price)
+            recommended_offer = open_offer
+            trio_anchor = "asking_blend" if _w else "asking"
+            _basis = ["this area's asking-to-sold discounts"]
+            if days_on_market and local_avg_dom:
+                _basis.append("time on market")
+            if price_reduced:
+                _basis.append("the price-cut history")
+            if _w:
+                trio_anchor_note = (
+                    "A negotiating position, not a valuation: built from "
+                    + ", ".join(_basis)
+                    + ", blended with our independent value estimate "
+                    f"({confidence_score.upper()} confidence).")
+            else:
+                trio_anchor_note = (
+                    "A negotiating position, not a valuation: local evidence is "
+                    "thin, so these numbers are built purely from the asking "
+                    "price and " + ", ".join(_basis) + ".")
 
     # ── C1 (2026-07-14): the trio must sit inside the Offer Frontier ───────────
     # The report promises the Frontier never goes below the valuation floor or
@@ -3076,7 +3129,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     # sit BELOW the Frontier's own deepest (Aggressive) position, which the
     # Frontier itself describes as "beyond what typically clears here".
     open_offer_frontier_clamped = False
-    if open_offer and asking_price and trio_anchor == "evidence":
+    # Not applied when the overpricing guardrail fired: an opening far below
+    # the frontier is then deliberate (the asking price itself is inflated).
+    if open_offer and asking_price and trio_anchor == "evidence" and not overpricing_flag:
         anchor_pct, _fb = _frontier_anchor(
             local_sold_discount_pct, days_on_market, local_avg_dom,
             reduction_pct, price_reduced)
@@ -3148,6 +3203,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         # reconciliation — all surfaced for the report UI and QC layer.
         "trio_anchor": trio_anchor,
         "trio_anchor_note": trio_anchor_note,
+        # Asking-anchor v1: overpricing guardrail (evidence midpoint materially
+        # below asking → trio stays evidence-led and the report says so).
+        "overpricing_flag": overpricing_flag,
+        "overpricing_flag_level": overpricing_flag_level,
         "valuation_asking_divergence_pct": valuation_asking_divergence_pct,
         "valuation_guard_triggered": valuation_guard_triggered,
         "open_offer_frontier_clamped": open_offer_frontier_clamped,
@@ -3564,6 +3623,34 @@ _FRONTIER_RISK = {
 # percent below asking, whatever the inputs.
 _FRONTIER_DEEP_CAP_PCT = 13.0
 _FRONTIER_NATIONAL_DISCOUNT = 4.5  # same national fallback as method 7
+
+# ── ASKING-ANCHOR v1 (CEO-approved 2026-07-17) ────────────────────────────────
+# HouseOffer is a negotiation-advice product, not an AVM. The published trio
+# anchors to the asking price via the market's negotiability signals — the
+# local asking-to-sold discount, time on market and reduction history, i.e.
+# the same _frontier_anchor the Offer Frontier is built from — with the
+# independent evidence midpoint pulling the anchor in proportion to confidence.
+# The evidence engine is demoted to (a) the overpricing guardrail and (b) the
+# buyer's justification pack. Every parameter lives here so the prospective
+# cohort can tune them without touching engine code.
+ASKING_ANCHOR_V1 = {
+    # opening discount = frontier anchor A × this factor (between the
+    # Frontier's Balanced and Aggressive positions), hard-capped below
+    "open_discount_factor": 1.25,
+    "max_open_discount_pct": 12.0,
+    # target sits this fraction of the opening discount below asking
+    "target_discount_ratio": 0.5,
+    # how much the evidence midpoint pulls the opening anchor, by confidence
+    "avm_blend": {"high": 0.45, "medium": 0.20, "low": 0.0},
+    # walk-away: marginally above the evidence ceiling when we trust it…
+    "walk_headroom_pct": 1.5,
+    # …else referenced to asking (LOW confidence)
+    "walk_asking_discount_pct": 2.0,
+    # overpricing guardrail: evidence midpoint this far below asking →
+    # prominent flag + evidence-led trio (never silently anchor to a number
+    # we believe is inflated)
+    "overpricing_flag_pct": {"medium_plus": 15.0, "low": 25.0},
+}
 
 
 def _frontier_anchor(local_discount_pct, days, avg_dom, reduction_pct, price_reduced):
