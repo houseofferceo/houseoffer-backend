@@ -3059,7 +3059,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     trio_anchor_note = None
     overpricing_flag = False
     overpricing_flag_level = None
-    if asking_price and not (available_methods and open_offer):
+    if asking_price and sale_type == "auction":
+        # v2 fix (found in acceptance, 2026-07-20): the auction exception must
+        # out-rank the no-methods fallback — during a data outage every listing
+        # hits the fallback, and an auction lot was shipped an asking-anchored
+        # trio against its guide price. Auctions NEVER get a trio.
+        trio_anchor = "auction"
+        trio_anchor_note = None
+        open_offer = target_price = walk_away = recommended_offer = None
+    elif asking_price and not (available_methods and open_offer):
         # v1.1 (CEO 2026-07-17): ALWAYS ship a trio. With no valuation methods
         # at all, anchor purely to the asking price and local negotiability
         # signals, and tell the buyer that confirming the exact address is the
@@ -3092,14 +3100,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                           if weighted_midpoint else 0.0)
         _op_threshold = (_cfg["overpricing_flag_pct"]["low"] if confidence_score == "low"
                          else _cfg["overpricing_flag_pct"]["medium_plus"])
-        if sale_type == "auction":
-            # v2 (CEO 2026-07-20): auctions are the one exception to
-            # always-a-play. A guide price is set low to attract bidding — our
-            # below-asking model inverts. No trio ships; the report flags the
-            # auction dynamics and routes the buyer to direct support.
-            trio_anchor = "auction"
-            trio_anchor_note = None
-        elif asking_anomaly:
+        if asking_anomaly:
             # Anomaly override (retained): the asking price itself is suspect —
             # the play stays evidence-led, framed as straight talk (v2: still a
             # play, never "we can't advise you").
