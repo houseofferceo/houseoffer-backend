@@ -393,10 +393,16 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     <div class="val-eyebrow">Our valuation</div>
     {# ASKING-ANCHOR v1 overpricing guardrail: when the evidence says the asking
        price is materially inflated, the report must lead with that. #}
-    {% if overpricing_flag %}
+    {% if sale_type == 'auction' %}
+    {# v2: auction flag — dynamics invert; route to direct support #}
     <div style="background:#fdf0e3; border:2px solid #c06a1a; border-radius:12px; padding:14px 16px; margin-bottom:14px;">
-      <div style="font-weight:700; color:#8a4a10; margin-bottom:4px;">⚠️ This listing looks materially overpriced</div>
-      <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6;">The asking price of <strong>{{ asking_price_formatted }}</strong> sits well above what local sold evidence supports{% if weighted_midpoint_formatted %} (our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}. Consider whether to offer at all — the full report shows the evidence to take into the conversation.</div>
+      <div style="font-weight:700; color:#8a4a10; margin-bottom:4px;">🔨 This is an auction listing — the dynamics are different</div>
+      <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6;">The {{ asking_price_formatted }} figure is a <strong>guide price</strong>, set low to attract bidders and designed to be bid <em>up</em> from — so the usual open-below-asking approach doesn't apply. Use the sold evidence below to set your ceiling before the auction, and <strong>reply to your report email</strong> for direct support with an auction purchase.</div>
+    </div>
+    {% elif overpricing_flag %}
+    <div style="background:#fdf0e3; border:2px solid #c06a1a; border-radius:12px; padding:14px 16px; margin-bottom:14px;">
+      <div style="font-weight:700; color:#8a4a10; margin-bottom:4px;">⚠️ Priced well above the evidence — there's a play here</div>
+      <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6;">The asking price of <strong>{{ asking_price_formatted }}</strong> sits well above what local sold evidence supports{% if weighted_midpoint_formatted %} (our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}. The right move is a confident, evidence-backed low open — the full report gives you the exact numbers and the comparables to justify them in the room.</div>
     </div>
     {% endif %}
     {# 2026-07-16 (Wemborough HA7 2ED): a LOW-confidence or anomaly-flagged
@@ -441,7 +447,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       <div class="val-our">
         <div class="val-label">Indicative range only</div>
         <div class="val-range" style="font-size:22px; font-weight:700; color:var(--ink); margin-top:4px;">{{ weighted_low_formatted }} – {{ weighted_high_formatted }}</div>
-        <div style="font-size:13px; color:var(--ink-mid); line-height:1.6; margin-top:8px;">The sold-price evidence we found doesn't line up cleanly with this listing, so we're not giving you a single headline figure. Confirm the address below — a wrong address match is the most common cause — and treat this range as a starting point, not a verdict.</div>
+        <div style="font-size:13px; color:var(--ink-mid); line-height:1.6; margin-top:8px;">Straight talk: this one's priced oddly or the local sold data is thin, so we're showing a range rather than a single figure. There's still a play — we'd open below asking to test the seller, and the full report gives you the exact opening number and the one thing to check first. Confirming the address below usually sharpens the whole analysis.</div>
       </div>
       <div class="val-asking">
         <div class="val-label">Asking price</div>

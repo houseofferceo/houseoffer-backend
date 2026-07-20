@@ -382,18 +382,36 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
        asking price the evidence says is inflated -->
   {% if overpricing_flag %}
   <div class="overpricing-card">
-    <div class="overpricing-title">⚠️ This listing looks materially overpriced</div>
+    <div class="overpricing-title">⚠️ Priced well above the evidence — here's the play</div>
     <div class="overpricing-body">The asking price of <strong>{{ asking_price_formatted }}</strong>
       sits well above what local sold evidence supports
       {% if weighted_midpoint_formatted %}(our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}.
-      The numbers below are anchored to the evidence, not the asking price —
-      and it's worth considering whether to offer on this property at all
-      rather than how much.</div>
+      Our play: a confident, evidence-backed low open — the numbers below.
+      Expect pushback; the comparable sales further down are your script when
+      it comes. And keep genuinely open to walking early: on a listing priced
+      like this, the asking price is the number out of line, not your offer.</div>
   </div>
   {% endif %}
 
-  <!-- OFFER HEADLINE -->
-  {% if recommended_offer %}
+  <!-- v2: AUCTION — the one exception to always-a-play. Guide prices are set
+       low to attract bidding, so a below-asking trio inverts. Flag + route to
+       direct support instead. -->
+  {% if trio_anchor == 'auction' %}
+  <div class="offer-headline">
+    <div class="offer-eyebrow">This is an auction listing</div>
+    <div class="offer-sub" style="margin-top:10px;">
+      The {{ asking_price_formatted }} figure is a <strong style="color:white;">guide price</strong> — set low to attract
+      bidders, and designed to be bid <em>up</em> from. Our usual open-below-asking
+      playbook inverts at auction, so we don't publish an offer trio here.
+    </div>
+    <div class="personal-line" style="margin-top:14px;">
+      Use the sold-comparable evidence below to set your absolute ceiling
+      <strong>before</strong> the auction — you're committed on the day.
+      For hands-on help with an auction purchase, <strong>reply to your report
+      email</strong> and we'll support you directly.
+    </div>
+  </div>
+  {% elif recommended_offer %}
   <div class="offer-headline">
     {% if trio_anchor_note %}
     <!-- Asking-anchor v1: every trio states its basis (negotiating position,
@@ -405,7 +423,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
        below the trio so the adjustment is always auditable. #}
     {% set p13n_moved = personalisation is defined and personalisation and personalisation.moved %}
     {% set shown_open = personalisation.personal_open if p13n_moved else recommended_offer %}
-    <div class="offer-eyebrow">Recommended opening offer{% if p13n_moved %} — tuned to your answers{% endif %}</div>
+    <div class="offer-eyebrow">Your opening play{% if p13n_moved %} — tuned to your answers{% endif %}</div>
     <div class="offer-amount">{{ personalisation.personal_open_formatted if p13n_moved else recommended_offer_formatted }}</div>
     <div class="offer-sub">
       Asking price is {{ asking_price_formatted }} —
