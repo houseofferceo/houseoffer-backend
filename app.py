@@ -3059,13 +3059,49 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     trio_anchor_note = None
     overpricing_flag = False
     overpricing_flag_level = None
-    if asking_price and available_methods and open_offer:
+    if asking_price and not (available_methods and open_offer):
+        # v1.1 (CEO 2026-07-17): ALWAYS ship a trio. With no valuation methods
+        # at all, anchor purely to the asking price and local negotiability
+        # signals, and tell the buyer that confirming the exact address is the
+        # route to better analysis.
+        _cfg = ASKING_ANCHOR_V1
+        anchor_pct, _fb = _frontier_anchor(
+            local_sold_discount_pct, days_on_market, local_avg_dom,
+            reduction_pct, price_reduced)
+        open_disc = min(anchor_pct * _cfg["open_discount_factor"],
+                        _cfg["max_open_discount_pct"])
+        open_offer = round(asking_price * (1 - open_disc / 100) / 1000) * 1000
+        target_price = round((asking_price - (asking_price - open_offer)
+                              * _cfg["target_discount_ratio"]) / 1000) * 1000
+        walk_away = round(asking_price * (1 - _cfg["walk_asking_discount_pct"] / 100)
+                          / 1000) * 1000
+        target_price = min(target_price, asking_price)
+        walk_away = max(min(walk_away, asking_price), target_price)
+        open_offer = min(open_offer, target_price)
+        recommended_offer = open_offer
+        trio_anchor = "asking"
+        trio_anchor_note = (
+            "We couldn't build an independent valuation for this address, so "
+            "these numbers are anchored purely to the asking price and local "
+            "negotiability signals. Confirming the exact address usually "
+            "unlocks much better analysis — use the address check on this page.")
+    elif asking_price and available_methods and open_offer:
         _cfg = ASKING_ANCHOR_V1
         _div_below_pct = ((asking_price - weighted_midpoint) / weighted_midpoint * 100
                           if weighted_midpoint else 0.0)
         _op_threshold = (_cfg["overpricing_flag_pct"]["low"] if confidence_score == "low"
                          else _cfg["overpricing_flag_pct"]["medium_plus"])
-        if asking_anomaly:
+        if sale_type == "auction":
+            # v1.1 (CEO 2026-07-17): an auction guide price is designed to be
+            # bid UP from — anchoring a discount to it is backwards advice.
+            # Anchor to the best comparable evidence instead and say so.
+            trio_anchor = "evidence"
+            trio_anchor_note = (
+                "This is an auction listing: the guide price is set to be bid "
+                "up from, so these numbers are anchored to the sold-comparable "
+                "evidence, not the guide. Auction purchases commit you on the "
+                "day — set your ceiling before the room, and stick to it.")
+        elif asking_anomaly:
             # Anomaly override (retained in all cases): the asking price itself
             # is suspect, so the evidence-led trio stands and the existing
             # anomaly presentation gates apply.
