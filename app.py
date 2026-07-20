@@ -3081,10 +3081,11 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         recommended_offer = open_offer
         trio_anchor = "asking"
         trio_anchor_note = (
-            "We couldn't build an independent valuation for this address, so "
-            "these numbers are anchored purely to the asking price and local "
-            "negotiability signals. Confirming the exact address usually "
-            "unlocks much better analysis — use the address check on this page.")
+            "Straight talk: we couldn't verify this address against sold "
+            "records, so this play is built from the asking price and how this "
+            "local market negotiates. Open at the number below to test the "
+            "seller — and confirm the exact address on this page first, because "
+            "that usually sharpens the whole analysis.")
     elif asking_price and available_methods and open_offer:
         _cfg = ASKING_ANCHOR_V1
         _div_below_pct = ((asking_price - weighted_midpoint) / weighted_midpoint * 100
@@ -3092,34 +3093,35 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         _op_threshold = (_cfg["overpricing_flag_pct"]["low"] if confidence_score == "low"
                          else _cfg["overpricing_flag_pct"]["medium_plus"])
         if sale_type == "auction":
-            # v1.1 (CEO 2026-07-17): an auction guide price is designed to be
-            # bid UP from — anchoring a discount to it is backwards advice.
-            # Anchor to the best comparable evidence instead and say so.
-            trio_anchor = "evidence"
-            trio_anchor_note = (
-                "This is an auction listing: the guide price is set to be bid "
-                "up from, so these numbers are anchored to the sold-comparable "
-                "evidence, not the guide. Auction purchases commit you on the "
-                "day — set your ceiling before the room, and stick to it.")
+            # v2 (CEO 2026-07-20): auctions are the one exception to
+            # always-a-play. A guide price is set low to attract bidding — our
+            # below-asking model inverts. No trio ships; the report flags the
+            # auction dynamics and routes the buyer to direct support.
+            trio_anchor = "auction"
+            trio_anchor_note = None
         elif asking_anomaly:
-            # Anomaly override (retained in all cases): the asking price itself
-            # is suspect, so the evidence-led trio stands and the existing
-            # anomaly presentation gates apply.
+            # Anomaly override (retained): the asking price itself is suspect —
+            # the play stays evidence-led, framed as straight talk (v2: still a
+            # play, never "we can't advise you").
             trio_anchor = "evidence"
             trio_anchor_note = (
-                "The asking price is far out of line with the sold evidence — "
-                "these numbers are anchored to the evidence, and the whole "
-                "estimate should be treated with caution.")
+                "Straight talk: this one's priced oddly — the asking price is "
+                "far out of line with what's actually sold here. The play below "
+                "is built from the sold evidence instead. One thing to check "
+                "before you push further: confirm the address and tenure are "
+                "exactly right.")
         elif _div_below_pct > _op_threshold:
-            # Overpricing guardrail: evidence says the asking price is inflated.
-            # Keep the evidence-led trio and say so prominently.
+            # Overpricing guardrail (v2 framing): still a confident play — an
+            # evidence-backed low open — never a silent number or a blind
+            # asking-anchored one.
             overpricing_flag = True
             overpricing_flag_level = confidence_score
             trio_anchor = "evidence"
             trio_anchor_note = (
-                "This listing looks materially overpriced against local sold "
-                "evidence, so these numbers are anchored to the evidence — not "
-                "the asking price. Consider whether to offer at all.")
+                "The play here: an evidence-backed low open. The asking price "
+                "sits well above what local sold evidence supports, so your "
+                "numbers are anchored to the evidence — the comparables below "
+                "are your script when the agent pushes back.")
         else:
             anchor_pct, _fb = _frontier_anchor(
                 local_sold_discount_pct, days_on_market, local_avg_dom,
@@ -3135,29 +3137,43 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                 _walk = weighted_high * (1 + _cfg["walk_headroom_pct"] / 100)
             else:
                 _walk = asking_price * (1 - _cfg["walk_asking_discount_pct"] / 100)
-            # §6 hard rules: nothing exceeds asking; walk ≥ target ≥ open.
-            walk_away = round(min(_walk, asking_price) / 1000) * 1000
+            # Hard rules: walk ≥ target ≥ open; nothing exceeds asking on a
+            # normal listing. v2 value-case exception (CEO §8): when the
+            # evidence says the home is worth MORE than asking at MEDIUM+
+            # confidence, the walk-away may rise up to 5% above asking so a
+            # buyer isn't advised to lose a genuinely good-value home over the
+            # last increment.
+            _walk_cap = asking_price
+            if (confidence_score in ("high", "medium") and weighted_midpoint
+                    and weighted_midpoint > asking_price):
+                _walk_cap = asking_price * (1 + _cfg["value_walk_cap_pct"] / 100)
+            walk_away = round(min(_walk, _walk_cap) / 1000) * 1000
             target_price = min(target_price, asking_price)
             walk_away = max(walk_away, target_price)
             open_offer = min(open_offer, target_price)
             recommended_offer = open_offer
             trio_anchor = "asking_blend" if _w else "asking"
-            _basis = ["this area's asking-to-sold discounts"]
+            _basis = ["how far below asking this market actually settles"]
             if days_on_market and local_avg_dom:
                 _basis.append("time on market")
             if price_reduced:
                 _basis.append("the price-cut history")
-            if _w:
+            # v2: one always-a-play framing. Confidence tunes the WORDING —
+            # conviction at HIGH/MEDIUM, straight talk at LOW — never whether
+            # the buyer gets a play. The blend is engine detail, not copy.
+            if confidence_score == "low":
                 trio_anchor_note = (
-                    "A negotiating position, not a valuation: built from "
-                    + ", ".join(_basis)
-                    + ", blended with our independent value estimate "
-                    f"({confidence_score.upper()} confidence).")
+                    "Straight talk: local sold evidence is thin here, so this "
+                    "play tests the seller — open at the number below and read "
+                    "the reaction. It's built from the asking price and "
+                    + ", ".join(_basis) + ". One thing to check before pushing "
+                    "further: confirm the address details above are exactly right.")
             else:
                 trio_anchor_note = (
-                    "A negotiating position, not a valuation: local evidence is "
-                    "thin, so these numbers are built purely from the asking "
-                    "price and " + ", ".join(_basis) + ".")
+                    "Your opening play: where to open, what to settle at, and "
+                    "where to walk. Built from " + ", ".join(_basis)
+                    + ", checked against our independent read of what this "
+                    "home is worth.")
 
     # ── C1 (2026-07-14): the trio must sit inside the Offer Frontier ───────────
     # The report promises the Frontier never goes below the valuation floor or
@@ -3682,6 +3698,9 @@ ASKING_ANCHOR_V1 = {
     "walk_headroom_pct": 1.5,
     # …else referenced to asking (LOW confidence)
     "walk_asking_discount_pct": 2.0,
+    # v2 value case: evidence > asking at MEDIUM+ → walk-away may rise this
+    # far above asking (don't lose a genuinely good-value home)
+    "value_walk_cap_pct": 5.0,
     # overpricing guardrail: evidence midpoint this far below asking →
     # prominent flag + evidence-led trio (never silently anchor to a number
     # we believe is inflated)
@@ -4048,7 +4067,11 @@ def view_report(report_id):
     # Frontier v2: display-layer positioning computed from stored values at
     # render time (works for previously stored paid reports too). The stored
     # numbers themselves are passed through untouched.
-    frontier = _offer_frontier(report, profile) if paid else None
+    # v2: no Offer Frontier on auction lots — its below-asking positions are
+    # meaningless against a guide price (the trio is suppressed for the same
+    # reason).
+    frontier = (_offer_frontier(report, profile)
+                if paid and report.get("trio_anchor") != "auction" else None)
     # C2a: buyer answers drive the displayed numbers/copy — render-time only,
     # stored trio untouched (auditable and reversible per report).
     personalisation = _personalise_offer(report, profile, frontier) if paid else None
