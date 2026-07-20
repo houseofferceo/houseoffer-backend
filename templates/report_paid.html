@@ -44,6 +44,10 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .offer-headline { background: var(--teal); border-radius: var(--radius); padding: 28px 32px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(26,107,90,0.25); }
 .offer-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.7); margin-bottom: 8px; }
 .trio-anchor-note { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.95); margin-bottom: 14px; text-align: left; }
+/* ASKING-ANCHOR v1: overpricing guardrail card */
+.overpricing-card { background: #fdf0e3; border: 2px solid #c06a1a; border-radius: var(--radius); padding: 18px 22px; margin-bottom: 16px; }
+.overpricing-title { font-family: 'Lora', serif; font-size: 17px; font-weight: 700; color: #8a4a10; margin-bottom: 6px; }
+.overpricing-body { font-size: 14px; color: #5c5849; line-height: 1.6; }
 .offer-amount { font-family: 'Lora', serif; font-size: 42px; font-weight: 700; color: white; line-height: 1.1; margin-bottom: 6px; }
 .offer-sub { font-size: 14px; color: rgba(255,255,255,0.8); margin-bottom: 20px; }
 .offer-trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
@@ -374,12 +378,27 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
   {% endif %}
 
+  <!-- ASKING-ANCHOR v1: overpricing guardrail — never silently anchor to an
+       asking price the evidence says is inflated -->
+  {% if overpricing_flag %}
+  <div class="overpricing-card">
+    <div class="overpricing-title">⚠️ This listing looks materially overpriced</div>
+    <div class="overpricing-body">The asking price of <strong>{{ asking_price_formatted }}</strong>
+      sits well above what local sold evidence supports
+      {% if weighted_midpoint_formatted %}(our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}.
+      The numbers below are anchored to the evidence, not the asking price —
+      and it's worth considering whether to offer on this property at all
+      rather than how much.</div>
+  </div>
+  {% endif %}
+
   <!-- OFFER HEADLINE -->
   {% if recommended_offer %}
   <div class="offer-headline">
     {% if trio_anchor_note %}
-    <!-- B2: LOW-confidence trio is asking-anchored — the basis must be transparent -->
-    <div class="trio-anchor-note">⚠️ {{ trio_anchor_note }}</div>
+    <!-- Asking-anchor v1: every trio states its basis (negotiating position,
+         not a valuation) — ⚠️ only when an override kept it evidence-led -->
+    <div class="trio-anchor-note">{% if trio_anchor == 'asking_blend' %}ℹ️{% else %}⚠️{% endif %} {{ trio_anchor_note }}</div>
     {% endif %}
     {# C2a: when the buyer's answers move the opening depth, the headline and
        trio show the personalised figure; the data-only figure stays visible
