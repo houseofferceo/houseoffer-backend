@@ -353,10 +353,15 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     <div class="report-sub">Generated {{ generated }} · HM Land Registry sold data</div>
     <div class="meta-pills">
       <span class="pill">📍 {{ postcode }}</span>
-      <span class="pill">🏠 {{ property_type|title if property_type else "Type not stated" }}</span>
+      <span class="pill">🏠 {{ property_subtype or (property_type|title if property_type else "Type not stated") }}</span>
       {% if bedrooms %}<span class="pill">🛏 {{ bedrooms }} bedrooms</span>{% endif %}
       {% if floor_area_sqm %}<span class="pill">📐 {{ floor_area_sqm|round|int }} m²</span>{% endif %}
+      {% if price_qualifier %}<span class="pill">🏷 {{ price_qualifier }}</span>{% endif %}
+      {% if listing_history %}<span class="pill">📅 {{ listing_history }}</span>{% endif %}
     </div>
+    {% if price_qualifier and sale_type != 'auction' %}
+    <div style="font-size:12.5px; color:var(--ink-mid); margin-top:8px;">ℹ️ Listed as "{{ price_qualifier }}" — pricing language like guide/offers-over invites offers within or above a range; it does not change how this home is valued.</div>
+    {% endif %}
   </div>
 
   <!-- NEW-BUILD NOTICE -->
@@ -479,6 +484,9 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
   </div>
 
   <!-- B: VERDICT -->
+  {# P0 guard (2026-07-23): an auction lot NEVER co-renders the standard verdict
+     — the incident report showed "underpriced" alongside the auction caveat. #}
+  {% if sale_type != 'auction' %}
   {% set vclass = {'overpriced': 'v-over', 'fair': 'v-fair', 'value': 'v-val'}.get(verdict, 'v-unknown') %}
   <div class="verdict-card {{ vclass }}">
     <div class="verdict-eyebrow">Our verdict</div>
@@ -489,7 +497,29 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       {% else %}Not enough local data for a verdict{% endif %}
     </div>
     <div class="verdict-body">
-      {% if local_avg_sold %}
+      {# P0 fix 4 (2026-07-23): ONE market value. The verdict speaks to the same
+         headline estimate shown above; the raw comp average is evidence, not a
+         second competing figure. #}
+      {% if weighted_midpoint and asking_price %}
+        {% set est_gap_pct = ((asking_price - weighted_midpoint) / weighted_midpoint * 100) | round(1) %}
+        Against our estimate of <strong>{{ weighted_midpoint_formatted }}</strong> —
+        built from {{ comparables_count }} completed sales of similar {{ property_type_label }} homes in
+        {% if search_broadened %}the {{ postcode.split()[0] }} area{% else %}{{ postcode }}{% endif %},
+        this property's own sale history and size evidence — the asking price is
+        <strong>
+          {% if est_gap_pct > 0 %}{{ est_gap_pct }}% higher
+          {% elif est_gap_pct < 0 %}{{ est_gap_pct|abs }}% lower
+          {% else %}in line{% endif %}</strong>.
+        {% if local_avg_sold %}(The raw local sold average is {{ local_avg_sold_formatted }} before those
+        property-specific adjustments — the full method is in the evidence below.){% endif %}
+        {% if verdict == 'overpriced' %}
+          That gap is real money — and it's your opening position at the negotiating table.
+        {% elif verdict == 'value' %}
+          Someone else will spot this too. You need to move confidently — with the right number ready.
+        {% else %}
+          No big gap to exploit here — which means your edge is knowing exactly where NOT to overpay, not finding a hidden discount.
+        {% endif %}
+      {% elif local_avg_sold %}
         Based on {{ comparables_count }} completed sales of similar {{ property_type_label }} homes in
         {% if search_broadened %}the {{ postcode.split()[0] }} area{% else %}{{ postcode }}{% endif %},
         adjusted to today's value, this property is asking
@@ -511,6 +541,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       {% endif %}
     </div>
   </div>
+  {% endif %}
 
   <!-- C: CROWD VOTING -->
   {% if report_id is defined and report_id %}

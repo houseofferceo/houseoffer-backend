@@ -50,6 +50,10 @@ DEFAULT_RESULT = {
     # app.py attaches an explicit caveat (it still returns a valuation).
     "sale_type": None,
     "description_house_number": None,
+    # P0 2026-07-23: finer-grained listing attributes (incident 151864718).
+    "property_subtype": None,   # e.g. "Detached Bungalow" — LR types can't see this
+    "price_qualifier": None,    # e.g. "Guide Price", "Offers Over" — pricing language
+    "listing_history": None,    # verbatim, e.g. "Reduced on 22/06/2026"
 }
 
 # Special-tenure / sale-type detection. Ordered: a shared-ownership listing that
@@ -70,10 +74,28 @@ _SALE_TYPE_PATTERNS = [
         r"|\bassisted\s+living\b|\bsheltered\s+(?:housing|accommodation)\b"
         r"|\bmccarthy\s*(?:&|and)?\s*stone\b|\bretirement\s+(?:living|village|apartment)\b",
         re.IGNORECASE)),
+    # P0 fix 2026-07-23 (incident 151864718): "guide price" and the bare word
+    # "auction" are OUT — guide price is routine agency wording (very common in
+    # London/Essex) and flagged a standard Balgores sale as an auction on our
+    # first organic user's report. Only explicit method-of-sale markers count,
+    # and the structured page-model flag (AUCP) outranks text entirely.
     ("auction", re.compile(
-        r"\bauction\b|\bguide\s+price\b|\bfor\s+sale\s+by\s+(?:modern\s+|online\s+)?auction\b"
-        r"|\b(?:un)?conditional\s+auction\b", re.IGNORECASE)),
+        r"\bfor\s+sale\s+by\s+(?:public\s+|modern\s+|online\s+)?auction\b"
+        r"|\bsold?\s+(?:via|by|at)\s+(?:modern\s+|online\s+)?auction\b"
+        r"|\bmethod\s+of\s+sale\s*:?\s*auction\b"
+        r"|\bauction\s+date\b"
+        r"|\b(?:un)?conditional\s+auction\b"
+        r"|\bmodern\s+method\s+of\s+auction\b"
+        r"|\bauction(?:eer)?s?\s+(?:terms|pack|fees|conditions)\b",
+        re.IGNORECASE)),
 ]
+
+# Structured price qualifiers (prices.displayPriceQualifier) that are NOT
+# auction signals — routine pricing language rendered as a soft note only.
+_PRICE_QUALIFIERS = (
+    "guide price", "offers over", "offers in excess of", "oiro",
+    "offers in the region of", "offers invited", "fixed price", "from",
+)
 
 
 def detect_sale_type(*texts):
@@ -714,17 +736,57 @@ def _apply_rightmove_property(result: dict, prop: dict) -> None:
             result["is_new_build"] = True
             break
 
-    # Special-tenure / sale-type detection (Cycle 1, item 4). Scan the listing
-    # text, type description, key features and price string (auction listings often
-    # show "Guide Price"). Drives a caveat in app.py — the listing still gets valued.
+    # Property subtype (P0 2026-07-23): Rightmove's propertySubType ("Detached
+    # Bungalow", "Retirement Property", "Park Home"…) is finer-grained than the
+    # four Land Registry types we benchmark against — persisted so the report
+    # can caveat subtype-blind comparables honestly.
+    subtype = prop.get("propertySubType")
+    if subtype and str(subtype).strip():
+        result["property_subtype"] = str(subtype).strip()
+
+    # Structured price qualifier ("Guide Price", "Offers Over", …) — pricing
+    # language, NOT a method-of-sale signal. Rendered as a soft note.
+    q = ((prop.get("prices") or {}).get("displayPriceQualifier") or "").strip()
+    if q and q.lower() != "default":
+        result["price_qualifier"] = q
+
+    # Verbatim listing-history line ("Reduced on 22/06/2026" / "Added on …").
+    lh_reason = (prop.get("listingHistory") or {}).get("listingUpdateReason")
+    if lh_reason:
+        result["listing_history"] = str(lh_reason).strip()
+
+    # Special-tenure / sale-type detection (Cycle 1, item 4; hardened
+    # 2026-07-23). The structured ad-targeting flags are authoritative when
+    # present: AUCP (auction), SO (shared ownership), R (retirement). Free-text
+    # matching is the fallback only — and the auction text pattern now requires
+    # explicit method-of-sale wording (see _SALE_TYPE_PATTERNS).
     kf_blob = ""
     kf = prop.get("keyFeatures")
     if isinstance(kf, list):
         kf_blob = " ".join(str(f) for f in kf)
-    result["sale_type"] = detect_sale_type(
-        description, kf_blob, str(ptype),
-        str(prop.get("propertyTypeFullDescription") or ""), price_str,
-    )
+    targeting = {}
+    for t in ((prop.get("dfpAdInfo") or {}).get("targeting") or []):
+        if isinstance(t, dict) and t.get("key"):
+            targeting[t["key"]] = [str(v).upper() for v in (t.get("value") or [])]
+    if targeting:
+        if targeting.get("AUCP") == ["TRUE"]:
+            result["sale_type"] = "auction"
+        elif targeting.get("SO") == ["TRUE"]:
+            result["sale_type"] = "shared_ownership"
+        elif targeting.get("R") == ["TRUE"]:
+            result["sale_type"] = "retirement"
+        else:
+            # Structured flags present and all FALSE: never override with the
+            # auction text fallback; shared-ownership/retirement text may still
+            # catch schemes the flags miss (discount-market etc.).
+            st = detect_sale_type(description, kf_blob, str(ptype),
+                                  str(prop.get("propertyTypeFullDescription") or ""))
+            result["sale_type"] = st if st != "auction" else None
+    else:
+        result["sale_type"] = detect_sale_type(
+            description, kf_blob, str(ptype),
+            str(prop.get("propertyTypeFullDescription") or ""), price_str,
+        )
 
     # Extract house number from description when displayAddress omits it
     addr = result.get("address") or ""
