@@ -395,6 +395,10 @@ def merge_scraped_listing(property_url, postcode, asking_price, bedrooms, proper
         # Special tenure / sale type (Cycle 1, item 4): shared_ownership / auction /
         # retirement / None. Drives a caveat in the report; never withholds a value.
         "sale_type": scraped.get("sale_type"),
+        # P0 2026-07-23 (incident 151864718): finer listing attributes.
+        "property_subtype": scraped.get("property_subtype"),
+        "price_qualifier": scraped.get("price_qualifier"),
+        "listing_history": scraped.get("listing_history"),
         # Official EPC certificate the listing links (Cycle 4c) — a direct,
         # address-free floor-area source.
         "epc_cert_url": scraped.get("epc_cert_url"),
@@ -2214,6 +2218,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                       floor_area_source="unknown",
                       latitude=None, longitude=None, bathrooms=None,
                       sale_type=None, epc_cert_url=None, main_photo_url=None,
+                      property_subtype=None, price_qualifier=None,
+                      listing_history=None,
                       tier="paid"):
     """Build the full report payload.
     tier="free": cheap calls only - comparables, HPI maths, days on market,
@@ -2933,6 +2939,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         weighted_low = _weighted_median([(m["low"], m["weight"]) for m in available_methods])
         weighted_high = _weighted_median([(m["high"], m["weight"]) for m in available_methods])
         weighted_midpoint = round((weighted_low + weighted_high) / 2)
+        # P0 2026-07-23 (fix 4, incident 151864718): ONE market value. The
+        # verdict now derives from the same primary number the report leads
+        # with (the weighted midpoint), so the headline and the verdict can
+        # never tell different stories. The comparable average remains in the
+        # payload as evidence, not as a second competing verdict basis.
+        if asking_price:
+            _mid_diff = round((asking_price - weighted_midpoint) / weighted_midpoint * 100, 1)
+            verdict = ("overpriced" if _mid_diff > 8
+                       else ("value" if _mid_diff < -5 else "fair"))
         # Open with = lower third of range (always lowest of the three)
         # Target = midpoint
         # Walk away = weighted_low (always highest of the three shown to buyer)
@@ -3006,6 +3021,29 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         asking_anomaly=asking_anomaly,
         asking_price=asking_price,
     )
+    # ── P0 2026-07-23 (incident 151864718): non-standard subtype caveat ────────
+    # Land Registry types can't see subtypes — a detached BUNGALOW benchmarks
+    # against detached HOUSES and gets a flattering verdict. When Rightmove's
+    # propertySubType says the stock is non-standard, drop confidence one tier
+    # and say plainly that the comparables may differ in kind. (Subtype-filtered
+    # comps are deliberately NOT attempted here — flagging honestly is the
+    # bounded fix.)
+    subtype_caveat_applied = False
+    if property_subtype and re.search(
+            r"bungalow|retirement|park\s*home|mobile\s*home|static|caravan"
+            r"|houseboat|land|plot|farm|equestrian|block\s+of",
+            property_subtype, re.IGNORECASE):
+        subtype_caveat_applied = True
+        confidence_score = {"high": "medium", "medium": "low"}.get(
+            confidence_score, "low")
+        note = (f"this is listed as a {property_subtype.lower()} — Land Registry "
+                "doesn't distinguish subtypes, so our comparables are same-type "
+                f"({property_type_label}) but may differ in kind, and the "
+                "estimate should be read with that in mind")
+        confidence_reasons.append(note)
+        confidence_caveat = (f"{confidence_caveat} {note.capitalize()}."
+                             if confidence_caveat else f"{note.capitalize()}.")
+
     # Divergence between the independent matched-sold signal and the published
     # midpoint — surfaced for the QC layer and the batch test (drives the HIGH gate).
     matched_sold_divergence_pct = None
@@ -3059,7 +3097,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     trio_anchor_note = None
     overpricing_flag = False
     overpricing_flag_level = None
-    if asking_price and not (available_methods and open_offer):
+    if asking_price and sale_type == "auction":
+        # v2 fix (found in acceptance, 2026-07-20): the auction exception must
+        # out-rank the no-methods fallback — during a data outage every listing
+        # hits the fallback, and an auction lot was shipped an asking-anchored
+        # trio against its guide price. Auctions NEVER get a trio.
+        trio_anchor = "auction"
+        trio_anchor_note = None
+        open_offer = target_price = walk_away = recommended_offer = None
+    elif asking_price and not (available_methods and open_offer):
         # v1.1 (CEO 2026-07-17): ALWAYS ship a trio. With no valuation methods
         # at all, anchor purely to the asking price and local negotiability
         # signals, and tell the buyer that confirming the exact address is the
@@ -3092,14 +3138,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                           if weighted_midpoint else 0.0)
         _op_threshold = (_cfg["overpricing_flag_pct"]["low"] if confidence_score == "low"
                          else _cfg["overpricing_flag_pct"]["medium_plus"])
-        if sale_type == "auction":
-            # v2 (CEO 2026-07-20): auctions are the one exception to
-            # always-a-play. A guide price is set low to attract bidding — our
-            # below-asking model inverts. No trio ships; the report flags the
-            # auction dynamics and routes the buyer to direct support.
-            trio_anchor = "auction"
-            trio_anchor_note = None
-        elif asking_anomaly:
+        if asking_anomaly:
             # Anomaly override (retained): the asking price itself is suspect —
             # the play stays evidence-led, framed as straight talk (v2: still a
             # play, never "we can't advise you").
@@ -3270,6 +3309,11 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "confidence_caveat": confidence_caveat,
         "comparable_tier": comparable_tier,
         "sale_type": sale_type,
+        # P0 2026-07-23: subtype / qualifier / history (incident 151864718).
+        "property_subtype": property_subtype,
+        "subtype_caveat_applied": subtype_caveat_applied,
+        "price_qualifier": price_qualifier,
+        "listing_history": listing_history,
         # Cycle 3: valuation diverged far from asking (probable non-standard listing).
         "asking_anomaly": asking_anomaly,
         "comparable_count_size_matched": comparable_count_size_matched,
@@ -3441,6 +3485,9 @@ def _start_rebuild(report_id, stored, address=None, tier="paid"):
                 property_type_source=report.get("property_type_source", "unknown"),
                 floor_area_source=report.get("floor_area_source", "unknown"),
                 sale_type=report.get("sale_type"),
+                property_subtype=report.get("property_subtype"),
+                price_qualifier=report.get("price_qualifier"),
+                listing_history=report.get("listing_history"),
                 latitude=report.get("latitude"),
                 longitude=report.get("longitude"),
                 bathrooms=report.get("bathrooms"),
@@ -3574,8 +3621,14 @@ def send_report_email(to_email, report_html, postcode, verdict, report_url=None)
 
 
 
-def notify_owner(to_email, property_url, postcode, verdict, buyer_estimate="", anchor_bias=None):
+def notify_owner(to_email, property_url, postcode, verdict, buyer_estimate="", anchor_bias=None, attribution=None):
     try:
+        attr = attribution or {}
+        attr_line = ""
+        if any(attr.values()):
+            attr_line = ("\nCame from: " + (attr.get("referrer") or "direct/unknown")
+                         + "".join(f"\n  {k}: {v}" for k, v in attr.items()
+                                   if v and k != "referrer"))
         requests.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
@@ -3583,7 +3636,7 @@ def notify_owner(to_email, property_url, postcode, verdict, buyer_estimate="", a
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
                 "to": [EMAIL_ADDRESS],
                 "subject": f"New submission: {postcode} — {verdict}",
-                "text": f"User: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}\nBuyer estimate: {buyer_estimate}\nAnchor bias: {anchor_bias}% above market"
+                "text": f"User: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}\nBuyer estimate: {buyer_estimate}\nAnchor bias: {anchor_bias}% above market" + attr_line
             }
         )
     except Exception as e:
@@ -4608,6 +4661,16 @@ def stripe_webhook():
         if session.get("payment_status") == "paid" and re.fullmatch(r"[a-f0-9]{8,32}", rid):
             _fulfil_stripe_payment(rid, session, source="stripe_webhook")
     return jsonify({"received": True})
+
+
+# P0 2026-07-23 (item 5): every /debug-* endpoint burns PropertyData credits
+# and was unauthenticated. One guard covers all current and future debug routes
+# with the same ADMIN_KEY check as /admin/*.
+@app.before_request
+def _gate_debug_endpoints():
+    if (request.path.startswith("/debug")
+            and request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key")):
+        return jsonify({"error": "Unauthorised"}), 403
 
 
 @app.route("/admin/unlock/<report_id>")
@@ -5871,6 +5934,14 @@ def _run_free_build(report_id, inputs):
             "asking_price": inputs["asking_price"], "verdict": report["verdict"],
             "buyer_estimate": _be or "", "anchor_bias": anchor_bias,
             "property_url": _url, "report_url": _ru,
+            # P0 item 6: attribution columns — appended at the END of the row
+            # so the Apps Script column mapping is not disturbed.
+            "referrer": (inputs.get("attribution") or {}).get("referrer", ""),
+            "utm_source": (inputs.get("attribution") or {}).get("utm_source", ""),
+            "utm_medium": (inputs.get("attribution") or {}).get("utm_medium", ""),
+            "utm_campaign": (inputs.get("attribution") or {}).get("utm_campaign", ""),
+            "utm_term": (inputs.get("attribution") or {}).get("utm_term", ""),
+            "utm_content": (inputs.get("attribution") or {}).get("utm_content", ""),
         })
         log_event(_rid, "submission_created", {
             "email": _em, "postcode": report["postcode"],
@@ -5884,7 +5955,8 @@ def _run_free_build(report_id, inputs):
             with app.app_context():
                 email_html = render_template("report_email.html", report_url=_ru, **report)
             send_report_email(_em, email_html, report["postcode"], report["verdict"], report_url=_ru)
-            notify_owner(_em, _url, report["postcode"], report["verdict"], _be, anchor_bias)
+            notify_owner(_em, _url, report["postcode"], report["verdict"], _be, anchor_bias,
+                         attribution=inputs.get("attribution"))
         except Exception as e:
             print(f"Email error in background build ({_rid}): {e}")
     except Exception as exc:
@@ -6001,6 +6073,12 @@ def submit():
     _rid = report_id
     _ru  = report_url
     _em  = to_email
+    # P0 2026-07-23 (item 6): attribution capture. The frontend sends
+    # document.referrer + utm_* at form submit when present; stored with the
+    # submission so we finally know where users come from.
+    _attr = {k: str(data.get(k) or "")[:300] for k in
+             ("referrer", "utm_source", "utm_medium", "utm_campaign",
+              "utm_term", "utm_content")}
 
     def _resolve():
         # G1 (2026-07-14): this thread does the FREE work only — scrape + address
@@ -6028,6 +6106,7 @@ def submit():
                     "report_url": _ru, "asking_price": ap, "bedrooms": br,
                     "property_type": pt, "postcode": pc, "address": ad,
                     "floor_area_sqm": _fa, "extra": extra,
+                    "attribution": _attr,
                 },
             })
             save_report(_rid, stored)

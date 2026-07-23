@@ -1,0 +1,25 @@
+{
+  "_comment": "Regression battery (P0 audit 2026-07-23). Each slot is a listing CLASS; update URLs when listings die (dead listings are themselves slot 10's class). Slots marked TODO need a live example URL filled in — the harness skips them with a loud warning until then.",
+  "battery": [
+    {"slot": 1,  "class": "standard fixed-price house sale (control)",      "url": "https://www.rightmove.co.uk/properties/151604780"},
+    {"slot": 2,  "class": "guide-price listing that is NOT an auction (incident class)", "url": "https://www.rightmove.co.uk/properties/151864718",
+     "expect": {"sale_type": null, "price_qualifier": "Guide Price"}},
+    {"slot": 3,  "class": "genuine auction lot (AUCP=TRUE)",                "url": "TODO",
+     "expect": {"sale_type": "auction"}},
+    {"slot": 4,  "class": "detached bungalow (subtype != type)",            "url": "https://www.rightmove.co.uk/properties/151864718",
+     "expect": {"property_subtype": "Detached Bungalow", "subtype_caveat_applied": true}},
+    {"slot": 5,  "class": "flat / leasehold",                               "url": "https://www.rightmove.co.uk/properties/174040913"},
+    {"slot": 6,  "class": "new-build development listing",                  "url": "TODO",
+     "expect": {"is_new_build": true}},
+    {"slot": 7,  "class": "shared ownership / retirement",                  "url": "https://www.rightmove.co.uk/properties/164943839",
+     "expect_any": {"sale_type": ["retirement", "shared_ownership"]}},
+    {"slot": 8,  "class": "reduced at least once",                          "url": "https://www.rightmove.co.uk/properties/151864718",
+     "expect": {"price_reduced": true}},
+    {"slot": 9,  "class": "to-rent URL (must reject cleanly)",              "url": "TODO",
+     "expect_rejection": true},
+    {"slot": 10, "class": "malformed/dead URL (must fail gracefully)",      "url": "https://www.rightmove.co.uk/properties/156236072",
+     "expect_rejection": true},
+    {"slot": 11, "class": "very thin-data rural postcode (broadened path)", "url": "https://www.rightmove.co.uk/properties/165560948"},
+    {"slot": 12, "class": "GBP 1.5m+ (near the 2m comp cap)",               "url": "TODO"}
+  ]
+}
