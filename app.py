@@ -3038,7 +3038,7 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             confidence_score, "low")
         note = (f"this is listed as a {property_subtype.lower()} — Land Registry "
                 "doesn't distinguish subtypes, so our comparables are same-type "
-                f"({property_type_label}) but may differ in kind, and the "
+                f"({property_type or 'property'}) but may differ in kind, and the "
                 "estimate should be read with that in mind")
         confidence_reasons.append(note)
         confidence_caveat = (f"{confidence_caveat} {note.capitalize()}."

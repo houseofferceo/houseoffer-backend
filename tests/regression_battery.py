@@ -71,8 +71,24 @@ def fetch(base, url, fresh):
     return body
 
 
-def check_slot(slot, cls, resp, expect, expect_any, expect_rejection):
+def check_slot(slot, cls, resp, expect, expect_any, expect_rejection, expect_graceful=False):
     status, data = resp["status"], resp["json"]
+
+    if expect_graceful:
+        # Dead/junk listings may still build (Rightmove keeps page data on
+        # delisted pages) — the requirement is a clean rejection OR a flagged
+        # LOW-confidence report, and NEVER a 500.
+        if status == 500:
+            note(FAIL, slot, f"{cls}: unhandled 500 (I7)")
+        elif status != 200 or (isinstance(data, dict) and data.get("error")):
+            note(PASS, slot, f"{cls}: rejected cleanly (HTTP {status})")
+        else:
+            r = data.get("report", data)
+            if r.get("confidence_score") == "low":
+                note(PASS, slot, f"{cls}: built but flagged LOW (graceful)")
+            else:
+                note(FAIL, slot, f"{cls}: junk built WITHOUT a low-confidence flag")
+        return
 
     if expect_rejection:
         if status == 500:
@@ -165,7 +181,7 @@ def main():
             continue
         resp = fetch(args.base, url, args.fresh)
         check_slot(slot, cls, resp, item.get("expect"), item.get("expect_any"),
-                   item.get("expect_rejection"))
+                   item.get("expect_rejection"), item.get("expect_graceful", False))
 
     print(f"\n{len(PASS)} pass, {len(FAIL)} fail, {len(WARN)} warn")
     sys.exit(1 if FAIL else 0)
