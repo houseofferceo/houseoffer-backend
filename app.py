@@ -10,7 +10,7 @@ import hmac
 import threading
 import requests
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, request, jsonify, render_template, redirect
+from flask import Flask, request, jsonify, render_template, redirect, Response
 from flask_cors import CORS
 from datetime import datetime
 from hpi_data import get_hpi_index as hpi_index, get_current_hpi
@@ -18,6 +18,22 @@ from property_scraper import scrape_property_url, fetch_sold_nearby, normalise_p
 
 app = Flask(__name__)
 CORS(app, origins=["https://houseoffer.uk", "https://www.houseoffer.uk", "https://houseoffer.netlify.app", "https://offerright.co.uk", "http://localhost:3000"])
+
+# ── SEO / crawling ──────────────────────────────────────────────────────────
+# This backend host (houseoffer-backend.onrender.com) serves personal reports,
+# vote links and internal tooling — none of it should appear in search results.
+# The public, canonical content lives on houseoffer.uk. Emit noindex on every
+# response and block crawling via robots.txt.
+# NOTE: this controls INDEXING only. It is not access control; endpoints remain
+# reachable by URL and must be secured separately.
+@app.after_request
+def _add_noindex_header(response):
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
+@app.route("/robots.txt")
+def robots_txt():
+    return Response("User-agent: *\nDisallow: /\n", mimetype="text/plain")
 
 # ── REPORT STORAGE ────────────────────────────────────────────────────────────
 # Reports and engagement events are stored as JSON files under DATA_DIR.
@@ -4590,9 +4606,10 @@ def health():
 @app.route("/white-paper")
 @app.route("/white-paper/")
 def white_paper():
-    """Public methodology white paper. Static page; safe to link from the
-    marketing site (e.g. houseoffer.uk/white-paper -> this route)."""
-    return render_template("white_paper.html")
+    """Legacy backend copy of the white paper. The canonical version now lives on
+    the marketing site (houseoffer.uk/white-paper/); redirect to avoid duplicate
+    content across hosts."""
+    return redirect("https://houseoffer.uk/white-paper/", code=301)
 
 @app.route("/version")
 def version():
