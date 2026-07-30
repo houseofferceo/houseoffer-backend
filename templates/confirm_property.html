@@ -62,12 +62,20 @@ summary::-webkit-details-marker { display: none; }
       {% if asking_price %}<span class="chip">Asking £{{ "{:,}".format(asking_price) }}</span>{% endif %}
     </div>
 
+    {% set unresolved = not resolution or resolution == 'none' %}
+    {% if unresolved %}
+    {# P1 2026-07-30 (RG1 5BX): the resolver failed — soft-require an address.
+       The correction panel opens by default and the stakes are stated plainly;
+       continuing without one is still allowed but the report will say so. #}
+    <div class="why" style="border:1.5px solid var(--amber);"><b>We couldn't identify the exact address from the listing.</b> Without it, your report runs on postcode-level evidence only — no sale history for this specific home, no floor-area match. Adding the address below makes the analysis dramatically better. You can continue without it, but the report will be marked "address unverified".</div>
+    {% else %}
     <div class="why"><b>Why we ask:</b> every number in your report — sold comparables, this property's own sale history, the offer range — hangs off this address. Thirty seconds here keeps them all pointed at the right home. We only run the full valuation once you confirm.</div>
+    {% endif %}
 
     <form method="post" action="/r/{{ report_id }}/confirm-build">
-      <button type="submit" class="confirm">Yes — that's the property, run my valuation →</button>
+      <button type="submit" class="confirm">{% if unresolved %}Continue — run my valuation →{% else %}Yes — that's the property, run my valuation →{% endif %}</button>
 
-      <details>
+      <details{% if unresolved %} open{% endif %}>
         <summary>Not quite right? Correct it here</summary>
         <div class="fix">
           <div>
