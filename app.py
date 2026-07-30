@@ -3263,6 +3263,16 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     if open_offer and local_avg_sold:
         open_offer_vs_comps_pct = round(((local_avg_sold - open_offer) / local_avg_sold) * 100, 1)
 
+    # ── P1 2026-07-30 (fix 4): re-sync the caveat prefix to the FINAL score ────
+    # Downgrades applied after _resolve_confidence (subtype, B3 divergence,
+    # size-mismatch) change the score without rewriting the caveat's
+    # "Confidence is X:" prefix — a real user saw a LOW badge over a
+    # "Confidence is medium:" sentence. The badge was right; the prose lied.
+    if confidence_caveat:
+        confidence_caveat = re.sub(r"Confidence is \w+:",
+                                   f"Confidence is {confidence_score}:",
+                                   confidence_caveat)
+
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
