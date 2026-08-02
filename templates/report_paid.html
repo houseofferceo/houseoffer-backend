@@ -385,12 +385,19 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 
   <!-- ASKING-ANCHOR v1: overpricing guardrail — never silently anchor to an
        asking price the evidence says is inflated -->
+  {# P1 2026-07-30: unverified address banner — the biggest accuracy lever #}
+  {% if address_resolution in (none, 'none') %}
+  <div style="background:#fdf0e3; border:1.5px dashed #c06a1a; border-radius:12px; padding:12px 16px; margin-bottom:14px;">
+    <div style="font-size:13.5px; color:#5c5849; line-height:1.6;"><strong style="color:#8a4a10;">📍 Address unverified.</strong> This report runs on postcode-level evidence only — the property's own sale history and floor area couldn't be matched. Use the Confirm address button to sharpen every number.</div>
+  </div>
+  {% endif %}
+
   {% if overpricing_flag %}
   <div class="overpricing-card">
     <div class="overpricing-title">⚠️ Priced well above the evidence — here's the play</div>
     <div class="overpricing-body">The asking price of <strong>{{ asking_price_formatted }}</strong>
       sits well above what local sold evidence supports
-      {% if weighted_midpoint_formatted %}(our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}.
+      {% if confidence_score == 'low' %}{% set opd5 = (((asking_price - weighted_midpoint) / asking_price * 100) / 5) | round | int * 5 %}(the sold evidence points roughly <strong>{{ opd5 }}% lower</strong> — LOW confidence, full range in the evidence below){% elif weighted_midpoint_formatted %}(our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}.
       Our play: a confident, evidence-backed low open — the numbers below.
       Expect pushback; the comparable sales further down are your script when
       it comes. And keep genuinely open to walking early: on a listing priced

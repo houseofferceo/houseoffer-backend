@@ -396,24 +396,30 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
   <!-- A: VALUATION + HOOK -->
   <div class="valuation-card">
     <div class="val-eyebrow">Our valuation</div>
-    {# ASKING-ANCHOR v1 overpricing guardrail: when the evidence says the asking
-       price is materially inflated, the report must lead with that. #}
+    {% set uncertain = asking_anomaly or confidence_score == 'low' %}
+    {# P1 2026-07-30: unverified address = the single biggest accuracy lever.
+       Shown whenever the resolver failed and the buyer didn't supply one. #}
+    {% if address_resolution in (none, 'none') %}
+    <div style="background:#fdf0e3; border:1.5px dashed #c06a1a; border-radius:12px; padding:12px 16px; margin-bottom:14px;">
+      <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6;"><strong style="color:#8a4a10;">📍 Address unverified.</strong> We couldn't pin down the exact address from the listing, so this report runs on postcode-level evidence only — the property's own sale history and floor area couldn't be matched. Confirming the address sharpens every number below.</div>
+    </div>
+    {% endif %}
     {% if sale_type == 'auction' %}
     {# v2: auction flag — dynamics invert; route to direct support #}
     <div style="background:#fdf0e3; border:2px solid #c06a1a; border-radius:12px; padding:14px 16px; margin-bottom:14px;">
       <div style="font-weight:700; color:#8a4a10; margin-bottom:4px;">🔨 This is an auction listing — the dynamics are different</div>
       <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6;">The {{ asking_price_formatted }} figure is a <strong>guide price</strong>, set low to attract bidders and designed to be bid <em>up</em> from — so the usual open-below-asking approach doesn't apply. Use the sold evidence below to set your ceiling before the auction, and <strong>reply to your report email</strong> for direct support with an auction purchase.</div>
     </div>
-    {% elif overpricing_flag %}
+    {% elif overpricing_flag and not uncertain %}
     <div style="background:#fdf0e3; border:2px solid #c06a1a; border-radius:12px; padding:14px 16px; margin-bottom:14px;">
       <div style="font-weight:700; color:#8a4a10; margin-bottom:4px;">⚠️ Priced well above the evidence — there's a play here</div>
       <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6;">The asking price of <strong>{{ asking_price_formatted }}</strong> sits well above what local sold evidence supports{% if weighted_midpoint_formatted %} (our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}. The right move is a confident, evidence-backed low open — the full report gives you the exact numbers and the comparables to justify them in the room.</div>
     </div>
     {% endif %}
-    {# 2026-07-16 (Wemborough HA7 2ED): a LOW-confidence or anomaly-flagged
-       estimate must never lead with a precise headline figure or a "£X in your
-       pocket" claim — the engine itself has said the number may be wrong. #}
-    {% set uncertain = asking_anomaly or confidence_score == 'low' %}
+    {# 2026-07-16 (Wemborough), reworked 2026-07-30 (CEO): the LOW-confidence
+       number is presented as a DISCOUNT TO ASKING — one relative figure, LOW
+       stated plainly, address confirmation as the accuracy lever, and the
+       uniqueness/£-per-m² line as the route to the full report. #}
     {% if weighted_midpoint and not uncertain %}
     <div class="val-main">
       <div class="val-our">
@@ -450,9 +456,16 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     {% elif weighted_midpoint and uncertain %}
     <div class="val-main">
       <div class="val-our">
-        <div class="val-label">Indicative range only</div>
-        <div class="val-range" style="font-size:22px; font-weight:700; color:var(--ink); margin-top:4px;">{{ weighted_low_formatted }} – {{ weighted_high_formatted }}</div>
-        <div style="font-size:13px; color:var(--ink-mid); line-height:1.6; margin-top:8px;">Straight talk: this one's priced oddly or the local sold data is thin, so we're showing a range rather than a single figure. There's still a play — we'd open below asking to test the seller, and the full report gives you the exact opening number and the one thing to check first. Confirming the address below usually sharpens the whole analysis.</div>
+        <div class="val-label">Our estimate — LOW confidence</div>
+        {% set disc_raw = ((asking_price - weighted_midpoint) / asking_price * 100) %}
+        {% set disc5 = ((disc_raw / 5) | round | int) * 5 %}
+        <div class="val-range" style="font-size:22px; font-weight:700; color:var(--ink); margin-top:4px;">
+          {% if disc5 >= 5 %}About {{ disc5 }}% below the asking price
+          {% elif disc5 <= -5 %}About {{ disc5|abs }}% above the asking price
+          {% else %}Broadly in line with the asking price{% endif %}
+        </div>
+        <div style="font-size:13px; color:var(--ink-mid); line-height:1.6; margin-top:8px;">Straight talk: that's the number to negotiate from, not a formal valuation — the local sold data here is thin, so we're stating it relative to the asking price and saying so. <strong>Confirming the address below is the single biggest thing that sharpens it.</strong></div>
+        <div style="font-size:13px; color:var(--ink-mid); line-height:1.6; margin-top:8px;">One more thing worth knowing: if this home is unusual for its street — extended, renovated, bigger than its neighbours — the local sold average can miss that entirely. The full report's price-per-m² and property-specific methods are the right measure in that case.</div>
       </div>
       <div class="val-asking">
         <div class="val-label">Asking price</div>
@@ -500,7 +513,19 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       {# P0 fix 4 (2026-07-23): ONE market value. The verdict speaks to the same
          headline estimate shown above; the raw comp average is evidence, not a
          second competing figure. #}
-      {% if weighted_midpoint and asking_price %}
+      {% if weighted_midpoint and asking_price and (asking_anomaly or confidence_score == 'low') %}
+        {% set vdisc5 = (((asking_price - weighted_midpoint) / asking_price * 100) / 5) | round | int * 5 %}
+        Against the sold evidence — {{ comparables_count }} completed sales of similar {{ property_type_label }} homes in
+        {% if search_broadened %}the {{ postcode.split()[0] }} area{% else %}{{ postcode }}{% endif %} —
+        the asking price looks
+        <strong>{% if vdisc5 >= 5 %}roughly {{ vdisc5 }}% high{% elif vdisc5 <= -5 %}roughly {{ vdisc5|abs }}% low{% else %}broadly in line{% endif %}</strong>.
+        Confidence is LOW here, so treat that as a negotiating read, not a valuation — and confirm the address above to sharpen it.
+        {% if verdict == 'overpriced' %}
+          Even on the cautious reading, the gap is your opening position at the negotiating table.
+        {% elif verdict == 'value' %}
+          If the gap is real, someone else will spot it too — move with the right number ready.
+        {% endif %}
+      {% elif weighted_midpoint and asking_price %}
         {% set est_gap_pct = ((asking_price - weighted_midpoint) / weighted_midpoint * 100) | round(1) %}
         Against our estimate of <strong>{{ weighted_midpoint_formatted }}</strong> —
         built from {{ comparables_count }} completed sales of similar {{ property_type_label }} homes in
@@ -591,7 +616,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       {% if weighted_midpoint %}
       <div class="crowd-paid-hook">
         <div class="crowd-paid-icon">📊</div>
-        <div class="crowd-paid-text" id="crowd-vs-data">As votes come in, watch how everyone's number compares with the data valuation of <strong>{{ weighted_midpoint_formatted }}</strong>.</div>
+        <div class="crowd-paid-text" id="crowd-vs-data">As votes come in, watch how everyone's number compares with {% if asking_anomaly or confidence_score == 'low' %}our estimate — {% set cdisc5 = (((asking_price - weighted_midpoint) / asking_price * 100) / 5) | round | int * 5 %}{% if cdisc5 >= 5 %}about {{ cdisc5 }}% below the asking price{% elif cdisc5 <= -5 %}about {{ cdisc5|abs }}% above the asking price{% else %}broadly the asking price{% endif %} (LOW confidence){% else %}the data valuation of <strong>{{ weighted_midpoint_formatted }}</strong>{% endif %}.</div>
       </div>
       {% endif %}
     </div>
@@ -692,9 +717,9 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       <div class="ff-row-clear" style="margin-top:14px;"><div class="ff-label-clear" style="color:var(--red);font-weight:600;">Asking price</div><div class="ff-fake-track"><div class="ff-fake-fill" style="width:{% if cspan %}{{ [((asking_price - cmin) / cspan * 100)|round(1), 4]|max }}{% else %}79{% endif %}%;background:linear-gradient(90deg,#f0c98a,#c06a1a);"></div></div><div class="ff-asking-figure">{{ asking_price_formatted }}</div></div>
 
       <div class="ff-fake-offer-strip">
-        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Open with</div><div class="ff-fake-offer-val">£305,000</div></div>
-        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Target price</div><div class="ff-fake-offer-val">£312,000</div></div>
-        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Walk away above</div><div class="ff-fake-offer-val" style="color:var(--red)">£330,000</div></div>
+        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Open with</div><div class="ff-fake-offer-val">£•••,•••</div></div>
+        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Target price</div><div class="ff-fake-offer-val">£•••,•••</div></div>
+        <div class="ff-fake-offer-cell"><div class="ff-fake-offer-label">Walk away above</div><div class="ff-fake-offer-val" style="color:var(--red)">£•••,•••</div></div>
       </div>
 
       {% if comparables %}
@@ -759,14 +784,14 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     <div class="leverage-strip">
       <div class="leverage-cell">
         <div class="leverage-cell-label">Opening offer</div>
-        <div class="leverage-cell-was leverage-blur">was £310,000</div>
-        <div class="leverage-cell-val leverage-blur">£305,000</div>
+        <div class="leverage-cell-was leverage-blur">was £•••,•••</div>
+        <div class="leverage-cell-val leverage-blur">£•••,•••</div>
       </div>
       <div class="leverage-arrow">→</div>
       <div class="leverage-cell">
         <div class="leverage-cell-label">Walk-away</div>
-        <div class="leverage-cell-was leverage-blur">was £325,000</div>
-        <div class="leverage-cell-val leverage-blur">£330,000</div>
+        <div class="leverage-cell-was leverage-blur">was £•••,•••</div>
+        <div class="leverage-cell-val leverage-blur">£•••,•••</div>
       </div>
     </div>
     <div class="leverage-note">
