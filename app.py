@@ -3795,6 +3795,18 @@ def _offer_frontier(report, profile=None):
     if not asking or not walk:
         return None
     floor = report.get("weighted_low")
+    # Asking-anchor at render time (2026-08-10, completes the 17-Jul migration):
+    # displayed positions are discounts to asking, so none may reach asking —
+    # the universal open-below-asking rule (2026-06-10) applied where the
+    # numbers are actually displayed. The stored walk_away may sit up to 5%
+    # above asking on a value case (CEO §8) — that is a ceiling for the buyer's
+    # discipline, never a displayed position.
+    ceiling = min(walk, asking - 1000)
+    # Value case: the evidence floor sits above every price the Frontier may
+    # display. There is no discount to seek — all positions collapse to just
+    # under asking and the copy says so; the analysis becomes ammunition, not
+    # the anchor.
+    value_case = bool(floor and floor > ceiling)
 
     d_local = report.get("local_sold_discount_pct")
     days, avg_dom = report.get("days_on_market"), report.get("local_avg_dom")
@@ -3821,20 +3833,30 @@ def _offer_frontier(report, profile=None):
         price_lo = asking - round(asking * hi / 100 / 500) * 500  # deep end → lower £
 
         collapsed = None
-        if floor and price_hi < floor:
-            # Whole range below the data-justified floor: the evidence can't
-            # credibly support opening lower — collapse onto the floor.
-            collapsed = "floor"
-            price_lo = price_hi = floor
-        elif floor and price_lo < floor:
-            price_lo = floor
-        # HARD GUARDRAIL (explicit cap, not a convention): no frontier position
-        # ever displays a price above the stored data-derived walk_away.
-        if price_lo > walk:
-            collapsed = "ceiling"
-            price_lo = price_hi = walk
+        if value_case:
+            # One honest position: just under asking, three times over. Any
+            # partial collapse here would show a price and a % label telling
+            # different stories.
+            collapsed = "asking"
+            price_lo = price_hi = ceiling
         else:
-            price_hi = min(price_hi, walk)
+            if floor and price_hi < floor:
+                # Whole range below the data-justified floor: the evidence can't
+                # credibly support opening lower — collapse onto the floor.
+                collapsed = "floor"
+                price_lo = price_hi = floor
+            elif floor and price_lo < floor:
+                price_lo = floor
+            # HARD GUARDRAIL (explicit cap, not a convention): no frontier
+            # position ever displays a price above the ceiling — the lower of
+            # the stored walk_away and asking − £1k.
+            if price_lo > ceiling:
+                # Label the bound that actually bit: the buyer's walk-away, or
+                # the never-at-asking rule.
+                collapsed = "ceiling" if ceiling == walk else "asking"
+                price_lo = price_hi = ceiling
+            else:
+                price_hi = min(price_hi, ceiling)
 
         pct_label = f"about {hi:g}%" if lo == hi else f"{lo:g}–{hi:g}%"
         price_label = (_fmt(price_lo) if price_lo == price_hi
@@ -3855,6 +3877,7 @@ def _offer_frontier(report, profile=None):
         "positions": positions,
         "emphasis": emphasis,
         "walk_away_formatted": _fmt(walk),
+        "value_case": value_case,
     }
 
 
@@ -3926,9 +3949,22 @@ def _personalise_offer(report, profile, frontier):
     if not pos or not base_open:
         return None
 
-    personal_open = int(min(max(base_open, pos["price_lo"]), pos["price_hi"]))
-    moved = personal_open != base_open
     asking = report.get("asking_price")
+    # Only the buyer's answers may move the displayed open. Neutral answers
+    # land on Balanced by default — clamping into that band regardless let
+    # frontier geometry (a collapsed band) move the number and then blame
+    # "your answers" for it (found live 2026-08-10: value case + neutral
+    # answers displayed an open £11k above asking).
+    if drivers:
+        personal_open = int(min(max(base_open, pos["price_lo"]), pos["price_hi"]))
+    else:
+        personal_open = int(base_open)
+    # The universal open-below-asking rule (2026-06-10), re-applied where the
+    # displayed number is actually derived — the stored trio's cap does not
+    # survive the band clamp on its own.
+    if asking:
+        personal_open = min(personal_open, int(asking) - 1000)
+    moved = personal_open != base_open
     local_avg_sold = report.get("local_avg_sold")
     vs_asking_pct = (round((asking - personal_open) / asking * 100, 1)
                      if asking else None)
@@ -4686,6 +4722,29 @@ def admin_unlock(report_id):
         return jsonify({"error": "report not found"}), 404
     return jsonify({"status": result["status"], "report_id": report_id,
                     "rebuilding": result["rebuilding"]})
+
+
+@app.route("/admin/clear-profile/<report_id>")
+def admin_clear_profile(report_id):
+    """Reset the post-unlock buyer questionnaire (support tool): clears stored
+    answers or an explicit skip so the next visit shows the three questions
+    again and personalisation starts from scratch."""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "unauthorized"}), 401
+    if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
+        return jsonify({"error": "invalid report_id"}), 400
+    stored = load_report(report_id)
+    if not stored:
+        return jsonify({"error": "report not found"}), 404
+    cleared = [k for k in ("buyer_profile", "buyer_profile_skipped")
+               if stored.pop(k, None) is not None]
+    if cleared:
+        save_report(report_id, stored)
+        log_event(report_id, "buyer_profile_cleared",
+                  {"source": "admin", "cleared": cleared})
+    return jsonify({"status": "cleared" if cleared else "nothing_to_clear",
+                    "report_id": report_id})
 
 @app.route("/log", methods=["POST"])
 def log_engagement():

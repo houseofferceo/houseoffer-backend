@@ -7,6 +7,28 @@ UK English. All prices GBP.
 
 ## Fixed
 
+### Displayed opening offer above asking on value-case paid reports
+- Date: 2026-08-10
+- Symptom: report d42dfb9efe2b (NR1 3AY, asking £220,000, value verdict,
+  buyer questions answered) displayed "Open with £231,000" — above asking —
+  with target £215,000 below it, and all three Offer Frontier positions
+  collapsed onto £231,000. The note blamed the buyer's (neutral) answers.
+- Root cause: the asking-anchor migration (17 Jul) covered the STORED trio
+  only. The render-time Frontier (5 Jul) floors its bands at weighted_low —
+  the analysis — and caps at walk_away, which the value case deliberately
+  lifts to asking × 1.05. On a home the evidence values above asking, the
+  floor pushed every band up to the walk-away, and _personalise_offer
+  clamped the displayed open into that band. The universal open-below-asking
+  rule (10 Jun) existed only at build time.
+- Fix: render-time display ceiling min(walk_away, asking − £1k) on all
+  Frontier positions; value case (weighted_low above the ceiling) collapses
+  every position to asking − £1k with honest "no discount to seek" copy and
+  a value_case flag for the template; _personalise_offer re-applies the
+  asking − £1k cap and only moves the open when the answers actually pushed
+  (neutral answers keep the data-only number). New zero-credit display
+  invariants in tests/test_offer_display.py (D1–D5). Also added
+  /admin/clear-profile/<id> to reset a consumed buyer questionnaire.
+
 ### Paid report: context-only methods drew off-chart football-field bars
 - Date: 2026-07-05
 - Symptom: weight-0 "context only" methods (matched-sold scoring row,

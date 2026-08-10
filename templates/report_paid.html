@@ -908,7 +908,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     <div class="ff2-head">
       <div class="ff2-title">The Offer Frontier — discount sought vs risk of losing it</div>
       <div class="ff2-sub">
-        {% if offer_frontier.is_fallback %}Built from national asking-to-sold patterns{% else %}Built from this area's actual asking-to-sold discounts{% endif %}{% if offer_frontier.dom_shifted %}, shifted by {{ offer_frontier.days_on_market }} days on the market{% endif %}. You can't seek a bigger saving without accepting more risk — pick your position deliberately.
+        {% if offer_frontier.value_case %}On this listing the frontier has collapsed to a single position: the evidence values this home above its asking price, so there is no discount to seek. Every position below sits just under asking — you're negotiating from strength, not chasing a saving.{% else %}{% if offer_frontier.is_fallback %}Built from national asking-to-sold patterns{% else %}Built from this area's actual asking-to-sold discounts{% endif %}{% if offer_frontier.dom_shifted %}, shifted by {{ offer_frontier.days_on_market }} days on the market{% endif %}. You can't seek a bigger saving without accepting more risk — pick your position deliberately.{% endif %}
       </div>
     </div>
     <div class="ff2-body">
@@ -950,11 +950,13 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
           <div class="pos-pct">
             {% if p.collapsed == 'floor' %}at the data floor
             {% elif p.collapsed == 'ceiling' %}at your walk-away ceiling
+            {% elif p.collapsed == 'asking' %}just under asking
             {% else %}{{ p.pct_label }} below asking{% endif %}
           </div>
           <div class="pos-risk">
             {% if p.collapsed == 'floor' %}The sold evidence can't credibly support opening lower than this. Real chance of rejection — only with a walk-away mindset.
             {% elif p.collapsed == 'ceiling' %}Your walk-away ceiling caps this position — paying more than {{ offer_frontier.walk_away_formatted }} isn't "secure", it's overpaying.
+            {% elif p.collapsed == 'asking' %}The evidence says this home is worth more than its asking price, so there's no discount to seek. Open just under asking; the valuation range above is your assurance — and your script if the seller pushes for more.
             {% else %}{{ p.risk }}{% endif %}
           </div>
         </div>
@@ -965,7 +967,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
         Positions come from {% if offer_frontier.is_fallback %}national{% else %}this area's{% endif %} asking-to-sold discounts{% if offer_frontier.dom_shifted %}, shifted by time on market{% endif %}. Qualitative risk only: nobody can honestly give you an acceptance percentage, so we don't.
       </div>
       <div class="lens-meet">
-        <strong>Where the lenses meet:</strong> both stop at the same lines — the Frontier never goes below the valuation floor or above your walk-away of <strong>{{ offer_frontier.walk_away_formatted }}</strong>. The Frontier flexes with the seller's weakness; the walk-away never moves.
+        <strong>Where the lenses meet:</strong> {% if offer_frontier.value_case %}the value lens says this home is worth more than its asking price, so the Frontier is capped just under asking — an opening offer never starts at or above the sticker. Your walk-away of <strong>{{ offer_frontier.walk_away_formatted }}</strong> is your discipline if a bidding battle starts, not your opening move.{% else %}both stop at the same lines — the Frontier never goes below the valuation floor or above your walk-away of <strong>{{ offer_frontier.walk_away_formatted }}</strong>. The Frontier flexes with the seller's weakness; the walk-away never moves.{% endif %}
         {% if verdict == 'overpriced' %}
         On an overpriced home like this one, the two lenses squeeze together: even deep discounts off the inflated asking price only bring you back to what the home is actually worth, so the Aggressive position and your opening offer can land close — or on the same number. That's not a glitch; it's both lenses agreeing that the asking price, not your offer, is the number out of line.
         {% else %}
