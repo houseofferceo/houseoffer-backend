@@ -30,6 +30,66 @@ EVENTS_DIR = os.path.join(DATA_DIR, "houseoffer_events")
 os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(EVENTS_DIR, exist_ok=True)
 
+# ── LEAD CAPTURE (17 Aug brief, item 1) ──────────────────────────────────────
+# Six upgrade clicks bounced off /track with no contact details captured.
+# Every £29/£99 click now lands on an email-capture step first; the address is
+# stored HERE (append-only JSONL on the persistent disk) before anything else,
+# so a Sheets or Resend outage can never lose a lead again.
+LEADS_PATH = os.path.join(DATA_DIR, "houseoffer_leads.jsonl")
+# £29 intent carried through the free-report funnel: email → form → /submit
+# marks the resulting report so the checkout CTA renders above the fold.
+INTENTS_PATH = os.path.join(DATA_DIR, "houseoffer_intents.json")
+INTENT_TTL_DAYS = 14
+_leads_lock = threading.Lock()
+
+
+def _record_lead(lead):
+    """Append one captured lead. Never raises — capture must not lose the
+    visitor's onward redirect."""
+    try:
+        with _leads_lock:
+            with open(LEADS_PATH, "a") as f:
+                f.write(json.dumps(lead) + "\n")
+        return True
+    except Exception as e:
+        print(f"record_lead error: {e}")
+        return False
+
+
+def _set_intent(email, tier):
+    """Remember that this email arrived wanting the £<tier> report."""
+    try:
+        with _leads_lock:
+            intents = {}
+            if os.path.exists(INTENTS_PATH):
+                with open(INTENTS_PATH) as f:
+                    intents = json.load(f) or {}
+            intents[email.strip().lower()] = {
+                "tier": tier, "ts": datetime.utcnow().isoformat() + "Z"}
+            with open(INTENTS_PATH, "w") as f:
+                json.dump(intents, f)
+    except Exception as e:
+        print(f"set_intent error: {e}")
+
+
+def _get_intent(email):
+    """Pending purchase intent for this email, or None if absent/expired."""
+    try:
+        if not os.path.exists(INTENTS_PATH):
+            return None
+        with open(INTENTS_PATH) as f:
+            intents = json.load(f) or {}
+        entry = intents.get((email or "").strip().lower())
+        if not entry:
+            return None
+        ts = datetime.fromisoformat(entry["ts"].replace("Z", ""))
+        if (datetime.utcnow() - ts).days > INTENT_TTL_DAYS:
+            return None
+        return entry
+    except Exception as e:
+        print(f"get_intent error: {e}")
+        return None
+
 def save_report(report_id, payload):
     """Persist report data to disk so /r/<uuid> can serve it later."""
     try:
@@ -222,9 +282,17 @@ def post_to_sheets(payload):
     try:
         body = dict(payload)
         body["secret"] = SHEETS_WEBHOOK_SECRET
-        requests.post(SHEETS_WEBHOOK_URL, json=body, timeout=5)
+        r = requests.post(SHEETS_WEBHOOK_URL, json=body, timeout=5)
+        # 17 Aug (item 2): the mirror ran blind — a script-side failure looked
+        # identical to success. Log anything that isn't a clean 200/302 (Apps
+        # Script replies 302 to a googleusercontent result page on success).
+        if r.status_code not in (200, 302):
+            print(f"Sheets webhook non-OK for type={payload.get('type')}: "
+                  f"{r.status_code} {r.text[:200]}")
+        return r
     except Exception as e:
         print(f"Sheets webhook error: {e}")
+        return None
 
 def format_postcode(raw):
     raw = raw.strip().upper().replace(" ", "")
@@ -3684,13 +3752,128 @@ def track():
     except Exception as e:
         print(f"Track notify error: {e}")
 
-    # Homepage £29 clicks have no report yet — checkout is per-report, so the
-    # funnel starts at the free-report form (next=form). Report-page CTAs go
-    # straight to Stripe via /r/<id>/checkout and never come through here.
+    # 17 Aug brief, item 1: every £29/£99 click used to bounce back to the
+    # homepage having captured NOTHING — six buyers lost with no contact
+    # details. Both tiers now land on the email-capture step first; /interest
+    # stores the address, then carries the visitor onward (£29 → the free
+    # report form with intent attached; £99 → the waitlist confirmation).
+    if tier in ("29", "99"):
+        return render_template(
+            "interest_capture.html", tier=tier,
+            rid=report_id if re.fullmatch(r"[a-f0-9]{8,32}", report_id or "") else "",
+            postcode=postcode if postcode != "unknown" else "",
+            verdict=verdict if verdict != "unknown" else "",
+            anchor=anchor if anchor != "unknown" else "",
+            source=("report" if report_id else "homepage"),
+            done=False)
     if request.args.get("next") == "form":
-        # ?unlock=29 makes the homepage show the "free report first" callout
+        # Legacy path — ?unlock=29 makes the homepage show the callout
         return redirect("https://houseoffer.uk/?unlock=29#hero-form")
     return redirect("https://houseoffer.uk/#pricing")
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+
+
+@app.route("/interest", methods=["POST"])
+def capture_interest():
+    """Email-first capture for £29/£99 intent (17 Aug brief, item 1a/1b).
+
+    Stores the lead durably BEFORE any side effect, mirrors a type:'interest'
+    row to Sheets (new fields only — nothing existing is re-ordered), emails
+    the visitor a confirmation and the owner an alert via Resend, then sends
+    the visitor onward. The buying-agent referral checkbox is INTEREST
+    CAPTURE ONLY: the state is stored and reported to us — no data leaves
+    HouseOffer's own processors, and no third-party hand-off exists."""
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    email = (data.get("email") or "").strip()
+    tier = data.get("tier") if data.get("tier") in ("29", "99") else None
+    rid = data.get("rid", "")
+    rid = rid if re.fullmatch(r"[a-f0-9]{8,32}", rid or "") else ""
+    source = re.sub(r"[^a-z0-9_]", "", (data.get("source") or ""))[:20] or "unknown"
+    referral = bool(data.get("referral"))
+    postcode = (data.get("postcode") or "")[:12]
+    verdict = re.sub(r"[^a-z_]", "", (data.get("verdict") or ""))[:20]
+
+    if not tier:
+        return jsonify({"error": "invalid tier"}), 400
+    if not _EMAIL_RE.fullmatch(email):
+        return render_template("interest_capture.html", tier=tier, rid=rid,
+                               postcode=postcode, verdict=verdict, anchor="",
+                               source=source, done=False,
+                               error="That email doesn't look right — please check it.")
+
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    _record_lead({"timestamp": timestamp, "email": email, "tier": tier,
+                  "source": source, "report_id": rid, "postcode": postcode,
+                  "verdict": verdict, "referral_interest": referral})
+    if tier == "29":
+        _set_intent(email, tier)
+    if rid:
+        log_event(rid, "interest_captured", {"tier": tier, "source": source,
+                                             "referral_interest": referral})
+
+    # Sheets row — NEW type with its own columns; existing row shapes untouched
+    # (the Apps Script needs a matching 'interest' branch; columns appended at
+    # the end of its sheet, per the 17 Aug ground rules).
+    post_to_sheets({
+        "type": "interest",
+        "timestamp": timestamp,
+        "email": email,
+        "tier": tier,
+        "source": source,
+        "uuid": rid,
+        "postcode": postcode,
+        "referral_interest": "yes" if referral else "no",
+    })
+
+    # Visitor confirmation + owner alert (both fire-and-forget).
+    if tier == "99":
+        visitor_subject = "You're on the list — the £99 HouseOffer Playbook"
+        visitor_text = (
+            "The £99 Playbook is still in build. We'll tell you the moment "
+            "it's live.\n")
+        if referral:
+            visitor_text += (
+                "\nYou also ticked interest in an introduction to an "
+                "independent buying agent — someone paid by the buyer, never "
+                "the seller. We'll be in touch to explain how it works and "
+                "what it costs. No data is shared with anyone until you say "
+                "so.\n")
+        visitor_text += "\n— HouseOffer\nhttps://houseoffer.uk"
+    else:
+        visitor_subject = "Your £29 HouseOffer report — one step to go"
+        visitor_text = (
+            "You're one step from your full negotiation report.\n\n"
+            "Generate your free report first — paste the Rightmove link at\n"
+            "https://houseoffer.uk/?unlock=29#hero-form\n\n"
+            "and the £29 unlock will be waiting at the top of it. This link "
+            "works whenever you're ready.\n\n— HouseOffer")
+    for to, subject, text in (
+            (email, visitor_subject, visitor_text),
+            (EMAIL_ADDRESS,
+             f"🎯 Lead captured: £{tier} — {email}"
+             + (" — BUYING-AGENT INTEREST" if referral else ""),
+             (f"Email-first capture (17 Aug flow).\n\nEmail: {email}\n"
+              f"Tier: £{tier}\nSource: {source}\nReport: {rid or '—'}\n"
+              f"Postcode: {postcode or '—'}\n"
+              f"Buying-agent referral interest: {'YES' if referral else 'no'}"))):
+        try:
+            requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={"from": f"HouseOffer <{EMAIL_ADDRESS}>", "to": [to],
+                      "subject": subject, "text": text},
+                timeout=10)
+        except Exception as e:
+            print(f"Interest email error ({to}): {e}")
+
+    if tier == "29":
+        return redirect("https://houseoffer.uk/?unlock=29#hero-form")
+    return render_template("interest_capture.html", tier=tier, rid=rid,
+                           postcode=postcode, verdict=verdict, anchor="",
+                           source=source, done=True, referral=referral)
+
 
 # ── POST-UNLOCK BUYER PROFILE (2026-07-05) ───────────────────────────────────
 # Three single-choice questions shown after unlock, before the paid report
@@ -4167,6 +4350,7 @@ def view_report(report_id):
     return render_template(template, report_url=report_url, report_id=report_id,
                            buyer_profile=profile, offer_frontier=frontier,
                            personalisation=personalisation,
+                           upgrade_intent=stored.get("upgrade_intent"),
                            **report)
 
 
@@ -4722,6 +4906,38 @@ def admin_unlock(report_id):
         return jsonify({"error": "report not found"}), 404
     return jsonify({"status": result["status"], "report_id": report_id,
                     "rebuilding": result["rebuilding"]})
+
+
+@app.route("/admin/sheets-probe")
+def admin_sheets_probe():
+    """Item 2 decisive test, runnable where the webhook secret actually lives:
+    POST one probe row of the given type at the Apps Script and return the
+    script's real HTTP status and body. Distinguishes 'backend never sent it'
+    from 'script rejected it' without anyone pasting secrets around.
+    Usage: /admin/sheets-probe?key=ADMIN&type=event|interest"""
+    auth = request.args.get("key", "")
+    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+        return jsonify({"error": "unauthorized"}), 401
+    if not SHEETS_WEBHOOK_URL or not SHEETS_WEBHOOK_SECRET:
+        return jsonify({"configured": False,
+                        "detail": "SHEETS_WEBHOOK_URL / SECRET not set"}), 200
+    ptype = request.args.get("type", "event")
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    if ptype == "interest":
+        payload = {"type": "interest", "timestamp": timestamp,
+                   "email": "probe@houseoffer.uk", "tier": "99",
+                   "source": "admin_probe", "uuid": "", "postcode": "",
+                   "referral_interest": "no"}
+    else:
+        payload = {"type": "event", "timestamp": timestamp, "uuid": "probe",
+                   "event_type": "sheets_probe", "extra": {"src": "admin_probe"}}
+    r = post_to_sheets(payload)
+    if r is None:
+        return jsonify({"configured": True, "sent": False,
+                        "detail": "request failed — see server logs"}), 200
+    return jsonify({"configured": True, "sent": True, "probe_type": ptype,
+                    "webhook_status": r.status_code,
+                    "webhook_body": r.text[:500]})
 
 
 @app.route("/admin/clear-profile/<report_id>")
@@ -6111,6 +6327,10 @@ def submit():
     report_url = f"{BASE_URL.rstrip('/')}/r/{report_id}"
     created_at = datetime.utcnow().isoformat() + "Z"
 
+    # 17 Aug item 1a: a visitor who gave their email on the £29 capture step
+    # carries that intent through the funnel — the free report renders its
+    # checkout CTA above the fold.
+    intent = _get_intent(to_email)
     save_report(report_id, {
         "status": "building",
         "build_started_at": created_at,
@@ -6119,7 +6339,10 @@ def submit():
         "property_url": property_url,
         "buyer_estimate": buyer_estimate,
         "paid": False,
+        "upgrade_intent": intent["tier"] if intent else None,
     })
+    if intent:
+        log_event(report_id, "upgrade_intent_attached", {"tier": intent["tier"]})
 
     _url = property_url
     _ap  = asking_price
