@@ -3952,6 +3952,13 @@ def buy_direct():
     except Exception as e:
         print(f"buy_direct scrape error: {e}")
         postcode = None
+    # A dead/redirected listing can scrape into garbage (live 18 Aug: postcode
+    # "A71B0AC" from an invalid property id). Require a real UK postcode shape
+    # before ever showing a pay button.
+    if postcode and not re.fullmatch(
+            r"[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}", postcode.strip()):
+        print(f"buy_direct junk postcode rejected: {postcode!r} for {property_url[:80]}")
+        postcode = None
     if not postcode:
         return form_again("We couldn't read that listing. Check the link opens "
                           "the property page on Rightmove, then try again — "

@@ -123,6 +123,11 @@ r = client.post("/buy", data={"email": "a@b.co", "property-url": GOOD_URL,
                               "buyer_estimate": "200"})
 check("failed scrape gives friendly error",
       "read that listing" in r.get_data(as_text=True))
+ho.merge_scraped_listing = lambda *a: ("A71B0AC", 0, None, None, "", {})
+r = client.post("/buy", data={"email": "a@b.co", "property-url": GOOD_URL,
+                              "buyer_estimate": "200"})
+check("junk postcode from a dead listing rejected (live 18 Aug case)",
+      "read that listing" in r.get_data(as_text=True))
 check("no report records created by rejections",
       len(os.listdir(ho.REPORTS_DIR)) == before)
 
