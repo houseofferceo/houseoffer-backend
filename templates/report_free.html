@@ -364,6 +364,16 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     {% endif %}
   </div>
 
+  {% if upgrade_intent %}
+  <!-- 17 Aug item 1a: this visitor arrived through the £29 capture step — the
+       checkout CTA is the primary above-fold action, not a footer upsell. -->
+  <div style="background:linear-gradient(155deg, var(--teal-light, #e8f4f0), #d3ece4); border:1.5px solid var(--teal-border, #b5d9cd); border-radius:var(--radius, 14px); padding:20px 22px; margin-bottom:18px; box-shadow:var(--shadow, 0 2px 10px rgba(30,28,24,0.06));">
+    <div style="font-family:'Lora',serif; font-size:17px; font-weight:700; color:var(--ink); margin-bottom:6px;">You came for the full report — it's ready to unlock.</div>
+    <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6; margin-bottom:14px;">Below is the free analysis. Your £29 unlock adds the complete valuation range, your recommended opening offer, and the negotiation playbook for this exact property.</div>
+    <a href="https://houseoffer-backend.onrender.com/r/{{ report_id|default('') }}/checkout?src=intent_above_fold" style="display:inline-block; background:var(--teal, #1a6b5a); color:#fff; font-weight:700; font-size:15px; padding:13px 26px; border-radius:10px; text-decoration:none;">Unlock my full report — £29</a>
+  </div>
+  {% endif %}
+
   <!-- NEW-BUILD NOTICE -->
   {% if is_new_build %}
   <div class="newbuild-card">
@@ -1084,5 +1094,6 @@ var HO = {
 </script>
 {% endif %}
 
+{% include "_consent_ga.html" %}
 </body>
 </html>

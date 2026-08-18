@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{% if tier == '99' %}The £99 Playbook — HouseOffer{% else %}Your £29 Report — HouseOffer{% endif %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --sand:#f7f3ed; --sand-border:#e0d9ce; --ink:#1e1c18; --ink-mid:#51606f; --ink-light:#9b9488; --teal:#1a6b5a; --teal-dark:#145346; --white:#ffffff; --red:#b3261e; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Plus Jakarta Sans',sans-serif; background:var(--sand); color:var(--ink); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { background:var(--white); border:1px solid var(--sand-border); border-radius:16px; box-shadow:0 4px 18px rgba(30,28,24,0.07); max-width:440px; width:100%; padding:32px 28px; }
+  .brand { font-size:12px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--teal); margin-bottom:18px; }
+  h1 { font-family:'Lora',serif; font-size:22px; line-height:1.3; margin-bottom:10px; }
+  .sub { font-size:14.5px; color:var(--ink-mid); line-height:1.6; margin-bottom:22px; }
+  label.email-label { display:block; font-size:12.5px; font-weight:600; color:var(--ink-mid); margin-bottom:6px; }
+  input[type=email] { width:100%; padding:13px 14px; font-size:15px; font-family:inherit; border:1.5px solid var(--sand-border); border-radius:10px; background:var(--sand); }
+  input[type=email]:focus { outline:none; border-color:var(--teal); background:var(--white); }
+  .error { color:var(--red); font-size:13px; margin:8px 0 0; }
+  .referral { display:flex; gap:10px; align-items:flex-start; margin:18px 0 0; font-size:13px; color:var(--ink-mid); line-height:1.55; }
+  .referral input { margin-top:3px; accent-color:var(--teal); width:16px; height:16px; flex:none; }
+  .referral .fine { display:block; margin-top:6px; font-size:12px; color:var(--ink-light); }
+  button { width:100%; margin-top:22px; padding:14px; font-size:15.5px; font-weight:700; font-family:inherit; color:#fff; background:var(--teal); border:none; border-radius:10px; cursor:pointer; }
+  button:hover { background:var(--teal-dark); }
+  .done-icon { font-size:34px; margin-bottom:12px; }
+  .back { display:block; text-align:center; margin-top:18px; font-size:13px; color:var(--ink-light); text-decoration:none; }
+  .back:hover { color:var(--ink-mid); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">HouseOffer</div>
+
+  {% if done %}
+    <div class="done-icon">✅</div>
+    <h1>You're on the list.</h1>
+    <p class="sub">We'll email you the moment the £99 Playbook is live.{% if referral %}<br><br>You also asked about an independent buying agent — we'll be in touch to explain how it works and what it costs. No data is shared with anyone until you say so.{% endif %}</p>
+    <a class="back" href="{% if rid %}/r/{{ rid }}{% else %}https://houseoffer.uk/{% endif %}">← Back{% if rid %} to your report{% endif %}</a>
+
+  {% elif tier == '99' %}
+    <h1>The £99 Playbook is still in build.</h1>
+    <p class="sub">Leave your email and we'll tell you the moment it's live.</p>
+    <form method="POST" action="/interest">
+      <input type="hidden" name="tier" value="99">
+      <input type="hidden" name="rid" value="{{ rid }}">
+      <input type="hidden" name="source" value="{{ source }}">
+      <input type="hidden" name="postcode" value="{{ postcode }}">
+      <input type="hidden" name="verdict" value="{{ verdict }}">
+      <label class="email-label" for="email">Email</label>
+      <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <label class="referral">
+        <input type="checkbox" name="referral" value="1">
+        <span>I'd also be interested in an introduction to an independent buying agent — someone paid by the buyer, never the seller, who finds and negotiates on your behalf. Tick this and we'll be in touch to explain how it works and what it costs.
+          <span class="fine">(No data is shared with anyone until you say so.)</span>
+        </span>
+      </label>
+      <button type="submit">Keep me posted</button>
+    </form>
+    <a class="back" href="{% if rid %}/r/{{ rid }}{% else %}https://houseoffer.uk/{% endif %}">← Back{% if rid %} to your report{% endif %}</a>
+
+  {% else %}
+    <h1>Your £29 report starts with your email.</h1>
+    <p class="sub">Leave your email and we'll take you straight to the report form — we'll also send you the link so you can come back to it any time.</p>
+    <form method="POST" action="/interest">
+      <input type="hidden" name="tier" value="29">
+      <input type="hidden" name="rid" value="{{ rid }}">
+      <input type="hidden" name="source" value="{{ source }}">
+      <input type="hidden" name="postcode" value="{{ postcode }}">
+      <input type="hidden" name="verdict" value="{{ verdict }}">
+      <label class="email-label" for="email">Email</label>
+      <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <button type="submit">Continue to my report →</button>
+    </form>
+    <a class="back" href="https://houseoffer.uk/#pricing">← Back to pricing</a>
+  {% endif %}
+</div>
+</body>
+</html>
