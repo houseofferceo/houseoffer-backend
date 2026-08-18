@@ -3522,6 +3522,24 @@ def _start_paid_build_from_url(report_id, property_url, address_override=None):
             stored = load_report(report_id) or {}
             stored.update({"status": "failed", "error": str(e)})
             save_report(report_id, stored)
+            # Buy-direct v2: a failed build AFTER a real payment is a refund
+            # situation — alert the owner immediately, never fail silently.
+            if stored.get("buy_direct") and stored.get("paid"):
+                try:
+                    requests.post(
+                        "https://api.resend.com/emails",
+                        headers={"Authorization": f"Bearer {RESEND_API_KEY}",
+                                 "Content-Type": "application/json"},
+                        json={"from": f"HouseOffer <{EMAIL_ADDRESS}>",
+                              "to": [EMAIL_ADDRESS],
+                              "subject": f"🚨 PAID build FAILED — refund likely needed ({report_id})",
+                              "text": (f"A buy-direct customer PAID and the report build failed.\n\n"
+                                       f"Buyer: {stored.get('email')}\nListing: {stored.get('property_url')}\n"
+                                       f"Report: {BASE_URL.rstrip('/')}/r/{report_id}\nError: {e}\n\n"
+                                       f"Retry with /admin/unlock/{report_id}?key=… or refund in Stripe.")},
+                        timeout=10)
+                except Exception as e2:
+                    print(f"Paid-build failure alert error: {e2}")
     threading.Thread(target=work, daemon=True).start()
 
 
@@ -3760,10 +3778,14 @@ def track():
 
     # 17 Aug brief, item 1: every £29/£99 click used to bounce back to the
     # homepage having captured NOTHING — six buyers lost with no contact
-    # details. Both tiers now land on the email-capture step first; /interest
-    # stores the address, then carries the visitor onward (£29 → the free
-    # report form with intent attached; £99 → the waitlist confirmation).
-    if tier in ("29", "99"):
+    # details. £99 lands on the waitlist email capture. £29 (CEO, 18 Aug —
+    # buy-direct v2) lands on the one-page buy flow: email + listing +
+    # estimate → property confirm → Stripe → full paid report. A declared
+    # buyer never detours through the free report.
+    if tier == "29":
+        return render_template("buy_direct.html", error=None,
+                               email="", property_url="", buyer_estimate="")
+    if tier == "99":
         return render_template(
             "interest_capture.html", tier=tier,
             rid=report_id if re.fullmatch(r"[a-f0-9]{8,32}", report_id or "") else "",
@@ -3879,6 +3901,87 @@ def capture_interest():
     return render_template("interest_capture.html", tier=tier, rid=rid,
                            postcode=postcode, verdict=verdict, anchor="",
                            source=source, done=True, referral=referral)
+
+
+def _buy_confirm_context(report_id, stored):
+    """Template context for the pre-payment 'this the one?' page."""
+    r = stored.get("report") or {}
+    return {
+        "report_id": report_id,
+        "address": r.get("address") or r.get("resolved_address") or "",
+        "postcode": r.get("postcode", ""),
+        "asking_price_formatted": _fmt(r.get("asking_price")),
+        "bedrooms": r.get("bedrooms"),
+        "property_type": r.get("property_type"),
+        "main_photo_url": r.get("main_photo_url"),
+    }
+
+
+@app.route("/buy", methods=["POST"])
+def buy_direct():
+    """Buy-direct v2 (CEO-approved 18 Aug): one page → property confirm →
+    Stripe → full paid report. The lead is stored durably BEFORE the scrape,
+    so even an abandoned checkout leaves us a contactable buyer. The scrape
+    and sold-record resolution are free — no PropertyData credit is spent
+    until the payment has actually landed (fulfilment builds the report)."""
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    email = (data.get("email") or "").strip()
+    property_url = (data.get("property-url") or data.get("property_url") or "").strip()
+    buyer_estimate = normalise_buyer_estimate(data.get("buyer_estimate", ""))
+
+    def form_again(msg):
+        return render_template("buy_direct.html", error=msg, email=email,
+                               property_url=property_url,
+                               buyer_estimate=data.get("buyer_estimate", ""))
+
+    if not _EMAIL_RE.fullmatch(email):
+        return form_again("That email doesn't look right — please check it.")
+    if not property_url or "rightmove.co.uk" not in property_url.lower():
+        return form_again("Please paste a Rightmove property link "
+                          "(rightmove.co.uk/…). Zoopla support is coming soon.")
+
+    timestamp = _now_iso()
+    _record_lead({"timestamp": timestamp, "email": email, "tier": "29",
+                  "source": "buy_direct", "report_id": "", "postcode": "",
+                  "verdict": "", "referral_interest": False,
+                  "property_url": property_url[:300]})
+
+    try:
+        postcode, asking_price, bedrooms, property_type, address, extra = \
+            merge_scraped_listing(property_url, "", 0, None, None, "")
+    except Exception as e:
+        print(f"buy_direct scrape error: {e}")
+        postcode = None
+    if not postcode:
+        return form_again("We couldn't read that listing. Check the link opens "
+                          "the property page on Rightmove, then try again — "
+                          "or email us and we'll sort it.")
+
+    report_id = uuid.uuid4().hex[:12]
+    save_report(report_id, {
+        "status": "awaiting_payment",
+        "created_at": timestamp,
+        "email": email,
+        "property_url": property_url,
+        "buyer_estimate": buyer_estimate,
+        "paid": False,
+        "buy_direct": True,
+        # Minimal report payload: powers the confirm page, the Stripe line-item
+        # description and the payment notifications. The real report is built
+        # by fulfilment AFTER payment (that's where credits are spent).
+        "report": {
+            "postcode": postcode,
+            "asking_price": asking_price or None,
+            "bedrooms": bedrooms,
+            "property_type": property_type,
+            "address": (extra or {}).get("resolved_address") or address or "",
+            "main_photo_url": (extra or {}).get("main_photo_url"),
+        },
+    })
+    log_event(report_id, "buy_direct_started", {
+        "postcode": postcode, "source": "track29"})
+    stored = load_report(report_id)
+    return render_template("buy_confirm.html", **_buy_confirm_context(report_id, stored))
 
 
 # ── POST-UNLOCK BUYER PROFILE (2026-07-05) ───────────────────────────────────
@@ -4284,6 +4387,11 @@ def view_report(report_id):
     # G1: pre-build confirmation state — no PropertyData credit has been spent
     # yet; the page asks "is this the property?" and offers a correction path.
     # This state can sit indefinitely (abandoning it costs nothing).
+    # Buy-direct v2: paid-first records wait on Stripe. Serve the confirm/pay
+    # page again — this is also where the Stripe cancel_url lands.
+    if status == "awaiting_payment":
+        return render_template("buy_confirm.html",
+                               **_buy_confirm_context(report_id, stored))
     if status == "awaiting_confirmation":
         ci = stored.get("confirm_inputs") or {}
         extra = ci.get("extra") or {}
@@ -4641,7 +4749,13 @@ def _unlock_report(report_id, source, extra=None, force=False):
         stored["status"] = "building"
         stored["build_started_at"] = _now_iso()
         save_report(report_id, stored)
-        _start_rebuild(report_id, stored, tier="paid")
+        if stored.get("buy_direct") and not (stored.get("report") or {}).get("verdict"):
+            # Buy-direct v2: nothing but the scrape stub exists yet — run the
+            # full scrape-and-build from the listing URL (same path as
+            # /preview-paid), not the stored-fields rebuild.
+            _start_paid_build_from_url(report_id, stored.get("property_url", ""))
+        else:
+            _start_rebuild(report_id, stored, tier="paid")
     else:
         save_report(report_id, stored)
     log_event(report_id, "report_unlocked", dict(extra or {}, source=source))
@@ -4694,6 +4808,25 @@ def _fulfil_stripe_payment(report_id, session, source):
         )
     except Exception as e:
         print(f"Payment notify error: {e}")
+    # Buy-direct v2: the buyer paid before seeing anything — send them their
+    # report link straight away so a closed tab can never lose the purchase.
+    if stored.get("buy_direct") and buyer_email:
+        try:
+            requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={"from": f"HouseOffer <{EMAIL_ADDRESS}>",
+                      "to": [buyer_email],
+                      "subject": "Payment received — your HouseOffer report is being built",
+                      "text": (f"Thanks — your payment is in and your full report is "
+                               f"being built now. It takes a couple of minutes.\n\n"
+                               f"Your report link (yours to keep):\n"
+                               f"{BASE_URL.rstrip('/')}/r/{report_id}\n\n"
+                               f"— HouseOffer")},
+                timeout=10)
+        except Exception as e:
+            print(f"Buyer receipt email error: {e}")
     return result
 
 

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Get your £29 Offer Report — HouseOffer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --sand:#f7f3ed; --sand-border:#e0d9ce; --ink:#1e1c18; --ink-mid:#51606f; --ink-light:#9b9488; --teal:#1a6b5a; --teal-dark:#145346; --white:#ffffff; --red:#b3261e; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Plus Jakarta Sans',sans-serif; background:var(--sand); color:var(--ink); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { background:var(--white); border:1px solid var(--sand-border); border-radius:16px; box-shadow:0 4px 18px rgba(30,28,24,0.07); max-width:460px; width:100%; padding:32px 28px; }
+  .brand { font-size:12px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--teal); margin-bottom:18px; }
+  h1 { font-family:'Lora',serif; font-size:22px; line-height:1.3; margin-bottom:10px; }
+  .sub { font-size:14.5px; color:var(--ink-mid); line-height:1.6; margin-bottom:22px; }
+  label { display:block; font-size:12.5px; font-weight:600; color:var(--ink-mid); margin:16px 0 6px; }
+  label:first-of-type { margin-top:0; }
+  input { width:100%; padding:13px 14px; font-size:15px; font-family:inherit; border:1.5px solid var(--sand-border); border-radius:10px; background:var(--sand); }
+  input:focus { outline:none; border-color:var(--teal); background:var(--white); }
+  .hint { font-size:12px; color:var(--ink-light); margin-top:5px; }
+  .error { color:var(--red); font-size:13px; margin:10px 0 0; }
+  button { width:100%; margin-top:22px; padding:14px; font-size:15.5px; font-weight:700; font-family:inherit; color:#fff; background:var(--teal); border:none; border-radius:10px; cursor:pointer; }
+  button:hover { background:var(--teal-dark); }
+  button[disabled] { opacity:0.65; cursor:wait; }
+  .steps { display:flex; gap:6px; align-items:center; justify-content:center; margin-top:14px; font-size:12px; color:var(--ink-light); }
+  .alt { display:block; text-align:center; margin-top:16px; font-size:13px; color:var(--ink-light); }
+  .alt a { color:var(--ink-mid); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">HouseOffer</div>
+  <h1>Your full Offer Report — £29</h1>
+  <p class="sub">The complete valuation range, your recommended opening offer, and the negotiation playbook for one property. Paste the listing, confirm it's the right home, pay — your report builds immediately.</p>
+  <form method="POST" action="/buy" id="buy-form">
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com" value="{{ email }}">
+    <label for="property-url">Rightmove link</label>
+    <input type="url" id="property-url" name="property-url" required placeholder="https://www.rightmove.co.uk/properties/…" value="{{ property_url }}">
+    <p class="hint">On the listing, tap Share → Copy link.</p>
+    <label for="buyer_estimate">What do you think it's worth?</label>
+    <input type="text" id="buyer_estimate" name="buyer_estimate" required inputmode="numeric" placeholder="e.g. 285,000 (best guess is fine)" value="{{ buyer_estimate }}">
+    <p class="hint">Your gut number — the report shows how it compares with the sold-price evidence.</p>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <button type="submit" id="buy-btn">Continue →</button>
+    <div class="steps">1&nbsp;Confirm the property &nbsp;·&nbsp; 2&nbsp;Pay securely with Stripe &nbsp;·&nbsp; 3&nbsp;Report builds</div>
+  </form>
+  <span class="alt">Not ready to buy? <a href="https://houseoffer.uk/#hero-form">Start with the free report</a></span>
+</div>
+<script>
+document.getElementById("buy-form").addEventListener("submit", function () {
+  var b = document.getElementById("buy-btn");
+  b.disabled = true; b.textContent = "Checking the listing…";
+});
+</script>
+</body>
+</html>
