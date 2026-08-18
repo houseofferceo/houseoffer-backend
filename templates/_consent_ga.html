@@ -1,0 +1,78 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     GA4 + COOKIE CONSENT (17 Aug brief, item 3) — self-contained block.
+     Pure HTML/CSS/JS, no template variables: paste this same block verbatim
+     before </body> on the marketing site (index.html, cluster pages, wedge
+     pages) so every page shares one implementation and one stored choice.
+
+     Implementation: HARD GATE (brief option B) carrying Consent Mode v2
+     signals (option A). gtag.js is NOT loaded — zero network hits, zero
+     cookies — until the visitor accepts. On accept, gtag loads with
+     analytics_storage granted and every ad signal denied (we run no ads).
+     Rationale: option A as written sends cookieless consent pings before
+     accept, which fails the acceptance test "no hit fires before accept".
+     The choice persists in localStorage and re-applies on every page load.
+     Reject and Accept are identical buttons — no dark patterns.
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="ho-consent" hidden
+     style="position:fixed; left:0; right:0; bottom:0; z-index:9999; background:#1e1c18; color:#f7f3ed; font-family:'Plus Jakarta Sans',system-ui,sans-serif; padding:16px 20px; box-shadow:0 -4px 18px rgba(0,0,0,0.25);">
+  <div style="max-width:720px; margin:0 auto; display:flex; flex-wrap:wrap; gap:14px; align-items:center;">
+    <p style="margin:0; flex:1 1 320px; font-size:13.5px; line-height:1.55;">
+      We'd like to use Google Analytics cookies to understand how people use
+      HouseOffer. No analytics run unless you accept.
+      <a href="https://houseoffer.uk/privacy" style="color:#9fd8c9;">Privacy policy</a>
+    </p>
+    <div style="display:flex; gap:10px; flex:0 0 auto;">
+      <button id="ho-consent-reject" type="button"
+              style="padding:11px 22px; font-size:14px; font-weight:700; font-family:inherit; border-radius:9px; border:1.5px solid #9b9488; background:transparent; color:#f7f3ed; cursor:pointer;">Reject</button>
+      <button id="ho-consent-accept" type="button"
+              style="padding:11px 22px; font-size:14px; font-weight:700; font-family:inherit; border-radius:9px; border:1.5px solid #1a6b5a; background:#1a6b5a; color:#fff; cursor:pointer;">Accept</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var KEY = "ho_consent_v1";           /* one shared choice across all pages */
+  var GA_ID = "G-JXRNYV3HF4";
+
+  function loadGA() {
+    if (window.__hoGaLoaded) return;
+    window.__hoGaLoaded = true;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = window.gtag || function () { dataLayer.push(arguments); };
+    /* Consent Mode v2 signals, set BEFORE config. Analytics granted (the
+       visitor just accepted); every advertising signal permanently denied. */
+    gtag("consent", "default", {
+      "ad_storage": "denied",
+      "ad_user_data": "denied",
+      "ad_personalization": "denied",
+      "analytics_storage": "granted"
+    });
+    gtag("js", new Date());
+    gtag("config", GA_ID);
+    var s = document.createElement("script");
+    s.async = true;
+    s.src = "https://www.googletagmanager.com/gtag/js?id=" + GA_ID;
+    document.head.appendChild(s);
+  }
+
+  function choice() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function persist(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { /* private mode: banner returns next visit */ }
+  }
+
+  var banner = document.getElementById("ho-consent");
+  var stored = choice();
+  if (stored === "granted") { loadGA(); }
+  else if (stored !== "denied") {
+    banner.hidden = false;
+    document.getElementById("ho-consent-accept").addEventListener("click", function () {
+      persist("granted"); banner.hidden = true; loadGA();
+    });
+    document.getElementById("ho-consent-reject").addEventListener("click", function () {
+      persist("denied"); banner.hidden = true;
+    });
+  }
+})();
+</script>
