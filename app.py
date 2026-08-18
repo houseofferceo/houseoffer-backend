@@ -253,8 +253,10 @@ SHEETS_WEBHOOK_SECRET = os.environ.get("SHEETS_WEBHOOK_SECRET", "")
 # Fulfilment (paid=True + paid-tier rebuild) runs from BOTH the success
 # redirect and the webhook; whichever lands first unlocks, the other no-ops.
 # While STRIPE_SECRET_KEY is unset, checkout CTAs fall back to the pricing page.
-STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+# .strip() throughout: a pasted key with a stray trailing newline/space fails
+# Stripe auth with an error indistinguishable from a wrong key.
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "").strip()
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
 STRIPE_REPORT_PRICE_PENCE = int(os.environ.get("STRIPE_REPORT_PRICE_PENCE", "2900"))
 # The "£29 Offer Report" product in the Stripe dashboard. Checkout bills
 # against the product's reusable default Price (resolved once, created at
@@ -262,7 +264,11 @@ STRIPE_REPORT_PRICE_PENCE = int(os.environ.get("STRIPE_REPORT_PRICE_PENCE", "290
 # DATA_DIR). STRIPE_REPORT_PRICE_ID pins an explicit price and skips the
 # lookup. If neither resolves, checkout falls back to inline price_data so
 # a buyer is never blocked by a pricing hiccup.
-STRIPE_REPORT_PRODUCT_ID = os.environ.get("STRIPE_REPORT_PRODUCT_ID", "prod_UrNYSfZHnc85pz")
+# 17 Aug: NO hardcoded default — the previous fallback ("prod_UrNY…") was a
+# TEST-mode product, so the first live-key checkout died on "no such product".
+# Unset, checkout uses inline price_data (works in both modes with zero
+# Stripe-side setup); set it per-environment to pin a real catalogue product.
+STRIPE_REPORT_PRODUCT_ID = os.environ.get("STRIPE_REPORT_PRODUCT_ID", "").strip()
 STRIPE_REPORT_PRICE_ID = os.environ.get("STRIPE_REPORT_PRICE_ID", "")
 STRIPE_PRICE_CACHE_PATH = os.path.join(DATA_DIR, "houseoffer_stripe", "report_price.json")
 _stripe_price_lock = threading.Lock()
