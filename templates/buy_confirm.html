@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Confirm your property — HouseOffer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --sand:#f7f3ed; --sand-border:#e0d9ce; --ink:#1e1c18; --ink-mid:#51606f; --ink-light:#9b9488; --teal:#1a6b5a; --teal-dark:#145346; --teal-light:#e3f4ef; --white:#ffffff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Plus Jakarta Sans',sans-serif; background:var(--sand); color:var(--ink); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { background:var(--white); border:1px solid var(--sand-border); border-radius:16px; box-shadow:0 4px 18px rgba(30,28,24,0.07); max-width:460px; width:100%; padding:32px 28px; }
+  .brand { font-size:12px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--teal); margin-bottom:18px; }
+  h1 { font-family:'Lora',serif; font-size:22px; line-height:1.3; margin-bottom:16px; }
+  .prop { border:1.5px solid var(--sand-border); border-radius:12px; overflow:hidden; margin-bottom:18px; background:var(--sand); }
+  .prop img { width:100%; max-height:200px; object-fit:cover; display:block; }
+  .prop-body { padding:14px 16px; }
+  .prop-address { font-family:'Lora',serif; font-size:17px; font-weight:700; }
+  .prop-meta { font-size:13.5px; color:var(--ink-mid); margin-top:4px; }
+  .prop-price { font-size:15px; font-weight:700; color:var(--teal); margin-top:8px; }
+  .pay { display:block; text-align:center; padding:15px; font-size:16px; font-weight:700; color:#fff; background:var(--teal); border-radius:10px; text-decoration:none; }
+  .pay:hover { background:var(--teal-dark); }
+  .paynote { text-align:center; font-size:12px; color:var(--ink-light); margin-top:10px; }
+  .wrong { display:block; text-align:center; margin-top:18px; font-size:13px; color:var(--ink-mid); }
+  .wrong a { color:var(--teal); }
+  .fine { font-size:11.5px; color:var(--ink-light); line-height:1.6; margin-top:20px; border-top:1px solid var(--sand-border); padding-top:12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">HouseOffer</div>
+  <h1>Is this the one?</h1>
+  <div class="prop">
+    {% if main_photo_url %}<img src="{{ main_photo_url }}" alt="">{% endif %}
+    <div class="prop-body">
+      <div class="prop-address">{{ address or postcode }}</div>
+      <div class="prop-meta">{{ postcode }}{% if bedrooms %} · {{ bedrooms }} bed{% endif %}{% if property_type %} · {{ property_type|title }}{% endif %}</div>
+      {% if asking_price_formatted %}<div class="prop-price">Asking {{ asking_price_formatted }}</div>{% endif %}
+    </div>
+  </div>
+  <a class="pay" href="/r/{{ report_id }}/checkout?src=buy_direct">Pay £29 — build my full report</a>
+  <p class="paynote">Secure payment by Stripe · Apple&nbsp;Pay and Google&nbsp;Pay supported · Your report starts building the moment payment lands</p>
+  <span class="wrong">Not the right property? <a href="/track?tier=29">Paste a different link</a></span>
+  <p class="fine">HouseOffer provides data analysis to inform your offer. It is not a RICS valuation or a structural survey. Property data contains HM Land Registry data © Crown copyright and database right 2026, and ONS House Price Index data.</p>
+</div>
+</body>
+</html>
