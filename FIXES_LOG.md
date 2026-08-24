@@ -7,6 +7,31 @@ UK English. All prices GBP.
 
 ## Fixed
 
+### 24 Aug addendum (A5–A9): comps cascade, extreme-valuation guard, sheet audit columns
+- Date: 2026-08-24
+- A6: headline comparable set now selected by a tightening cascade
+  (beds+size ±20% → size → beds ±1 → type only, each rung only at n ≥ 5,
+  never a hard filter). History confirmed from ced22b6: the earlier
+  like-for-like attempt failed because its widening ladder had NO hard size
+  constraint (bigger, pricier stock leaked in) — not because a strict filter
+  collapsed the set. Also fixes a latent bug: subject bedrooms arriving as a
+  string ("3") never matched the coerced comp beds, so the old bedroom
+  precision tier could never fire. Tier recorded per report
+  (comps_match_tier) and written to the sheet.
+- A7: valuation more than 25% from asking forces confidence LOW with the
+  applicable plain-English causes (thin comps / broadened search / no size
+  match / type unknown). Live tails that triggered this: HA7 −46%, BS8 −43%,
+  G4 −41%, BN43 −28%.
+- A8: verified already enforced (unknown type → LOW with caveat, live on
+  57bb21da23c0); the sheet simply carried no confidence column — closed by
+  A5. Wording fixed: no more "matched on property type" claim next to a
+  type-unclear caveat.
+- A5: submission row gains, at the END: our_valuation, gap_vs_asking_pct,
+  confidence, comps_count, comps_tier.
+- A9: owner alert renders "not provided" and drops the anchor-bias line when
+  the estimate was skipped.
+- Tests: tests/test_addendum_24aug.py (S1–S8).
+
 ### Displayed opening offer above asking on value-case paid reports
 - Date: 2026-08-10
 - Symptom: report d42dfb9efe2b (NR1 3AY, asking £220,000, value verdict,

@@ -1119,6 +1119,56 @@ def _median_trim(comps):
         return [c for c in comps if 0.5 * median <= c["price"] <= 2.0 * median]
     return comps
 
+def _select_headline_comps(comparables, subj_beds, floor_area_sqm, psqf_lookup,
+                           broadened):
+    """A6 (24 Aug addendum): bedroom/size CASCADE on the headline comparable
+    set. History (ced22b6): the earlier like-for-like attempt read HIGH because
+    its widening ladder had no hard size constraint — larger, pricier stock
+    leaked in. This cascade only ever TIGHTENS the type-filtered set, and each
+    tier is used only when it keeps >= A6_TIER_MIN comps (min-count fallback,
+    never a hard filter):
+
+      1_beds_size  type + bedrooms exact + floor area ±20%
+      1b_size      type + floor area ±20% (size is the stronger guard against
+                   the bigger-pricier leak, so it outranks the beds band)
+      2_beds_band  type + bedrooms ±1
+      3_type       type only (previous behaviour)
+    A '_broadened' suffix records that the underlying geographic search had
+    already widened (the brief's tier 4 — confidence handling is unchanged).
+
+    Returns (selected, confidence_label, tier, size_matched_count)."""
+    A6_TIER_MIN = 5
+    size_matched = []
+    if floor_area_sqm and floor_area_sqm > 0 and psqf_lookup:
+        subject_sqf = floor_area_sqm * 10.764
+        for c in comparables:
+            key = re.sub(r"[^A-Z0-9]", "", (c.get("address") or "").upper())
+            info = psqf_lookup.get(key)
+            if info and _within_size_band(info["sqm"] * 10.764, subject_sqf):
+                size_matched.append(c)
+
+    def beds_within(c, band):
+        cb = _coerce_bedrooms(c.get("bedrooms"))
+        return cb is not None and abs(cb - subj_beds) <= band
+
+    tier1 = [c for c in size_matched if beds_within(c, 0)] if subj_beds else []
+    tier2 = [c for c in comparables if beds_within(c, 1)] if subj_beds else []
+
+    if len(tier1) >= A6_TIER_MIN:
+        selected, label, tier = tier1, "bedroom_matched", "1_beds_size"
+    elif len(size_matched) >= A6_TIER_MIN:
+        selected, label, tier = size_matched, "size_matched", "1b_size"
+    elif len(tier2) >= A6_TIER_MIN:
+        # ±1 band is weaker evidence than a size match — deliberately NOT in
+        # _resolve_confidence's headline_matched set, so it caps at MEDIUM.
+        selected, label, tier = tier2, "bedroom_band", "2_beds_band"
+    else:
+        selected, label, tier = comparables, None, "3_type"
+    if broadened:
+        tier += "_broadened"
+    return selected, label, tier, len(size_matched)
+
+
 def _all_sold_transactions(data):
     if not data:
         return []
@@ -2084,8 +2134,12 @@ def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
             # B4 (2026-07-14): name the SUBJECT of this caveat — it describes the
             # core comparable set, not the report's other signals (a separate
             # bedroom-matched context row otherwise reads as a contradiction).
-            reasons.append("our core comparable set is matched on property type and "
-                           "area; a size-matched set wasn't available at this address")
+            # A8 (24 Aug): don't claim type-matching when the type is unknown —
+            # that read as a contradiction next to the type-unclear caveat.
+            reasons.append(("our core comparable set is matched on area only"
+                            if type_unknown else
+                            "our core comparable set is matched on property type and area")
+                           + "; a size-matched set wasn't available at this address")
         elif comparable_tier == "postcode":
             reasons.append("based on a small number of sales in this exact postcode")
         else:
@@ -2105,8 +2159,12 @@ def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
         score = downgrade("medium")
         reasons.append("valuation methods disagree on this property — treat the estimate with caution")
     if type_unknown:
+        # A8 (24 Aug): a blank property type must never pass silently — LOW,
+        # with the mechanism named (the comparables were not type-filtered).
         score = downgrade("low")
-        reasons.append("property type unclear — estimate is less precise as a result")
+        reasons.append("the listing does not state the property type, so the "
+                       "comparable sales could not be filtered by type — the "
+                       "estimate is less precise as a result")
 
     # Premium-property guard (Cycle 4b): don't claim HIGH when our value sits well
     # below asking on a non-anomaly. That gap is usually a premium/larger home our
@@ -2545,37 +2603,28 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         except Exception as e:
             print(f"matched-sold comparables error: {e}")
 
-    # ── FIX 2: real ±20% size-matching of the headline comparable set ──────────
+    # ── A6 (24 Aug, supersedes FIX 2's inline block): bedroom/size cascade ─────
     # The /sold-prices feed has no floor area, so we join it to the £/sqf feed by
-    # address and keep only comparables within ±20% of the subject's floor area.
-    # Correctness > coverage: if too few size-matched comps remain we do NOT
-    # broaden the area — we keep the best available set and flag low confidence.
-    # The median-band junk-trim in _filter_sold still runs as a secondary filter.
-    comparables_for_avg = comparables
-    comparable_count_size_matched = 0
-    if floor_area_sqm and floor_area_sqm > 0 and psqf_lookup:
-        subject_sqf = floor_area_sqm * 10.764
-        size_matched = []
-        for c in comparables:
-            key = re.sub(r"[^A-Z0-9]", "", (c.get("address") or "").upper())
-            info = psqf_lookup.get(key)
-            if info and _within_size_band(info["sqm"] * 10.764, subject_sqf):
-                size_matched.append(c)
-        comparable_count_size_matched = len(size_matched)
-        if len(size_matched) >= MIN_COMPARABLES:
-            comparables_for_avg = size_matched
-            comparable_confidence = "size_matched"
-            # Bedroom precision tier: tighten to same-bedroom comps only when it
-            # keeps the set at or above the minimum — never as a hard filter.
-            if bedrooms:
-                same_beds = [c for c in size_matched
-                             if _coerce_bedrooms(c.get("bedrooms")) == bedrooms]
-                if len(same_beds) >= MIN_COMPARABLES:
-                    comparables_for_avg = same_beds
-                    comparable_confidence = "bedroom_matched"
-        # else: too few size-matched comps. Do NOT downgrade here — a
-        # bedroom_distance label from P2 already reflects a stronger constraint
-        # than "area_only"; only the Land Registry path keeps the default.
+    # address for the size band. Correctness > coverage: each tier is used only
+    # when it keeps >= 5 comps — never a hard filter (the ced22b6 lesson: it was
+    # the LOOSE ladder, not a strict filter, that broke valuations before).
+    # NOTE: also fixes a latent bug — the old bedroom compare tested coerced
+    # comp beds against the RAW subject value, so a string "3" never matched.
+    if comparable_source == "land_registry":
+        comparables_for_avg, _a6_label, comps_match_tier, comparable_count_size_matched = \
+            _select_headline_comps(comparables, _coerce_bedrooms(bedrooms),
+                                   floor_area_sqm, psqf_lookup, broadened)
+        if _a6_label:
+            comparable_confidence = _a6_label
+        # else: comps stay type-matched only; the resolver caps at MEDIUM.
+    else:
+        # P2 nearby path: the set is already bedroom+distance matched by
+        # get_nearby_comparables — relabelling through the cascade would only
+        # downgrade truthful info. Record its rung as the tier instead.
+        comparables_for_avg = comparables
+        comparable_count_size_matched = 0
+        comps_match_tier = (f"p2_beds_band{comparable_bedroom_band}"
+                            f"_r{comparable_radius_miles}")
 
     local_avg_sold = avg_sold_price(comparables_for_avg)
 
@@ -3158,6 +3207,37 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         confidence_reasons.append(note)
         confidence_caveat = f"{confidence_caveat} {note.capitalize()}." if confidence_caveat else f"{note.capitalize()}."
 
+    # ── A7 (24 Aug addendum): extreme-valuation sanity guard ───────────────────
+    # Live tails: HA7 −46%, BS8 −43%, G4 −41%, BN43 −28% — real users were shown
+    # extreme figures with a confident face (median across real users is −3.1%,
+    # so it's the tails that break trust). Beyond 25% the estimate may even be
+    # right, but it must NEVER render as anything above LOW, and the mechanism
+    # is named in plain English. Last word on confidence by design: it also
+    # flips the trio to the LOW-confidence asking-anchored "straight talk" play.
+    extreme_valuation_guard = False
+    if (valuation_asking_divergence_pct is not None
+            and abs(valuation_asking_divergence_pct) > 25):
+        extreme_valuation_guard = True
+        confidence_score = "low"
+        causes = []
+        if len(comparables_for_avg) < MIN_COMPARABLES:
+            causes.append(f"only {len(comparables_for_avg)} usable comparable sales nearby")
+        if broadened:
+            causes.append("the search had to be widened beyond the immediate postcode")
+        if type_unknown:
+            causes.append("the property type could not be confirmed")
+        if not (floor_area_sqm and floor_area_sqm > 0):
+            causes.append("no reliable floor area was available to size-match against")
+        elif comparable_count_size_matched < 5:
+            causes.append("very few similar-sized sales to compare against")
+        if not causes:
+            causes.append("the local sold evidence diverges sharply from the asking price")
+        note = ("our estimate sits more than 25% away from the asking price ("
+                + "; ".join(causes) + ") — treat the exact figure with real "
+                "caution and lean on the individual comparable sales as the evidence")
+        confidence_reasons.append(note)
+        confidence_caveat = f"{confidence_caveat} {note.capitalize()}." if confidence_caveat else f"{note.capitalize()}."
+
     # ── ASKING-ANCHOR v1 (CEO-approved 2026-07-17, supersedes B2) ──────────────
     # The published trio is a NEGOTIATING POSITION anchored to the asking price
     # via the market's negotiability signals (the Frontier anchor: local
@@ -3382,6 +3462,10 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "confidence_reasons": confidence_reasons,
         "confidence_caveat": confidence_caveat,
         "comparable_tier": comparable_tier,
+        # A6 (24 Aug): which cascade rung produced the headline set — feeds the
+        # sheet's Comps Tier column (A5) so accuracy is auditable per report.
+        "comps_match_tier": comps_match_tier,
+        "extreme_valuation_guard": extreme_valuation_guard,
         "sale_type": sale_type,
         # P0 2026-07-23: subtype / qualifier / history (incident 151864718).
         "property_subtype": property_subtype,
@@ -3728,7 +3812,16 @@ def notify_owner(to_email, property_url, postcode, verdict, buyer_estimate="", a
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
                 "to": [EMAIL_ADDRESS],
                 "subject": f"New submission: {postcode} — {verdict}",
-                "text": f"User: {to_email}\nProperty: {property_url}\nPostcode: {postcode}\nVerdict: {verdict}\nBuyer estimate: {buyer_estimate}\nAnchor bias: {anchor_bias}% above market" + attr_line
+                # A9 (24 Aug): a skipped estimate used to render "Buyer
+                # estimate:  Anchor bias: None% above market" — 9 of 23 real
+                # submissions looked like engine failures. Say "not provided"
+                # and drop the anchor-bias line entirely when there is none.
+                "text": (f"User: {to_email}\nProperty: {property_url}\n"
+                         f"Postcode: {postcode}\nVerdict: {verdict}\n"
+                         f"Buyer estimate: {buyer_estimate or 'not provided'}"
+                         + (f"\nAnchor bias: {anchor_bias}% above market"
+                            if anchor_bias is not None else "")
+                         + attr_line)
             }
         )
     except Exception as e:
@@ -6363,6 +6456,13 @@ def _run_free_build(report_id, inputs):
             "utm_campaign": (inputs.get("attribution") or {}).get("utm_campaign", ""),
             "utm_term": (inputs.get("attribution") or {}).get("utm_term", ""),
             "utm_content": (inputs.get("attribution") or {}).get("utm_content", ""),
+            # A5 (24 Aug): valuation audit columns — appended at the END of the
+            # row so the Apps Script column mapping is not disturbed.
+            "our_valuation": report.get("weighted_midpoint"),
+            "gap_vs_asking_pct": report.get("valuation_asking_divergence_pct"),
+            "confidence": (report.get("confidence_score") or "").upper(),
+            "comps_count": report.get("comparables_count"),
+            "comps_tier": report.get("comps_match_tier", ""),
         })
         log_event(_rid, "submission_created", {
             "email": _em, "postcode": report["postcode"],
