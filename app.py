@@ -3303,18 +3303,30 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                 "is built from the sold evidence instead. One thing to check "
                 "before you push further: confirm the address and tenure are "
                 "exactly right.")
-        elif _div_below_pct > _op_threshold:
+        elif _div_below_pct > _op_threshold or (extreme_valuation_guard
+                                                and not A7_ASKING_FLIP):
             # Overpricing guardrail (v2 framing): still a confident play — an
             # evidence-backed low open — never a silent number or a blind
-            # asking-anchored one.
-            overpricing_flag = True
-            overpricing_flag_level = confidence_score
+            # asking-anchored one. A7 follow-up (24 Aug): the >25% extreme
+            # guard routes here too (both gap directions), so extreme reports
+            # keep their evidence-anchored trio instead of being quietly
+            # flipped to the asking anchor — the LOW badge does the warning.
+            overpricing_flag = _div_below_pct > _op_threshold
+            overpricing_flag_level = confidence_score if overpricing_flag else None
             trio_anchor = "evidence"
-            trio_anchor_note = (
-                "The play here: an evidence-backed low open. The asking price "
-                "sits well above what local sold evidence supports, so your "
-                "numbers are anchored to the evidence — the comparables below "
-                "are your script when the agent pushes back.")
+            if _div_below_pct > 0:
+                trio_anchor_note = (
+                    "The play here: an evidence-backed low open. The asking price "
+                    "sits well above what local sold evidence supports, so your "
+                    "numbers are anchored to the evidence — the comparables below "
+                    "are your script when the agent pushes back.")
+            else:
+                trio_anchor_note = (
+                    "Straight talk: our estimate sits a long way from the asking "
+                    "price, and confidence is low. The play below is built from "
+                    "the sold evidence rather than the asking price — read it "
+                    "alongside the individual comparable sales, and treat the "
+                    "exact numbers with the caution the confidence badge signals.")
         else:
             anchor_pct, _fb = _frontier_anchor(
                 local_sold_discount_pct, days_on_market, local_avg_dom,
@@ -4151,6 +4163,14 @@ ASKING_ANCHOR_V1 = {
     # we believe is inflated)
     "overpricing_flag_pct": {"medium_plus": 15.0, "low": 25.0},
 }
+
+# A7 follow-up (24 Aug, CEO-approved): when the >25% extreme-valuation guard
+# fires, the trio must stay EVIDENCE-anchored (spec-asking-anchor-switch §3/§8
+# — "an evidence-backed low open… never a blind asking-anchored number"); the
+# forced LOW badge and the caveat do the warning. Set True to restore the
+# pre-24-Aug behaviour where extreme reports composed their trio from the
+# asking anchor instead — a config decision for the CEO, not a rewrite.
+A7_ASKING_FLIP = False
 
 
 def _frontier_anchor(local_discount_pct, days, avg_dom, reduction_pct, price_reduced):
@@ -5261,17 +5281,24 @@ def admin_recent():
     if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
         return jsonify({"error": "unauthorized"}), 401
     out = []
+    # A7 follow-up: ?postcode=G40SZ scans the WHOLE store for that postcode
+    # (outlier re-test needs original listing URLs older than the recent 50).
+    pc_filter = (request.args.get("postcode") or "").strip().upper().replace(" ", "")
     try:
         files = sorted(
             os.listdir(REPORTS_DIR),
             key=lambda f: os.path.getmtime(os.path.join(REPORTS_DIR, f)),
             reverse=True,
-        )[:50]
+        )
+        if not pc_filter:
+            files = files[:50]
         for fname in files:
             with open(os.path.join(REPORTS_DIR, fname)) as f:
                 d = json.load(f)
             rid = fname.replace(".json", "")
             report = d.get("report", {})
+            if pc_filter and (report.get("postcode") or "").upper().replace(" ", "") != pc_filter:
+                continue
             # Count events for this report
             events_path = os.path.join(EVENTS_DIR, f"{rid}.json")
             event_count = 0
@@ -5288,6 +5315,7 @@ def admin_recent():
                 "anchor_bias": d.get("anchor_bias"),
                 "events": event_count,
                 "url": f"{BASE_URL.rstrip('/')}/r/{rid}",
+                "property_url": d.get("property_url", ""),
             })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
