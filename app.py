@@ -3429,6 +3429,16 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     if open_offer and local_avg_sold:
         open_offer_vs_comps_pct = round(((local_avg_sold - open_offer) / local_avg_sold) * 100, 1)
 
+    # ── P1 2026-07-30 (fix 4): re-sync the caveat prefix to the FINAL score ────
+    # Downgrades applied after _resolve_confidence (subtype, B3 divergence,
+    # size-mismatch) change the score without rewriting the caveat's
+    # "Confidence is X:" prefix — a real user saw a LOW badge over a
+    # "Confidence is medium:" sentence. The badge was right; the prose lied.
+    if confidence_caveat:
+        confidence_caveat = re.sub(r"Confidence is \w+:",
+                                   f"Confidence is {confidence_score}:",
+                                   confidence_caveat)
+
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
@@ -6426,12 +6436,19 @@ def _run_free_build(report_id, inputs):
             **(inputs.get("extra") or {}),
         )
 
+        # Anchor bias = how far the buyer's pre-data estimate sits from the
+        # stored Our Valuation (weighted_midpoint) — the SAME baseline the
+        # vote rows already use as "our_valuation". Fix 2026-07-31: this was
+        # computed against local_avg_sold (the raw comparable average), so the
+        # sheet, alert email and stored figure disagreed with anyone checking
+        # (buyer_estimate − our_valuation) / our_valuation against the report
+        # (e.g. WS5 4BL: sheet 4.5% vs actual 1.6%).
         anchor_bias = None
-        if _be and report.get("local_avg_sold"):
+        if _be and report.get("weighted_midpoint"):
             try:
-                est   = int(str(_be).replace(",", "").replace("£", "").replace(" ", ""))
-                local = report["local_avg_sold"]
-                anchor_bias = round(((est - local) / local) * 100, 1)
+                est = int(str(_be).replace(",", "").replace("£", "").replace(" ", ""))
+                val = report["weighted_midpoint"]
+                anchor_bias = round(((est - val) / val) * 100, 1)
             except Exception:
                 pass
 
