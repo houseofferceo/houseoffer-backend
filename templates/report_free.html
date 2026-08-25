@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Your Free Property Report — HouseOffer</title>
 <meta property="og:title" content="Property report — {{ address or postcode }}">
-<meta property="og:description" content="Independent valuation of this property, backed by real HM Land Registry sold data. See if the asking price is fair — free.">
+<meta property="og:description" content="Independent valuation of this property, backed by real official sold-price records. See if the asking price is fair — free.">
 <meta property="og:image" content="{{ main_photo_url|default('https://houseoffer.uk/og-image.png', true) }}">
 <meta property="og:type" content="website">
 {% if report_url is defined and report_url %}<meta property="og:url" content="{{ report_url }}">{% endif %}
@@ -290,7 +290,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 <div class="modal-overlay" id="modal">
   <div class="modal">
     <div class="modal-title">📍 Confirm your property address</div>
-    <div class="modal-sub">We matched your Rightmove link to the address below. Confirming helps us find the exact Land Registry record and improve your valuation accuracy.</div>
+    <div class="modal-sub">We matched your Rightmove link to the address below. Confirming helps us find the exact sold record and improve your valuation accuracy.</div>
     <div class="modal-match">
       <div class="modal-match-label">We matched</div>
       <div class="modal-match-val">{{ resolved_address or address or postcode }}</div>
@@ -336,7 +336,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     </div>
     <div class="nav-right">
       {% if report_id is defined and report_id %}
-      <a class="nav-share-btn whatsapp" href="https://wa.me/?text={{ ("I ran this property through HouseOffer — free report with real Land Registry data: " ~ (report_url|default('https://houseoffer.uk', true)))|urlencode }}" target="_blank" rel="noopener">WhatsApp</a>
+      <a class="nav-share-btn whatsapp" href="https://wa.me/?text={{ ("I ran this property through HouseOffer — free report with real sold-price data: " ~ (report_url|default('https://houseoffer.uk', true)))|urlencode }}" target="_blank" rel="noopener">WhatsApp</a>
       <button class="nav-share-btn" onclick="HO.copyReportLink(this)">🔗 Copy report link</button>
       {% endif %}
       <div class="nav-tag">Free Report</div>
@@ -350,7 +350,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
   <div class="report-header">
     <div class="report-label"><span class="pulse"></span>HouseOffer Analysis</div>
     <div class="report-address">{{ address or postcode }}</div>
-    <div class="report-sub">Generated {{ generated }} · HM Land Registry sold data</div>
+    <div class="report-sub">Generated {{ generated }} · {{ "Registers of Scotland sold data" if country == "Scotland" else "HM Land Registry sold data" }}</div>
     <div class="meta-pills">
       <span class="pill">📍 {{ postcode }}</span>
       <span class="pill">🏠 {{ property_subtype or (property_type|title if property_type else "Type not stated") }}</span>
@@ -395,7 +395,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
           <li>This property's previous sale price</li>
           <li>HPI-adjusted last sale value</li>
           <li>EPC floor-area address match</li>
-          <li>Land Registry sale history</li>
+          <li>Official sold-price history</li>
         </ul>
       </div>
     </div>
@@ -731,7 +731,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
       </div>
       {% endif %}
 
-      <div class="ff-source-note">🏛️ Source: HM Land Registry Price Paid Data · completed sales · HPI-adjusted · interquartile mean</div>
+      <div class="ff-source-note">🏛️ Source: {{ "Registers of Scotland records (via PropertyData)" if country == "Scotland" else "HM Land Registry Price Paid Data" }} · completed sales · HPI-adjusted · interquartile mean</div>
     </div>
   </div>
 
