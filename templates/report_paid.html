@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Your Property Report — HouseOffer</title>
 <meta property="og:title" content="Property report — {{ address or postcode }}">
-<meta property="og:description" content="Full independent valuation — recommended opening offer, walk-away price and comparable sold evidence from HM Land Registry.">
+<meta property="og:description" content="Full independent valuation — recommended opening offer, walk-away price and comparable sold evidence from official sold-price records.">
 <meta property="og:image" content="{{ main_photo_url|default('https://houseoffer.uk/og-image.png', true) }}">
 <meta property="og:type" content="website">
 {% if report_url is defined and report_url %}<meta property="og:url" content="{{ report_url }}">{% endif %}
@@ -401,7 +401,28 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   <!-- v2: AUCTION — the one exception to always-a-play. Guide prices are set
        low to attract bidding, so a below-asking trio inverts. Flag + route to
        direct support instead. -->
-  {% if trio_anchor == 'auction' %}
+  {% if trio_anchor == 'scotland' %}
+  <!-- CEO 25 Aug: Scotland — offers-over market. No England-calibrated trio
+       or Frontier; the valuation, comps, confidence badge and this context
+       carry the report until a Scottish frontier exists. -->
+  <div class="offer-headline">
+    <div class="offer-eyebrow">🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scottish listing — an offers-over market</div>
+    <div class="offer-sub" style="margin-top:10px;">
+      In Scotland most homes are marketed <strong style="color:white;">"offers over"</strong> and sold through
+      <strong style="color:white;">sealed bids with a closing date</strong>, handled by solicitors — and homes
+      commonly sell <em>at or above</em> the asking figure. Our England-style
+      open-below-asking playbook runs the wrong direction here, so we don't
+      publish an offer trio for Scottish listings.
+    </div>
+    <div class="personal-line" style="margin-top:14px;">
+      What to do instead: every Scottish listing must have a <strong>Home Report</strong> —
+      including an independent surveyor's valuation — free on request from the
+      agent. <strong>Ask for it before you offer</strong>, and weigh it against our
+      valuation and the sold-comparable evidence below to decide your bid and
+      your ceiling for the closing date.
+    </div>
+  </div>
+  {% elif trio_anchor == 'auction' %}
   <div class="offer-headline">
     <div class="offer-eyebrow">This is an auction listing</div>
     <div class="offer-sub" style="margin-top:10px;">
@@ -724,7 +745,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       </div>
     </div>
   </div>
-  <div class="source-note">Source: HM Land Registry Price Paid Data · completed sales · HPI-adjusted to today's value · interquartile mean</div>
+  <div class="source-note">Source: {{ "Registers of Scotland records (via PropertyData)" if country == "Scotland" else "HM Land Registry Price Paid Data" }} · completed sales · HPI-adjusted to today's value · interquartile mean</div>
   {% endif %}
 
   <!-- DATA POINT 2: HPI-ADJUSTED LAST SALE -->
@@ -784,7 +805,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
       <button type="submit" style="padding:9px 18px; border:none; border-radius:8px; background:var(--teal, #0d9488); color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Find my property</button>
     </form>
   </div>
-  <div class="source-note">Sold properties {% if last_sale_candidates and last_sale_candidates[0].radius_fallback %}near{% else %}at{% endif %} this postcode · HM Land Registry Price Paid Data</div>
+  <div class="source-note">Sold properties {% if last_sale_candidates and last_sale_candidates[0].radius_fallback %}near{% else %}at{% endif %} this postcode · {{ "Registers of Scotland records (via PropertyData)" if country == "Scotland" else "HM Land Registry Price Paid Data" }}</div>
   {% endif %}
 
   <!-- DATA POINT 3: PRICE PER SQM -->
@@ -990,7 +1011,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   <div class="comp-table-section">
     <div class="comp-table-header">
       <div class="comp-table-title">All {{ comparables_count }} sold prices used in this analysis</div>
-      <div class="comp-table-sub">All prices adjusted to today's value using ONS regional House Price Index · HM Land Registry</div>
+      <div class="comp-table-sub">All prices adjusted to today's value using ONS regional House Price Index · {{ "Registers of Scotland (via PropertyData)" if country == "Scotland" else "HM Land Registry" }}</div>
     </div>
     <table class="comp-table">
       <thead>
@@ -1135,7 +1156,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
   </div>
 
   <div class="attribution">
-    Contains HM Land Registry data &copy; Crown copyright and database right 2026.
+    {{ sold_data_attribution or "Contains HM Land Registry data &copy; Crown copyright and database right 2026." }}
     Licensed under the Open Government Licence v3.0 ·
     <a href="https://houseoffer.netlify.app">HouseOffer.uk</a>
     <br><br>

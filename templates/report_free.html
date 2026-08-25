@@ -408,6 +408,13 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     <div class="val-eyebrow">Our valuation</div>
     {# ASKING-ANCHOR v1 overpricing guardrail: when the evidence says the asking
        price is materially inflated, the report must lead with that. #}
+    {% if country == 'Scotland' %}
+    {# CEO 25 Aug: Scottish context — offers-over market, Home Report advice #}
+    <div style="background:#eef2fb; border:2px solid #3b5bA5; border-radius:12px; padding:14px 16px; margin-bottom:14px;">
+      <div style="font-weight:700; color:#2c4480; margin-bottom:4px;">🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scottish property — the rules are different here</div>
+      <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6;">In Scotland most homes are marketed <strong>"offers over"</strong> and sold through <strong>sealed bids with a closing date</strong>, handled by solicitors — and homes commonly sell <strong>at or above</strong> the asking figure, so the usual open-below-asking approach doesn't apply. Every Scottish listing must have a <strong>Home Report</strong>, which includes an independent surveyor's valuation — it's free on request from the agent. <strong>Ask for it before you offer</strong>, and use our valuation and the sold prices below to sanity-check it.</div>
+    </div>
+    {% endif %}
     {% if sale_type == 'auction' %}
     {# v2: auction flag — dynamics invert; route to direct support #}
     <div style="background:#fdf0e3; border:2px solid #c06a1a; border-radius:12px; padding:14px 16px; margin-bottom:14px;">
@@ -846,7 +853,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 
   <!-- ATTRIBUTION -->
   <div class="attr">
-    Contains HM Land Registry data © Crown copyright and database right 2026. Licensed under the Open Government Licence v3.0.<br>
+    {{ sold_data_attribution or 'Contains HM Land Registry data © Crown copyright and database right 2026. Licensed under the Open Government Licence v3.0.' }}<br>
     HouseOffer reports are informational only and do not constitute a formal RICS valuation or financial advice. Always consult a qualified surveyor before purchase.<br>
     <a href="https://houseoffer.uk/privacy.html">Privacy</a> · <a href="https://houseoffer.uk/terms.html">Terms</a>
   </div>

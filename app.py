@@ -300,6 +300,47 @@ def post_to_sheets(payload):
         print(f"Sheets webhook error: {e}")
         return None
 
+COUNTRY_CACHE_PATH = os.path.join(DATA_DIR, "postcode_country_cache.json")
+_country_lock = threading.Lock()
+
+
+def _postcode_country(postcode):
+    """UK country for a postcode via postcodes.io — an actual LOOKUP, not a
+    prefix list, because TD/CA/NE/DG districts straddle the border (CEO 25
+    Aug). Cached on the persistent disk (postcodes never change country).
+    Returns 'England' / 'Scotland' / 'Wales' / 'Northern Ireland', or None on
+    lookup failure — callers treat None as the England & Wales default."""
+    key = (postcode or "").strip().upper().replace(" ", "")
+    if not key:
+        return None
+    cache = {}
+    try:
+        with _country_lock:
+            if os.path.exists(COUNTRY_CACHE_PATH):
+                with open(COUNTRY_CACHE_PATH) as f:
+                    cache = json.load(f) or {}
+        if key in cache:
+            return cache[key]
+    except Exception as e:
+        print(f"country cache read error: {e}")
+    country = None
+    try:
+        r = requests.get(f"https://api.postcodes.io/postcodes/{key}", timeout=6)
+        if r.status_code == 200:
+            country = (r.json().get("result") or {}).get("country")
+    except Exception as e:
+        print(f"postcode country lookup error ({key}): {e}")
+    if country:
+        try:
+            with _country_lock:
+                cache[key] = country
+                with open(COUNTRY_CACHE_PATH, "w") as f:
+                    json.dump(cache, f)
+        except Exception as e:
+            print(f"country cache write error: {e}")
+    return country
+
+
 def format_postcode(raw):
     raw = raw.strip().upper().replace(" ", "")
     return raw[:-3] + " " + raw[-3:]
@@ -2362,6 +2403,9 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     paid_tier = tier != "free"
     formatted = format_postcode(postcode)
     region = postcode_to_region(postcode)
+    # CEO 25 Aug: country detection via lookup (cached). Scotland is served —
+    # honestly: correct attribution, offers-over context, no England trio.
+    country = _postcode_country(postcode)
 
     # Confidence flags, refined by FIX 2 (comparables) and FIX 3 (floor area).
     comparable_confidence = "area_only"
@@ -3429,6 +3473,21 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
     if open_offer and local_avg_sold:
         open_offer_vs_comps_pct = round(((local_avg_sold - open_offer) / local_avg_sold) * 100, 1)
 
+    # ── SCOTLAND (CEO 25 Aug): negotiation model guard ─────────────────────────
+    # Scotland is an offers-over market: sealed bids, closing dates, homes
+    # commonly selling AT or ABOVE the asking figure. The England-calibrated
+    # open-below-asking trio (and the Frontier built on the asking-to-sold
+    # discount) runs the wrong direction, so it is suppressed outright — the
+    # valuation, comparables, confidence badge and the Scottish context block
+    # carry the report until a Scottish frontier exists. Outranks every trio
+    # path above, mirroring the auction exception.
+    if country == "Scotland":
+        open_offer = target_price = walk_away = recommended_offer = None
+        trio_anchor = "scotland"
+        trio_anchor_note = None
+        open_offer_frontier_clamped = False
+        open_offer_vs_asking_pct = open_offer_vs_comps_pct = None
+
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
@@ -3567,6 +3626,17 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "chart_price_max": chart_price_max,
         "generated": datetime.now().strftime("%-d %B %Y"),
         "property_url": property_url,
+        # CEO 25 Aug: country (postcodes.io lookup) + honest per-report data
+        # attribution — HM Land Registry does not cover Scotland, so Scottish
+        # reports must not claim it.
+        "country": country,
+        "sold_data_attribution": (
+            "Contains sold price data for Scotland © Crown copyright, derived "
+            "from Registers of Scotland records (supplied via the PropertyData "
+            "API), and ONS House Price Index data."
+            if country == "Scotland" else
+            "Contains HM Land Registry data © Crown copyright and database "
+            "right 2026. Licensed under the Open Government Licence v3.0."),
         "tier": tier,
         "is_new_build": is_new_build,
         "main_photo_url": main_photo_url,
@@ -4577,7 +4647,8 @@ def view_report(report_id):
     # meaningless against a guide price (the trio is suppressed for the same
     # reason).
     frontier = (_offer_frontier(report, profile)
-                if paid and report.get("trio_anchor") != "auction" else None)
+                if paid and report.get("trio_anchor") not in ("auction", "scotland")
+                else None)
     # C2a: buyer answers drive the displayed numbers/copy — render-time only,
     # stored trio untouched (auditable and reversible per report).
     personalisation = _personalise_offer(report, profile, frontier) if paid else None
@@ -6491,6 +6562,9 @@ def _run_free_build(report_id, inputs):
             "confidence": (report.get("confidence_score") or "").upper(),
             "comps_count": report.get("comparables_count"),
             "comps_tier": report.get("comps_match_tier", ""),
+            # CEO 25 Aug (d): country at the END so Scottish volume/quality is
+            # trackable separately.
+            "country": report.get("country") or "",
         })
         log_event(_rid, "submission_created", {
             "email": _em, "postcode": report["postcode"],
