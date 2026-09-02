@@ -3524,6 +3524,7 @@ def send_report_email(to_email, report_html, postcode, verdict, report_url=None)
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
             json={
                 "from": f"HouseOffer <{EMAIL_ADDRESS}>",
+                "reply_to": "ceo@houseoffer.uk",
                 "to": [to_email],
                 "subject": f"Your HouseOffer report — {postcode}",
                 "html": report_html,
