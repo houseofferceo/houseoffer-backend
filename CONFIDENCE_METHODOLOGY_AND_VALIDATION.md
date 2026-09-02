@@ -90,7 +90,7 @@ measured vs **asking** price.
 ## 4. Backlog
 
 - **Cycle 4c** — floor-area capture (EPC join). [next]
-- Back-test against **sold** price, not asking — the proper accuracy measure. [high]
+- **[PRIORITY]** Back-test against **sold** price, not asking — the proper accuracy measure, and the only run that can honestly use the word "accurate" beside a buy button (the paywall trust patch deliberately ships no numeric claim until this exists). Design it to share one pipeline with the OIRO price-qualifier study (qualifiers captured since July 2026), so one back-test serves both.
 - New-build premium modelling (currently caveated, not priced).
 - Harvester: reject structurally-valid-but-fake postcodes (a handful slip through,
   return no data — safe but untidy).
