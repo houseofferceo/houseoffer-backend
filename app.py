@@ -4639,6 +4639,8 @@ def view_report(report_id):
             postcode=report.get("postcode"))
 
     template = "report_paid.html" if paid else "report_free.html"
+    # (d) 2026-09-08: implausible-estimate prompt on the crowd card
+    buyer_estimate_implausible = stored.get("buyer_estimate_implausible", False)
     profile = stored.get("buyer_profile") if paid else None
     # Frontier v2: display-layer positioning computed from stored values at
     # render time (works for previously stored paid reports too). The stored
@@ -4655,6 +4657,8 @@ def view_report(report_id):
     return render_template(template, report_url=report_url, report_id=report_id,
                            buyer_profile=profile, offer_frontier=frontier,
                            personalisation=personalisation,
+                           buyer_estimate_implausible=buyer_estimate_implausible,
+                           buyer_estimate=stored.get("buyer_estimate"),
                            upgrade_intent=stored.get("upgrade_intent"),
                            **report)
 
@@ -6497,8 +6501,22 @@ def _run_free_build(report_id, inputs):
             **(inputs.get("extra") or {}),
         )
 
+        # 2026-09-08 (d): sanity bound on the buyer's pre-data estimate. A real
+        # user typed GBP 5.85m against a GBP 625k asking. An estimate above
+        # 3x the asking price is treated as a probable typo: flagged, excluded
+        # from anchor_bias and from the crowd-vote seed, and the report shows
+        # a "check your number" prompt instead of the seeded vote.
+        est_int = None
+        try:
+            est_int = int(str(_be or "").replace(",", "").replace("£", "").replace(" ", ""))
+        except ValueError:
+            pass
+        buyer_estimate_implausible = bool(
+            est_int and report.get("asking_price")
+            and est_int > 3 * report["asking_price"])
+
         anchor_bias = None
-        if _be and report.get("local_avg_sold"):
+        if _be and not buyer_estimate_implausible and report.get("local_avg_sold"):
             try:
                 est   = int(str(_be).replace(",", "").replace("£", "").replace(" ", ""))
                 local = report["local_avg_sold"]
@@ -6508,7 +6526,8 @@ def _run_free_build(report_id, inputs):
 
         stored = load_report(_rid) or {}
         stored.update({"status": "ready", "report": report,
-                       "buyer_estimate": _be, "anchor_bias": anchor_bias})
+                       "buyer_estimate": _be, "anchor_bias": anchor_bias,
+                       "buyer_estimate_implausible": buyer_estimate_implausible})
         save_report(_rid, stored)
 
         # Seed the buyer's own estimate (given on the request form, before
@@ -6516,7 +6535,7 @@ def _run_free_build(report_id, inputs):
         # via the share link always see the number that started it.
         try:
             seed_est = int(str(_be or "").replace(",", "").replace("£", "").replace(" ", ""))
-            if 1_000 <= seed_est <= 100_000_000:
+            if 1_000 <= seed_est <= 100_000_000 and not buyer_estimate_implausible:
                 with _votes_lock:
                     votes = _load_votes(_rid)
                     if not any(v.get("token") == f"owner-{_rid}" for v in votes):
