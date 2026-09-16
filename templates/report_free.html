@@ -565,6 +565,9 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
   <div class="crowd-card">
     <div class="crowd-eyebrow">🎯 What's it worth to you?</div>
     <div class="crowd-title">Before the data — what's your honest number?</div>
+    {% if buyer_estimate_implausible %}
+    <div style="background:#fdf0e3; border:1.5px dashed #c06a1a; border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:var(--ink-mid); line-height:1.6;">✏️ <strong style="color:#8a4a10;">Check your number:</strong> the estimate you gave on the form ({{ buyer_estimate and "£" ~ buyer_estimate }}) is more than three times the asking price — that's usually a typo, so we've left it out. Lock in your real first-instinct number below.</div>
+    {% endif %}
     <div class="crowd-sub">House buying is emotional, not just financial. Lock in your first instinct, then bring your partner, parents or friends in to see how their number compares to yours — and to the data.</div>
 
     <div class="anchor-note">
