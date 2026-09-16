@@ -44,7 +44,11 @@ def check(label, ok, detail=""):
 
 
 ASKING = 625_000
-LOCAL_AVG = 600_000
+# The two candidate anchor_bias baselines are deliberately DIFFERENT so a
+# regression back to local_avg_sold cannot pass by coincidence (PR #32: the ONE
+# baseline is the stored weighted midpoint, i.e. Our Valuation).
+LOCAL_AVG = 500_000
+MIDPOINT = 600_000
 
 # A plausible built report. build_report_data is stubbed to return this, so
 # the guard sees report["asking_price"] exactly as production would.
@@ -52,7 +56,7 @@ FAKE_REPORT = {
     "asking_price": ASKING, "asking_price_formatted": "£625,000",
     "local_avg_sold": LOCAL_AVG,
     "postcode": "NR1 3AY", "property_type": "semi-detached", "verdict": "overpriced",
-    "weighted_low": 560_000, "weighted_high": 640_000, "weighted_midpoint": 600_000,
+    "weighted_low": 560_000, "weighted_high": 640_000, "weighted_midpoint": MIDPOINT,
     "weighted_midpoint_formatted": "£600,000",
     "open_offer": 575_000, "target_price": 600_000, "walk_away": 620_000,
     "confidence_score": "high", "comparables_count": 12, "comparables": [],
@@ -102,9 +106,9 @@ check("raw estimate still stored for the prompt", s.get("buyer_estimate") == "5,
 print("[B2] estimate at EXACTLY 3x asking is not flagged (boundary)")
 rid2 = "e5b0e5b00002"
 s = build(rid2, str(3 * ASKING))  # 1,875,000
-expected_ab = round(((3 * ASKING - LOCAL_AVG) / LOCAL_AVG) * 100, 1)
+expected_ab = round(((3 * ASKING - MIDPOINT) / MIDPOINT) * 100, 1)
 check("not flagged", s.get("buyer_estimate_implausible") is False)
-check(f"anchor_bias computed as before ({expected_ab})", s.get("anchor_bias") == expected_ab, str(s.get("anchor_bias")))
+check(f"anchor_bias computed vs the stored weighted midpoint ({expected_ab})", s.get("anchor_bias") == expected_ab, str(s.get("anchor_bias")))
 check("owner seed present with the estimate",
       len(owner_seed(rid2)) == 1 and owner_seed(rid2)[0].get("estimate") == 3 * ASKING, str(owner_seed(rid2)))
 
@@ -112,7 +116,8 @@ print("[B3] normal estimate is untouched")
 rid3 = "e5b0e5b00003"
 s = build(rid3, "600000")
 check("not flagged", s.get("buyer_estimate_implausible") is False)
-check("anchor_bias 0.0 vs local average", s.get("anchor_bias") == 0.0, str(s.get("anchor_bias")))
+check("anchor_bias 0.0 vs the stored weighted midpoint (estimate == Our Valuation; vs local average it would be 20.0)",
+      s.get("anchor_bias") == 0.0, str(s.get("anchor_bias")))
 check("owner seed present", len(owner_seed(rid3)) == 1)
 
 print("[B4] unparseable estimate never raises, is not flagged, creates no seed")
