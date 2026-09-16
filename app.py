@@ -33,7 +33,13 @@ def _add_noindex_header(response):
 
 @app.route("/robots.txt")
 def robots_txt():
-    return Response("User-agent: *\nDisallow: /\n", mimetype="text/plain")
+    # CEO 16 Sep: crawling stays ALLOWED for now. Every response already carries
+    # X-Robots-Tag: noindex, nofollow, and Google can only see that header on a
+    # URL it is permitted to re-crawl -- a "Disallow: /" would freeze the
+    # already-indexed backend URLs in the index. Flip to "Disallow: /" only once
+    # Search Console confirms the backend URLs have dropped out (held in a
+    # separate PR).
+    return Response("User-agent: *\nAllow: /\n", mimetype="text/plain")
 
 # ── REPORT STORAGE ────────────────────────────────────────────────────────────
 # Reports and engagement events are stored as JSON files under DATA_DIR.
