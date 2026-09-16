@@ -21,6 +21,9 @@ and asserts the four trust elements at each £29 lock:
       report email" in the guarantee reaches a monitored inbox
   P10 the £29 CTAs still route to /r/<id>/checkout with their src tags
       (no pricing or unlock change)
+  P11 the above-fold £29 card (shown to visitors who arrived through the
+      £29 capture step, upgrade_intent set): Stripe mark, guarantee and
+      sample-report link beside the CTA; absent without upgrade_intent
 
 Writes the rendered lock-1 block to <tmp>/houseoffer_paywall_lock1.html for
 the PR description.  Run:  python3 tests/test_paywall_trust.py
@@ -186,6 +189,32 @@ check("to is still the buyer", captured.get("to") == ["buyer@example.com"], str(
 print("[P10] £29 CTAs unchanged: checkout routes and src tags")
 for src in ("locked_section", "leverage_strip", "upgrade_card", "mobile_bar"):
     check(f"checkout?src={src}", f"/r/{rid}/checkout?src={src}" in body)
+
+print("[P11] above-fold £29 card — visitors who came through the £29 capture step")
+check("card absent without upgrade_intent", "You came for the full report" not in body)
+rid_int = "9a11a11000000004"
+stored_int = build(rid_int, FAKE_REPORT)
+ho.save_report(rid_int, dict(stored_int, upgrade_intent="29"))
+c_int, b_int = render(rid_int)
+check("intent report renders (200)", c_int == 200, str(c_int) if c_int else b_int[:300])
+card_af = ""
+i_af = b_int.find("You came for the full report")
+if i_af >= 0:
+    start_af = b_int.rfind("<div style=", 0, i_af)
+    m_af = re.compile(r"</a>\s*</div>", re.S).search(b_int, i_af)
+    card_af = b_int[start_af:m_af.end()] if m_af else ""
+check("above-fold card present with upgrade_intent", bool(card_af))
+check("above-fold: £29 CTA still routes to checkout src=intent_above_fold",
+      f"/r/{rid_int}/checkout?src=intent_above_fold" in card_af)
+check("above-fold: Stripe mark", STRIPE in card_af)
+check("above-fold: 7-day guarantee, verbatim", GUARANTEE in card_af)
+check("above-fold: sample-report link, new tab", SAMPLE in card_af and 'target="_blank"' in card_af)
+check("above-fold: no HIGH-confidence line (not requested there)", HIGH_LINE not in card_af)
+check("sample-report link at four places on an intent visit", b_int.count(SAMPLE) >= 4, str(b_int.count(SAMPLE)))
+af_path = os.path.join(tempfile.gettempdir(), "houseoffer_paywall_abovefold.html")
+with open(af_path, "w", encoding="utf-8") as fh:
+    fh.write(card_af)
+print(f"        above-fold block written to {af_path}")
 
 print(f"\n{PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)

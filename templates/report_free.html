@@ -383,6 +383,10 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     <div style="font-family:'Lora',serif; font-size:17px; font-weight:700; color:var(--ink); margin-bottom:6px;">You came for the full report — it's ready to unlock.</div>
     <div style="font-size:13.5px; color:var(--ink-mid); line-height:1.6; margin-bottom:14px;">Below is the free analysis. Your £29 unlock adds the complete valuation range, your recommended opening offer, and the negotiation playbook for this exact property.</div>
     <a href="https://houseoffer-backend.onrender.com/r/{{ report_id|default('') }}/checkout?src=intent_above_fold" style="display:inline-block; background:var(--teal, #1a6b5a); color:#fff; font-weight:700; font-size:15px; padding:13px 26px; border-radius:10px; text-decoration:none;">Unlock my full report — £29</a>
+    {# CEO 16 Sep: the same trust elements as the locks, beside the above-fold £29 CTA #}
+    <div class="trust-secure">🔒 Secure payment via Stripe</div>
+    <div class="trust-guarantee" style="margin:6px 0 0; max-width:none;">Not useful? Reply to your report email within 7 days for a full refund.</div>
+    <a class="trust-sample" href="https://houseoffer.uk/sample-report/" target="_blank" rel="noopener">See exactly what you'll get — view a full sample report</a>
   </div>
   {% endif %}
 
