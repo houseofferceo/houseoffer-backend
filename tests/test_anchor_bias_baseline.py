@@ -23,7 +23,8 @@ cannot tell them apart.
   A9  >3x asking guard (PR #39) still excludes it under the new baseline
   A10 exactly 3x (boundary) is computed vs the midpoint
   A11 rebased trust-fix template renders: LOW + unverified-address banner, LOW
-      figure as a discount to asking, no hardcoded teaser numbers
+      figure as a discount to asking (the locked-strip teaser-glyph assertions
+      travel with that fix, held for the paywall trust-patch PR)
 
 Run:  python3 tests/test_anchor_bias_baseline.py
 """
@@ -210,16 +211,11 @@ check("'Address unverified' banner shown", "Address unverified" in body)
 check("LOW estimate labelled as LOW confidence", "Our estimate — LOW confidence" in body)
 check("LOW figure stated as a discount to asking ('About 10% below the asking price')",
       "About 10% below the asking price" in body)
-FAKE_TEASERS = ("£305,000", "£312,000", "£330,000", "£310,000", "£325,000")
-check("no hardcoded teaser numbers anywhere in the page", not any(t in body for t in FAKE_TEASERS),
-      ", ".join(t for t in FAKE_TEASERS if t in body))
-check("placeholder glyphs present in the locked strip", "£•••,•••" in body)
 code2, body2 = get(f"/r/{rid1}")
 check("HIGH + resolved-address report renders (200)", code2 == 200, str(code2) if code2 else body2[:400])
 check("no 'Address unverified' banner when the address resolved", "Address unverified" not in body2)
 check("HIGH report shows the precise estimate, not the LOW discount line",
       "£600,000" in body2 and "Our estimate — LOW confidence" not in body2)
-check("HIGH report has no hardcoded teaser numbers either", not any(t in body2 for t in FAKE_TEASERS))
 
 print(f"\n{PASS} pass, {FAIL} fail")
 sys.exit(1 if FAIL else 0)
