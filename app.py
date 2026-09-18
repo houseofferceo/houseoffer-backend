@@ -302,6 +302,14 @@ MIN_COMPARABLES = 10
 MIN_SECTOR_COMPARABLES = 25
 
 
+def _admin_ok(supplied):
+    """Admin gate: True only when ADMIN_KEY is configured AND matches (constant-time).
+    No fallback default (CEO 18 Sep): an unset ADMIN_KEY refuses every admin route
+    rather than accepting a value anyone can read in this public repo."""
+    key = os.environ.get("ADMIN_KEY") or ""
+    return bool(key) and hmac.compare_digest(str(supplied or ""), key)
+
+
 def post_to_sheets(payload):
     """Fire-and-forget POST to the Google Sheets Apps Script webhook.
     Failures are logged but never block the response to the user."""
@@ -5255,7 +5263,7 @@ def stripe_webhook():
 @app.before_request
 def _gate_debug_endpoints():
     if (request.path.startswith("/debug")
-            and request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key")):
+            and not _admin_ok(request.args.get("key"))):
         return jsonify({"error": "Unauthorised"}), 403
 
 
@@ -5263,7 +5271,7 @@ def _gate_debug_endpoints():
 def admin_unlock(report_id):
     """Set paid=True for a given report UUID (manual unlock / support tool)."""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "unauthorized"}), 401
     if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
         return jsonify({"error": "invalid report_id"}), 400
@@ -5282,7 +5290,7 @@ def admin_sheets_probe():
     from 'script rejected it' without anyone pasting secrets around.
     Usage: /admin/sheets-probe?key=ADMIN&type=event|interest"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "unauthorized"}), 401
     if not SHEETS_WEBHOOK_URL or not SHEETS_WEBHOOK_SECRET:
         return jsonify({"configured": False,
@@ -5312,7 +5320,7 @@ def admin_clear_profile(report_id):
     answers or an explicit skip so the next visit shows the three questions
     again and personalisation starts from scratch."""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "unauthorized"}), 401
     if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
         return jsonify({"error": "invalid report_id"}), 400
@@ -5372,7 +5380,7 @@ def version():
 def admin_events(report_id):
     """Inspect engagement events for a specific report (basic auth via query param)."""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "unauthorized"}), 401
     if not re.fullmatch(r"[a-f0-9]{8,32}", report_id):
         return jsonify({"error": "invalid report_id"}), 400
@@ -5386,7 +5394,7 @@ def admin_events(report_id):
 def admin_recent():
     """List recent submissions for quick monitoring."""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "unauthorized"}), 401
     out = []
     # A7 follow-up: ?postcode=G40SZ scans the WHOLE store for that postcode
@@ -5445,7 +5453,7 @@ def debug_listing_history():
     HTML (extractable for free) or loaded by a separate API call, and where.
     Admin-key protected. Usage: /debug-listing-history?url=<rightmove>&key=ADMIN"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     url = request.args.get("url", "")
     if not url:
@@ -5482,7 +5490,7 @@ def debug_soldfetch():
     data — so the parser can be fixed against the real page. Admin-key protected.
     Usage: /debug-soldfetch?postcode=DT4+0JS&key=ADMIN"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     from property_scraper import BROWSER_HEADERS, _request_kwargs
     pc = (request.args.get("postcode", "") or "").upper().replace(" ", "")
@@ -5537,7 +5545,7 @@ def debug_resolve():
     Admin-key protected (may burn one PropertyData call).
     Usage: /debug-resolve?url=https://www.rightmove.co.uk/properties/XXX&key=ADMIN"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     url = request.args.get("url", "")
     if not url:
@@ -5566,7 +5574,7 @@ def debug_resolve():
 def debug_epc():
     """Test EPC floor area lookup. Usage: /debug-epc?postcode=WD4+9EW&address=9+Chantry+Close&key=ADMIN"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     postcode = request.args.get("postcode", "")
     address = request.args.get("address", "")
@@ -5616,7 +5624,7 @@ def debug_epc_resolve():
     unique address. Accepts multiple ?url= params. Admin-key protected.
     Usage: /debug-epc-resolve?key=ADMIN&url=<rightmove1>&url=<rightmove2>"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     urls = request.args.getlist("url")
     if not urls:
@@ -5668,7 +5676,7 @@ def debug_epc_match():
     """Test EPC cross-matching without a house number.
     Usage: /debug-epc-match?postcode=WR2+5SG&address=Wilmot+Drive&type=detached&sqm=92&key=ADMIN"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     postcode = request.args.get("postcode", "")
     if not postcode:
@@ -5696,7 +5704,7 @@ def debug_rents():
     """Raw PropertyData /rents response plus our parsed monthly value.
     Usage: /debug-rents?postcode=B23+7DY&bedrooms=3&key=ADMIN"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     postcode = request.args.get("postcode", "")
     bedrooms = request.args.get("bedrooms", "")
@@ -5725,7 +5733,7 @@ def debug_avm():
     """Raw PropertyData /valuation-sale response plus our parsed result.
     Usage: /debug-avm?postcode=B23+7DY&type=semi-detached&bedrooms=3&sqm=85&key=ADMIN"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     postcode = request.args.get("postcode", "")
     property_type = request.args.get("type", "semi-detached")
@@ -5841,7 +5849,7 @@ def debug_scrape_dates():
 
 @app.route("/debug-sold")
 def debug_sold():
-    if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(request.args.get("key")):
         return jsonify({"error": "Unauthorised"}), 403
     postcode = request.args.get("postcode", "WD4 9EW")
     address = request.args.get("address", "")
@@ -5913,7 +5921,7 @@ def batch_resolve_test():
     Admin-key protected. Intended for the daily resolution-quality loop.
     Usage: /batch-resolve-test?key=ADMIN_KEY
     Optional: &url0=...&url1=... to override individual batch entries (0-indexed)."""
-    if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(request.args.get("key")):
         return jsonify({"error": "Unauthorised"}), 403
 
     BATCH = [
@@ -6243,7 +6251,7 @@ def batch_valuation_test():
     Default (no sync): kicks a background job, returns job_id; poll
     /batch-valuation-test/<job_id>?key=... — but that can be lost if the instance
     spins down, so &sync=1 is preferred for small batches."""
-    if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(request.args.get("key")):
         return jsonify({"error": "Unauthorised"}), 403
     sync = request.args.get("sync") in ("1", "true", "yes")
     # Async runs can go up to 100 (for a durable random sample streamed to Sheets);
@@ -6333,7 +6341,7 @@ def batch_valuation_test():
 @app.route("/batch-valuation-test/<job_id>")
 def batch_valuation_test_status(job_id):
     """Poll the status/results of a batch valuation test job. Admin-key protected."""
-    if request.args.get("key") != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(request.args.get("key")):
         return jsonify({"error": "Unauthorised"}), 403
     st = load_report(job_id)
     if not st or st.get("kind") != "valuation-test":
@@ -6350,7 +6358,7 @@ def debug_report():
       &sqm=NN     inject a subject floor area (treated as a scraped value)
       &beds=N     inject bedrooms (default 3; pass 'unknown' to test FIX 1 path)"""
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     postcode = request.args.get("postcode", "WD4 9EW")
     asking_price = int(request.args.get("price", "675000"))
@@ -6377,7 +6385,7 @@ def preview_paid():
     Usage: /preview-paid?url=https://www.rightmove.co.uk/properties/XXX&key=YOUR_ADMIN_KEY
     """
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     property_url = request.args.get("url", "")
     if not property_url:
@@ -6402,7 +6410,7 @@ def preview_free():
     Usage: /preview-free?url=https://www.rightmove.co.uk/properties/XXX&key=YOUR_ADMIN_KEY
     """
     auth = request.args.get("key", "")
-    if auth != os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if not _admin_ok(auth):
         return jsonify({"error": "Unauthorised"}), 403
     property_url = request.args.get("url", "")
     if not property_url:
@@ -6477,7 +6485,7 @@ def report_data_json():
         return jsonify({"error": "Could not determine postcode"}), 400
     # Paid tier on this public JSON endpoint requires the admin key (credits)
     tier = "free"
-    if data.get("tier") == "paid" and data.get("key") == os.environ.get("ADMIN_KEY", "set-an-admin-key"):
+    if data.get("tier") == "paid" and _admin_ok(data.get("key")):
         tier = "paid"
     report = build_report_data(
         property_url=property_url,
