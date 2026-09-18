@@ -546,11 +546,13 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
   {# P0 guard (2026-07-23): an auction lot NEVER co-renders the standard verdict
      — the incident report showed "underpriced" alongside the auction caveat. #}
   {% if sale_type != 'auction' %}
-  {% set vclass = {'overpriced': 'v-over', 'fair': 'v-fair', 'value': 'v-val'}.get(verdict, 'v-unknown') %}
+  {# CEO 18 Sep: on the LOW-gate 'none' tier the verdict card goes neutral — no verdict headline over 'we couldn't value this property' #}
+  {% set vclass = 'v-unknown' if low_gap_tier == 'none' else {'overpriced': 'v-over', 'fair': 'v-fair', 'value': 'v-val'}.get(verdict, 'v-unknown') %}
   <div class="verdict-card {{ vclass }}">
     <div class="verdict-eyebrow">Our verdict</div>
     <div class="verdict-headline">
-      {% if verdict == 'overpriced' %}This seller is asking for more than the market says it's worth
+      {% if low_gap_tier == 'none' %}We couldn't value this property from the available evidence
+      {% elif verdict == 'overpriced' %}This seller is asking for more than the market says it's worth
       {% elif verdict == 'fair' %}This one is priced where the market says it should be
       {% elif verdict == 'value' %}This one is underpriced — and won't stay that way long
       {% else %}Not enough local data for a verdict{% endif %}

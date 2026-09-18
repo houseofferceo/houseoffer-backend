@@ -145,6 +145,7 @@ check("lever line", "Confirming the exact address is the single biggest thing th
 check("no 'About N% below/above the asking price'", "% below the asking price" not in b and "% above the asking price" not in b)
 check("verdict: 'sits above the range we can support', no percentage", "sits <strong>above the range we can support</strong>" in b and "% high" not in b and "% low" not in b)
 check("crowd line uses the range", "our indicative range of <strong>£460,000 – £540,000</strong> (LOW confidence)" in b)
+check("tier range keeps the directional verdict headline", "asking for more than the market says it's worth" in b and 'class="verdict-card v-over"' in b)
 val_card = b[b.find('class="valuation-card"'):b.find("</div>", b.find('class="val-asking"'))]
 check("no percentage inside the valuation card", not PCT.search(re.sub(r"<[^>]+>", " ", val_card)), (PCT.search(re.sub(r"<[^>]+>", " ", val_card)) or [None])[0] if PCT.search(re.sub(r"<[^>]+>", " ", val_card)) else "")
 open(os.path.join(tempfile.gettempdir(), "houseoffer_lowgate_range_page.html"), "w", encoding="utf-8").write(b)
@@ -162,6 +163,8 @@ check("no midpoint figure anywhere on the page", "£350,000" not in b)
 check("no 'About N% …' and no 'Indicative range'", "% below the asking price" not in b and "Indicative range" not in b)
 check("verdict: couldn't value, no number on the gap", "we couldn't value this property</strong>, so we're not putting a number on the gap" in b and "% high" not in b)
 check("crowd-vs-data hook hidden", 'id="crowd-vs-data"' not in b)
+check("verdict card goes neutral: no 'asking for more than the market' headline", "asking for more than the market" not in b and 'class="verdict-card v-unknown"' in b)
+check("verdict headline is the no-figure line", b.count("We couldn't value this property from the available evidence") >= 2)
 check("lever line", "Confirming the exact address is the single biggest thing that sharpens this." in b)
 open(os.path.join(tempfile.gettempdir(), "houseoffer_lowgate_none_page.html"), "w", encoding="utf-8").write(b)
 
