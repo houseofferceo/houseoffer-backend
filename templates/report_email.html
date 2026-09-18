@@ -33,7 +33,8 @@
 
   <!-- Hidden preheader text — shows in inbox preview, hidden in the body -->
   <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#f7f3ed;">
-    {% if verdict == 'overpriced' %}Your verdict is in: this property is asking above what the market supports. View your full report online.
+    {% if low_gap_tier == 'none' %}Your report is ready — we couldn't value this property from the available evidence, and the report shows why.
+    {% elif verdict == 'overpriced' %}Your verdict is in: this property is asking above what the market supports. View your full report online.
     {% elif verdict == 'value' %}Your verdict is in: this property is priced below comparable sales. View your full report online.
     {% elif verdict == 'fair' %}Your verdict is in: priced fairly — but there's still room to negotiate. View your full report.
     {% else %}Your HouseOffer report is ready. View it online.{% endif %}
@@ -95,6 +96,11 @@
                 {% set vbg = '#ece7de' %}{% set vborder = '#e0d9ce' %}{% set vaccent = '#5c5849' %}{% set veyebrow = 'OUR VERDICT' %}
                 {% set vheadline = 'Not enough local data for a verdict' %}
               {% endif %}
+              {# CEO 18 Sep: LOW-confidence gap gate, tier 2 — no verdict headline, no figure #}
+              {% if low_gap_tier == 'none' %}
+                {% set vbg = '#ece7de' %}{% set vborder = '#e0d9ce' %}{% set vaccent = '#5c5849' %}{% set veyebrow = 'LOW CONFIDENCE' %}
+                {% set vheadline = "We couldn't value this property from the available evidence" %}
+              {% endif %}
 
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:{{ vbg }}; border:1.5px solid {{ vborder }}; border-radius:12px;">
                 <tr>
@@ -103,10 +109,32 @@
                       {{ veyebrow }}
                     </p>
                     <p style="margin:0 0 12px 0; font-family: Georgia, 'Times New Roman', serif; font-size:22px; font-weight:700; color:{{ vaccent }}; line-height:1.25;">
-                      {{ vheadline }}
+                      {% if low_gap_tier == 'none' %}We couldn't value this property from the available evidence{% else %}{{ vheadline }}{% endif %}
                     </p>
 
-                    {% if local_avg_sold and sold_diff_pct is not none %}
+                    {% if low_gap_tier == 'range' %}
+                    <!-- CEO 18 Sep, LOW-confidence gate tier 1: the range the evidence supports, no percentage -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:6px;">
+                      <tr>
+                        <td style="padding:14px 18px; background-color:#ffffff; border-radius:8px; border:1px solid {{ vborder }};">
+                          <p style="margin:0 0 4px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:600; color:#9b9488; letter-spacing:0.06em; text-transform:uppercase;">
+                            Indicative range — LOW confidence
+                          </p>
+                          <p style="margin:0; font-family: Georgia, 'Times New Roman', serif; font-size:26px; font-weight:700; color:{{ vaccent }}; line-height:1.2;" class="mobile-stat">
+                            {{ weighted_low_formatted }} – {{ weighted_high_formatted }}
+                          </p>
+                          <p style="margin:8px 0 0 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; color:#5c5849; line-height:1.5;">
+                            We can't put a reliable figure on this one. The sold evidence we found points well {% if weighted_midpoint < asking_price %}below{% else %}above{% endif %} the asking price, but it's too thin to say by how much — so we're showing the range the evidence supports rather than a percentage.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    {% elif low_gap_tier == 'none' %}
+                    <!-- CEO 18 Sep, LOW-confidence gate tier 2: no figure at all -->
+                    <p style="margin:0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14px; color:#1e1c18; line-height:1.55;">
+                      The sold evidence we found isn't enough to put a figure on this home — not a percentage, not a range. Here's why, and what sharpens it.
+                    </p>
+                    {% elif local_avg_sold and sold_diff_pct is not none %}
                     <!-- Headline stat -->
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:6px;">
                       <tr>
@@ -120,6 +148,24 @@
                           <p style="margin:8px 0 0 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; color:#5c5849; line-height:1.5;">
                             Based on <strong style="color:#1e1c18;">{{ comparables_count }} comparable {{ property_type_label }} sales</strong>
                             {% if search_broadened %}in {{ postcode.split()[0] }}{% else %}near {{ postcode }}{% endif %}, averaging <strong style="color:#1e1c18;">{{ local_avg_sold_formatted }}</strong>.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    {% endif %}
+                    {% if low_gap_tier and low_reasons %}
+                    <!-- CEO 18 Sep: the "Why" — our working, shown prominently -->
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:10px; background-color:#fdf0e3; border:1px solid #f0c98a; border-left:4px solid #c06a1a; border-radius:8px;">
+                      <tr>
+                        <td style="padding:12px 16px;">
+                          <p style="margin:0 0 6px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:11px; font-weight:700; color:#c06a1a; letter-spacing:0.08em; text-transform:uppercase;">
+                            {% if low_gap_tier == 'none' %}Why we couldn't value it{% else %}Why we're not giving a percentage{% endif %}
+                          </p>
+                          {% for r in low_reasons[:3] %}
+                          <p style="margin:0 0 4px 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14px; color:#1e1c18; line-height:1.5;">• {{ r }}</p>
+                          {% endfor %}
+                          <p style="margin:8px 0 0 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; color:#5c5849; line-height:1.5;">
+                            Confirming the exact address is the single biggest thing that sharpens this.
                           </p>
                         </td>
                       </tr>

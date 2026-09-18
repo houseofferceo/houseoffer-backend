@@ -2160,6 +2160,76 @@ _ASKING_ANOMALY_LOW_RATIO = 0.6    # our value < 0.6× asking
 # genuine confidence — seen on NW3/CO4/W6 prime stock. Demote such rows to MEDIUM.
 _PREMIUM_UNDERVALUE_RATIO = 0.75   # our value < 0.75× asking (i.e. >25% below)
 
+# ── LOW-confidence gap gate (CEO 18 Sep 2026) ─────────────────────────────────
+# A LOW-confidence estimate far from the asking price must never be published as
+# a percentage ("about 45% below asking" reads as a broken tool to anyone who
+# knows the street). Two tiers, keyed off ONE stored flag so the free page, the
+# verdict line, the crowd line, the paid card and the report email all agree:
+#   "range" — gap above 20%: the indicative range, no percentage, and why;
+#   "none"  — gap above 40%: no figure at all, just why we couldn't value it.
+LOW_GAP_RANGE_PCT = 20
+LOW_GAP_NONE_PCT = 40
+
+
+def _low_gap_gate(confidence_score, asking_price, weighted_midpoint):
+    """(tier, gap_pct). tier is None, "range" or "none" and applies to LOW only;
+    gap_pct is |asking - midpoint| / asking to one decimal whenever both exist."""
+    if not asking_price or not weighted_midpoint:
+        return None, None
+    pct = round(abs(asking_price - weighted_midpoint) / asking_price * 100, 1)
+    if confidence_score != "low":
+        return None, pct
+    if pct > LOW_GAP_NONE_PCT:
+        return "none", pct
+    if pct > LOW_GAP_RANGE_PCT:
+        return "range", pct
+    return None, pct
+
+
+def _evidence_gaps(comp_count, broadened, type_unknown, floor_area_sqm, size_matched_count):
+    """Plain-English reasons the evidence is thin, in priority order. Shared by the
+    A7 extreme-valuation note and the LOW-gate "Why" bullets."""
+    gaps = []
+    if comp_count < MIN_COMPARABLES:
+        gaps.append(f"only {comp_count} usable comparable sales nearby")
+    if broadened:
+        gaps.append("the search had to be widened beyond the immediate postcode")
+    if type_unknown:
+        gaps.append("the property type could not be confirmed")
+    if not (floor_area_sqm and floor_area_sqm > 0):
+        gaps.append("no reliable floor area was available to size-match against")
+    elif size_matched_count < 5:
+        gaps.append("very few similar-sized sales to compare against")
+    return gaps
+
+
+_TENURE_REASON = {
+    "shared_ownership": "listed as shared ownership / part-buy — the price covers a share, not the whole home",
+    "auction": "an auction guide price, which is set to be bid up from",
+    "retirement": "a retirement / age-restricted listing, which sells to a narrower market",
+}
+
+
+def _low_reasons(comp_count, broadened, type_unknown, floor_area_sqm, size_matched_count,
+                 property_subtype=None, subtype_caveat_applied=False, sale_type=None,
+                 asking_anomaly=False):
+    """The "Why" bullets shown whenever confidence is LOW: the engine's own evidence
+    gaps first, then listing-specific reasons. Never empty."""
+    reasons = _evidence_gaps(comp_count, broadened, type_unknown, floor_area_sqm, size_matched_count)
+    if subtype_caveat_applied and property_subtype:
+        reasons.append(f"listed as a {property_subtype.lower()} — Land Registry doesn't distinguish "
+                       "subtypes, so the comparables may differ in kind")
+    if sale_type:
+        reasons.append(_TENURE_REASON.get(
+            sale_type, "a special-tenure listing, which sells on different terms from standard stock"))
+    if asking_anomaly:
+        reasons.append("the asking price is very different from the sold-price evidence, "
+                       "which usually means a non-standard listing")
+    if not reasons:
+        reasons.append("the local sold evidence diverges sharply from the asking price")
+    return reasons
+
+
 def _resolve_confidence(comparable_tier, comparable_confidence, type_unknown,
                         comp_count, sale_type, is_new_build, has_value,
                         matched_sold_value=None, weighted_midpoint=None,
@@ -3285,17 +3355,8 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
             and abs(valuation_asking_divergence_pct) > 25):
         extreme_valuation_guard = True
         confidence_score = "low"
-        causes = []
-        if len(comparables_for_avg) < MIN_COMPARABLES:
-            causes.append(f"only {len(comparables_for_avg)} usable comparable sales nearby")
-        if broadened:
-            causes.append("the search had to be widened beyond the immediate postcode")
-        if type_unknown:
-            causes.append("the property type could not be confirmed")
-        if not (floor_area_sqm and floor_area_sqm > 0):
-            causes.append("no reliable floor area was available to size-match against")
-        elif comparable_count_size_matched < 5:
-            causes.append("very few similar-sized sales to compare against")
+        causes = _evidence_gaps(len(comparables_for_avg), broadened, type_unknown,
+                                floor_area_sqm, comparable_count_size_matched)
         if not causes:
             causes.append("the local sold evidence diverges sharply from the asking price")
         note = ("our estimate sits more than 25% away from the asking price ("
@@ -3520,6 +3581,15 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
                                    f"Confidence is {confidence_score}:",
                                    confidence_caveat)
 
+    # ── LOW-confidence gap gate (CEO 18 Sep): one stored flag, see _low_gap_gate ──
+    # Computed last, after every downgrade, so the tier reflects the FINAL score.
+    low_gap_tier, low_gap_pct = _low_gap_gate(confidence_score, asking_price, weighted_midpoint)
+    low_reasons = (_low_reasons(len(comparables_for_avg), broadened, type_unknown, floor_area_sqm,
+                                comparable_count_size_matched, property_subtype=property_subtype,
+                                subtype_caveat_applied=subtype_caveat_applied, sale_type=sale_type,
+                                asking_anomaly=asking_anomaly)
+                   if confidence_score == "low" else [])
+
     return {
         "postcode": formatted,
         "postcode_used": postcode_used,
@@ -3564,6 +3634,11 @@ def build_report_data(property_url, asking_price, bedrooms, property_type,
         "confidence_score": confidence_score,
         "confidence_reasons": confidence_reasons,
         "confidence_caveat": confidence_caveat,
+        # CEO 18 Sep: LOW-confidence gap gate — None | "range" | "none", the gap it
+        # was judged on, and the plain-English "Why" bullets (never empty on LOW).
+        "low_gap_tier": low_gap_tier,
+        "low_gap_pct": low_gap_pct,
+        "low_reasons": low_reasons,
         "comparable_tier": comparable_tier,
         # A6 (24 Aug): which cascade rung produced the headline set — feeds the
         # sheet's Comps Tier column (A5) so accuracy is auditable per report.
@@ -4669,6 +4744,16 @@ def view_report(report_id):
             "buyer_questions.html", report_id=report_id,
             address=report.get("resolved_address") or report.get("address"),
             postcode=report.get("postcode"))
+
+    # CEO 18 Sep: reports built before the LOW-confidence gap gate shipped carry
+    # no tier. Derive it at render time from the stored figures so a legacy LOW
+    # report never renders a percentage either (presentation only; the stored
+    # record is untouched). Reasons fall back to the engine's stored sentences.
+    if "low_gap_tier" not in report:
+        _tier, _pct = _low_gap_gate(report.get("confidence_score"), report.get("asking_price"),
+                                    report.get("weighted_midpoint"))
+        report = dict(report, low_gap_tier=_tier, low_gap_pct=_pct,
+                      low_reasons=[r for r in (report.get("confidence_reasons") or []) if r][:3])
 
     template = "report_paid.html" if paid else "report_free.html"
     # (d) 2026-09-08: implausible-estimate prompt on the crowd card

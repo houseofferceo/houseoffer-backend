@@ -78,6 +78,11 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
 .confidence-card.confidence-high .confidence-badge { color: var(--teal); }
 .confidence-card.confidence-medium .confidence-badge { color: var(--amber); }
 .confidence-card.confidence-low .confidence-badge { color: var(--red); }
+/* CEO 18 Sep: the LOW-confidence "Why" box */
+.low-why { margin: -6px 0 16px; padding: 12px 14px 8px; background: #fdf0e3; border: 1px solid #f0c98a; border-left: 4px solid #c06a1a; border-radius: 10px; }
+.low-why-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #c06a1a; margin-bottom: 6px; }
+.low-why ul { margin: 0; padding-left: 18px; }
+.low-why li { font-size: 14px; color: var(--ink); line-height: 1.5; margin-bottom: 5px; }
 .confidence-text { font-size: 13.5px; color: var(--ink-mid); line-height: 1.55; }
 
 .section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); margin-bottom: 12px; margin-top: 4px; }
@@ -397,7 +402,7 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     <div class="overpricing-title">⚠️ Priced well above the evidence — here's the play</div>
     <div class="overpricing-body">The asking price of <strong>{{ asking_price_formatted }}</strong>
       sits well above what local sold evidence supports
-      {% if confidence_score == 'low' %}{% set opd5 = (((asking_price - weighted_midpoint) / asking_price * 100) / 5) | round | int * 5 %}(the sold evidence points roughly <strong>{{ opd5 }}% lower</strong> — LOW confidence, full range in the evidence below){% elif weighted_midpoint_formatted %}(our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}.
+      {% if confidence_score == 'low' and low_gap_tier == 'none' %}(we couldn't value this property from the available evidence — LOW confidence; the reasons are in the confidence note below){% elif confidence_score == 'low' and low_gap_tier == 'range' %}(the sold evidence points {% if weighted_midpoint < asking_price %}below{% else %}above{% endif %} the asking price — LOW confidence; indicative range <strong>{{ weighted_low_formatted }} – {{ weighted_high_formatted }}</strong>, detail in the evidence below){% elif confidence_score == 'low' %}{% set opd5 = (((asking_price - weighted_midpoint) / asking_price * 100) / 5) | round | int * 5 %}(the sold evidence points roughly <strong>{{ opd5 }}% lower</strong> — LOW confidence, full range in the evidence below){% elif weighted_midpoint_formatted %}(our independent estimate: <strong>{{ weighted_midpoint_formatted }}</strong>){% endif %}.
       Our play: a confident, evidence-backed low open — the numbers below.
       Expect pushback; the comparable sales further down are your script when
       it comes. And keep genuinely open to walking early: on a listing priced
@@ -547,6 +552,13 @@ nav { background: rgba(247,243,237,0.95); backdrop-filter: blur(12px); border-bo
     {% if report_id is defined and report_id %}
     <button class="conf-addr-btn" onclick="HO.openModal()">📍 Confirm address</button>
     {% endif %}
+  </div>
+  {% endif %}
+  {% if confidence_score == 'low' and low_gap_tier and low_reasons %}
+  {# CEO 18 Sep: LOW-confidence gap gate — show our working, prominently #}
+  <div class="low-why">
+    <div class="low-why-title">{% if low_gap_tier == 'none' %}Why we couldn't value it{% else %}Why we're not giving a percentage{% endif %}</div>
+    <ul>{% for r in low_reasons[:3] %}<li>{{ r }}</li>{% endfor %}</ul>
   </div>
   {% endif %}
 
