@@ -5,8 +5,8 @@ tooling. The canonical public content lives on houseoffer.uk (Netlify).
 
   N1  every response from this app carries X-Robots-Tag: noindex, nofollow —
       HTML report page, JSON, plain text, a 301 and a 404 alike
-  N2  /robots.txt: 200, text/plain, crawling ALLOWED (a Disallow would stop
-      Google re-crawling already-indexed URLs and seeing the header; held)
+  N2  /robots.txt: 200, text/plain, disallows everything (merged only after
+      Search Console confirmed the backend URLs were de-indexed)
   N3  /white-paper and /white-paper/ 301 to the canonical houseoffer.uk page
   N4  the Netlify SEO pages are not routes on this host at all (404 here), so a
       header emitted by this app cannot reach them
@@ -84,11 +84,10 @@ for path, label, expected in cases:
     check(f"{label} {path}: status {expected}", r.status_code == expected, str(r.status_code))
     check(f"{label} {path}: {HEADER} = '{VALUE}'", r.headers.get(HEADER) == VALUE, str(r.headers.get(HEADER)))
 
-print("[N2] robots.txt keeps crawling ALLOWED so the noindex header can be seen (Disallow held)")
+print("[N2] robots.txt disallows everything (GSC confirmed de-indexing first)")
 r = client.get("/robots.txt")
 check("text/plain", r.mimetype == "text/plain", str(r.mimetype))
-check("User-agent: * / Allow: /", r.get_data(as_text=True) == "User-agent: *\nAllow: /\n", repr(r.get_data(as_text=True)))
-check("no Disallow rule yet", "Disallow" not in r.get_data(as_text=True))
+check("User-agent: * / Disallow: /", r.get_data(as_text=True) == "User-agent: *\nDisallow: /\n", repr(r.get_data(as_text=True)))
 
 print("[N3] legacy backend white paper redirects to the canonical page")
 for path in ("/white-paper", "/white-paper/"):
