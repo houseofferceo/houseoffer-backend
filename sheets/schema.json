@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "updated": "2026-09-18",
+  "note": "Contract between app.py's post_to_sheets() payloads and the Google Sheet 'HouseOffer — Live Submissions'. tests/test_sheets_contract.py fails CI when app.py sends a payload whose keys differ from this file, so a new key cannot be added without updating the contract. The Apps Script (18 Sep plan, step 1) writes by header name and creates a column for any key it has not seen; until that ships, any key without a column in sheet_today is silently dropped by the script — which is how the six audit keys and six attribution keys on 'submission' went missing from 24 August. Keys are listed in the order app.py sends them.",
+  "types": {
+    "submission": {
+      "tab": "Submissions",
+      "sent_from": "_run_free_build (one row per report built)",
+      "keys": ["type", "timestamp", "uuid", "email", "postcode", "property_type", "asking_price", "verdict",
+               "buyer_estimate", "anchor_bias", "property_url", "report_url",
+               "referrer", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+               "our_valuation", "gap_vs_asking_pct", "confidence", "comps_count", "comps_tier", "country"]
+    },
+    "vote": {
+      "tab": "Votes",
+      "sent_from": "_run_free_build (owner seed) and POST /api/vote (crowd votes)",
+      "keys": ["type", "timestamp", "uuid", "slug", "source", "voter_name", "estimate", "updated",
+               "asking_price", "our_valuation", "verdict", "postcode", "property_url", "report_url"]
+    },
+    "event": {
+      "tab": "Events",
+      "sent_from": "log_event (every engagement event) and /admin/sheets-probe",
+      "keys": ["type", "timestamp", "uuid", "event_type", "extra"]
+    },
+    "interest": {
+      "tab": null,
+      "sent_from": "POST /interest and /admin/sheets-probe?type=interest",
+      "keys": ["type", "timestamp", "email", "tier", "source", "uuid", "postcode", "referral_interest"]
+    },
+    "buyer_profile": {
+      "tab": null,
+      "sent_from": "POST /r/<id>/buyer-profile (post-unlock questions)",
+      "keys": ["type", "timestamp", "uuid", "position", "attachment", "timeline", "postcode", "verdict",
+               "asking_price", "report_url"]
+    },
+    "payment": {
+      "tab": null,
+      "sent_from": "Stripe webhook (checkout completed)",
+      "keys": ["type", "timestamp", "uuid", "amount", "currency", "email", "postcode", "session_id", "report_url"]
+    },
+    "valuation_test": {
+      "tab": null,
+      "internal": true,
+      "sent_from": "/batch-valuation-test (internal QA runs, not buyer data)",
+      "keys": ["type", "run_id", "run_at", "url", "postcode", "property_type", "bedrooms", "asking_price",
+               "valuation_midpoint", "gap_vs_asking_pct", "verdict", "comparable_confidence",
+               "comparable_source", "matched_sold_value", "bedroom_implied_value", "floor_area_sqm", "error"]
+    }
+  },
+  "sheet_today": {
+    "note": "Header rows as exported on 16 Sep 2026. Header -> payload key. 'tab: null' types above have no tab; how the script handles them is to be confirmed from the script source.",
+    "Submissions": {"Timestamp": "timestamp", "UUID": "uuid", "Email": "email", "Postcode": "postcode",
+                    "Property Type": "property_type", "Asking Price": "asking_price", "Verdict": "verdict",
+                    "Buyer Estimate": "buyer_estimate", "Anchor Bias %": "anchor_bias",
+                    "Property URL": "property_url", "Report URL": "report_url"},
+    "Votes": {"Timestamp": "timestamp", "UUID": "uuid", "Slug": "slug", "Source": "source",
+              "Voter Name": "voter_name", "Estimate": "estimate", "Updated": "updated",
+              "Asking Price": "asking_price", "Our Valuation": "our_valuation", "Verdict": "verdict",
+              "Postcode": "postcode", "Property URL": "property_url", "Report URL": "report_url"},
+    "Events": {"Timestamp": "timestamp", "UUID": "uuid", "Event Type": "event_type", "Extra Data": "extra"}
+  }
+}
