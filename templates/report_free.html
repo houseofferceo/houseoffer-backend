@@ -53,6 +53,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
 .val-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--teal); margin-bottom: 12px; }
 .val-main { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; margin-bottom: 16px; }
 .val-our { flex: 1; min-width: 160px; }
+.val-our--wide { flex-basis: 100%; } /* CEO 18 Sep: gated LOW tiers use the full width on a phone; the asking price drops below */
 .val-label { font-size: 11px; color: var(--ink-light); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 2px; }
 .val-number { font-size: 40px; font-weight: 700; color: var(--teal); line-height: 1; margin-bottom: 4px; }
 .val-range { font-size: 13px; color: var(--ink-mid); }
@@ -479,7 +480,7 @@ nav { background: rgba(247,243,237,0.95); border-bottom: 1px solid var(--sand-bo
     </div>
     {% elif weighted_midpoint and uncertain %}
     <div class="val-main">
-      <div class="val-our">
+      <div class="val-our{% if low_gap_tier %} val-our--wide{% endif %}">
         <div class="val-label">Our estimate — LOW confidence</div>
         {% if low_gap_tier == 'none' %}
         {# CEO 18 Sep, tier 2 (gap above 40%): no figure at all — just why. #}
